@@ -135,7 +135,14 @@ class LSUpdater:
                 W = np.linalg.lstsq(A, b, rcond=None)[0]
                 _w, _vl, _vr = scaled_eig(W)
                 sako = SAKO(A, b, reps=1e-10)
-                eigs, _, res = filter_spectrum(sako, (_w, _vl, _vr), order=self.params)
+                if isinstance(self.params, list):
+                    order = self.params[0]
+                    remove_one = self.params[1] if len(self.params) > 1 else True
+                else:
+                    order = self.params
+                    remove_one = True
+                eigs, _, res = filter_spectrum(sako, (_w, _vl, _vr),
+                                               order=order, remove_one=remove_one)
                 logger.info(f"SAKO filtered {len(_w)-len(eigs)} out of {len(_w)} eigenvalues. Max residual: {max(res[0]):3.1e}")
 
                 _B, _R, _S = real_lowrank_from_eigpairs(*eigs)

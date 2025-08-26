@@ -48,11 +48,18 @@ class SAInterface:
         
         Striped from TrainerBase.
         """
-        self.metadata = torch.load(checkpoint_path, weights_only=False)['metadata']
-        tm = TrajectoryManager(self.metadata, device=self.device)
-        self.dataloaders, self.datasets, self.metadata = tm.process_all()
-        self.train_loader, self.validation_loader, self.test_loader = self.dataloaders
-        self.train_set, self.validation_set, self.test_set = self.datasets
+        _metadata = torch.load(checkpoint_path, weights_only=False)['metadata']
+        tm = TrajectoryManager(_metadata, device=self.device)
+        _dataloaders, _, _ = tm.process_all()
+
+        # Turn off shuffling for SA to ensure fixed order of samples
+        self.train_loader = torch.utils.data.DataLoader(
+            _dataloaders[0].dataset, batch_size=_dataloaders[0].batch_size, shuffle=False, collate_fn=DynData.collate)
+        self.validation_loader = torch.utils.data.DataLoader(
+            _dataloaders[1].dataset, batch_size=_dataloaders[1].batch_size, shuffle=False, collate_fn=DynData.collate)
+        self.test_loader = torch.utils.data.DataLoader(
+            _dataloaders[2].dataset, batch_size=_dataloaders[2].batch_size, shuffle=False, collate_fn=DynData.collate)
+
         self.dtype = tm.dtype
         self.t = torch.tensor(tm.t[0])
 
@@ -106,7 +113,7 @@ class SAInterface:
 
     def apply_obs(self, fobs: Callable) -> np.ndarray:
         """
-        Apply a generic observable to the data.
+        Apply a generic observable to the raw data.
 
         Args:
             fobs (Callable): Observable function. It should accept a 2D array input with each row as one step.
@@ -114,7 +121,8 @@ class SAInterface:
         """
         F = []
         for batch in self.train_loader:
-            B = batch.x.cpu().numpy()[..., :-1, :]
+            B = batch.x.cpu().numpy()[..., :-1, :]        # This is already transformed
             B = B.reshape(-1, B.shape[-1])
+            B = self._trans_x.inverse_transform([B])[0]   # A hack to get back to the original space
             F.append(fobs(B))
         return np.hstack(F)

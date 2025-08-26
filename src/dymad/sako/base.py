@@ -11,7 +11,7 @@ from dymad.sako.sako import SAKO
 
 logger = logging.getLogger(__name__)
 
-def filter_spectrum(sako, eigs, order='full'):
+def filter_spectrum(sako, eigs, order='full', remove_one=True):
     """
     Apply SAKO to the identified eigenpairs to compute the corresponding residuals
     """
@@ -42,6 +42,17 @@ def filter_spectrum(sako, eigs, order='full'):
     vl = vl_full[:,jdx]
     vr = vr_full[:,jdx]
 
+    if remove_one:
+        _d = np.abs(wd-1.0)
+        if np.min(_d) < 1e-10:
+            _i = np.argmin(_d)
+            logger.info(f"Removing eigenvalue {wd[_i]:5.4e} close to 1.0 with residual {res[_i]:3.1e}")
+            _m = np.arange(len(wd)) != _i
+            wd = wd[_m]
+            vl = vl[:,_m]
+            vr = vr[:,_m]
+            res = res[_m]
+
     return (wd, vl, vr), (wd_full, vl_full, vr_full), (res, res_full)
 
 class SpectralAnalysis:
@@ -58,7 +69,7 @@ class SpectralAnalysis:
     """
     def __init__(self,
                  model_class: Type[torch.nn.Module], checkpoint_path: str,
-                 forder='full', dt: float = 1.0, reps: float = 1e-10):
+                 forder='full', dt: float = 1.0, reps: float = 1e-10, remove_one=True):
         self._dt = dt
         self._reset()
 
@@ -70,7 +81,7 @@ class SpectralAnalysis:
         self._sako = SAKO(self._ctx._P0, self._ctx._P1, None, reps=reps)
         self._rals = RALowRank(self._vr, np.diag(self._wc.conj()), self._vl, dt=self._dt)
 
-        self.filter_spectrum(forder)
+        self.filter_spectrum(forder, remove_one=remove_one)
 
     def predict(self, x0, tseries, return_obs=False):
         """
@@ -97,15 +108,9 @@ class SpectralAnalysis:
         """
         return self._ctx.encode(X)
 
-    def apply_obs(self, fobs):
-        """
-        Apply a generic observable to the data.
-
-        Args:
-            fobs: Observable function.  Assuming 2D array input with each row as one step.
-                The output should be a 1D array, whose ith entry corresponds to the ith step.
-        """
-        return self._ctx.apply_obs(fobs).reshape(-1)
+    def estimate_measure(self, fobs, order, eps, thetas = 101):
+        gobs = self._ctx.apply_obs(fobs).reshape(-1)
+        return self._sako.estimate_measure(gobs, order, eps, thetas)
 
     def eval_eigfun(self, X, idx):
         """
@@ -161,12 +166,13 @@ class SpectralAnalysis:
         self.mapto_cnj = lambda X, I=_idx, W=_T: self.eval_eigfun(X, I).dot(W.T)
         self.mapto_nrm = lambda X, I=_idx, S=_sgn: self.eval_eigfun(X, I) * S
 
-    def filter_spectrum(self, order='full'):
+    def filter_spectrum(self, order='full', remove_one=True):
         """
         Apply SAKO to the identified eigenpairs to compute the corresponding residuals
         """
         eigs, eigs_full, res = filter_spectrum(
-            self._sako, (self._wd_full, self._vl_full, self._vr_full), order)
+            self._sako, (self._wd_full, self._vl_full, self._vr_full), order,
+            remove_one=remove_one)
 
         self._wd, self._vl, self._vr = eigs
         self._wd_full, self._vl_full, self._vr_full = eigs_full
@@ -283,6 +289,7 @@ class SpectralAnalysis:
         self._vl_full = self._vl
         self._vr_full = self._vr
 
+        self._Nrank = len(self._wd)
         # Unsure yet whether GEP is needed:
 
         # _M0 = self._sako._M0
@@ -383,7 +390,7 @@ class SpectralAnalysis:
 
         return f, ax
 
-    def plot_eigfun_2d(self, rngs, Ns, idx, mode='angle', space='full', ncols=2, figsize=(6,10)):
+    def plot_eigfun_2d(self, rngs, Ns, idx, mode='angle', space='full', ncols=2, figsize=(6,10), fig=None):
         # Regular grid
         x1s = np.linspace(rngs[0][0], rngs[0][1], Ns[0])
         x2s = np.linspace(rngs[1][0], rngs[1][1], Ns[1])
@@ -410,7 +417,10 @@ class SpectralAnalysis:
         _func = complex_map[mode]
         _Np = len(_idx)
         _nr = _Np // ncols + _Np % ncols
-        f, ax = plt.subplots(nrows=_nr, ncols=ncols, sharex=True, sharey=True, figsize=figsize)
+        if fig is None:
+            f, ax = plt.subplots(nrows=_nr, ncols=ncols, sharex=True, sharey=True, figsize=figsize)
+        else:
+            f, ax = fig
         _ax = ax.flatten()
         for _i in _idx:
             _F = _fun[:,_i].reshape(Ns[1], Ns[0])

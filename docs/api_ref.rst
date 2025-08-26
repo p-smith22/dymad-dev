@@ -15,4 +15,5 @@ Below you'll find the complete public API, grouped by module.
    dymad.numerics
    dymad.sako
    dymad.training
+   dymad.transform
    dymad.utils
