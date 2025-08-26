@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from typing import Type
 
-from dymad.numerics import check_orthogonality, complex_grid, complex_map, disc2cont, scaled_eig, truncate_sequence
+from dymad.numerics import check_orthogonality, complex_grid, complex_map, disc2cont, eig_low_rank, scaled_eig, truncate_sequence
 from dymad.sako.interface import SAInterface
 from dymad.sako.rals import estimate_pseudospectrum, RALowRank
 from dymad.sako.sako import SAKO
@@ -270,11 +270,9 @@ class SpectralAnalysis:
         weights = self._ctx.get_weights()
 
         if len(weights) == 2:
-            _Vr, _B = weights
-            _At = _B.conj().T.dot(_Vr)
-            _w, _vl, _vr = scaled_eig(_At)
-            self._vl = _B.dot(_vl) / _w.conj().reshape(1,-1)
-            self._vr = _Vr.dot(_vr)
+            _Vr, _B = weights  # A = Vr @ B^T
+            _w, self._vl, self._vr = eig_low_rank(_Vr, _B)
+
         elif len(weights) == 1:
             _W = weights[0]
             _w, self._vl, self._vr = scaled_eig(_W)

@@ -2,7 +2,7 @@ import numpy as np
 import scipy.linalg as spl
 import torch
 
-from dymad.numerics import check_orthogonality, expm_full_rank, expm_low_rank, real_lowrank_from_eigpairs, scaled_eig
+from dymad.numerics import check_orthogonality, eig_low_rank, expm_full_rank, expm_low_rank, logm_low_rank, real_lowrank_from_eigpairs, scaled_eig
 
 def cmp(sol, ref):
     return np.linalg.norm(sol-ref) / np.linalg.norm(ref)
@@ -35,6 +35,19 @@ def test_scaled_eig_gen():
         np.diag(vr.conj().T.dot(vr))) <= eps         # Equalized norms
     assert check_orthogonality(vl, vr, M=B)[1] <= eps    # Orthogonality
 
+def test_eig_low_rank():
+    N, R = 10, 3
+    eps = 1e-14
+    U = np.random.rand(N, R)
+    V = np.random.rand(N, R)
+    A = U @ V.T
+
+    w, vl, vr = eig_low_rank(U, V)
+    A_rec = vr @ np.diag(w) @ vl.conj().T
+
+    assert cmp(A, A_rec) <= eps
+    assert check_orthogonality(vl, vr)[1] <= eps
+
 def test_real_lowrank_real():
     S = A + A.T
     w, vl, vr = scaled_eig(S)
@@ -53,7 +66,6 @@ def test_real_lowrank_larger():
     S = np.eye(N) + 0.1*np.random.rand(N,N)
     w, vl, vr = scaled_eig(S)
     L, U, V = real_lowrank_from_eigpairs(w, vl, vr)
-    print(V @ L @ U.T)
     assert cmp(S, V @ L @ U.T) <= 10*eps
 
 def _eval_expm(A, t, b):
@@ -96,3 +108,29 @@ def test_expm_low_rank():
 
     assert E.shape == (T, B, N)
     assert cmp(E.detach().cpu().numpy(), E_ref) <= eps
+
+def test_logm_lowrank():
+    N, R = 10, 3
+    dt = 0.5
+    eps = 1e-14
+
+    # Make up some reasonable low-rank A = V U^T:
+    # S: A nearly skew-symmetric to force complex eigenvalues
+    # Q: A random orthonormal matrix
+    A = np.eye(R) + 0.1*np.random.rand(R,R)
+    S = A - 0.9*A.T
+    Q, _ = np.linalg.qr(np.random.randn(N,N))
+
+    U = Q[:, :R]
+    V = U @ S
+
+    # Use logm_low_rank
+    U_log, V_log = logm_low_rank(U, V, dt=dt)
+
+    # Exponential back using the definition in logm_low_rank
+    # But this is different from standard expm since we only use part of the eigendecomposition
+    wc, vl, vr = eig_low_rank(U_log, V_log)
+    wd = np.exp(wc*dt)
+    A_ref = np.real(vr @ np.diag(wd) @ vl.conj().T)
+
+    assert cmp(A_ref, U @ V.T) <= eps

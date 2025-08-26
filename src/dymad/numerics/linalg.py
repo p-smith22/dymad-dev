@@ -3,6 +3,8 @@ import scipy.linalg as spl
 import torch
 from typing import Tuple
 
+from dymad.numerics.complex import disc2cont
+
 def truncated_svd(X, order):
     """
     A vanilla interface for different types of truncation order.
@@ -114,6 +116,25 @@ def scaled_eig(A, B=None):
     _vr = _vr / _sr.reshape(1,-1)
     _vl = _vl / _sl.reshape(1,-1)
     return _wd, _vl, _vr
+
+def eig_low_rank(U, V):
+    """Approach like Exact DMD.
+
+    Suppose the full matrix is A = U V^T, with U, V of shape (n, r).
+
+    We compute the eigendecomposition of the small matrix A_tilde = V^T U of shape (r, r)
+
+    A_tilde = W @ L @ W_inv
+
+    Then A = (U W) @ L @ (V W_inv)^H
+
+    Furthermore, we scale the left and right eigenvectors so that they are orthonormal.
+    """
+    _At = V.T.dot(U)
+    _w, _vl, _vr = scaled_eig(_At)
+    _vl = V.dot(_vl) / _w.conj().reshape(1,-1)
+    _vr = U.dot(_vr)
+    return _w, _vl, _vr
 
 def truncate_sequence(seq, order):
     """
@@ -249,12 +270,15 @@ def real_lowrank_from_eigpairs(
 def _phiS(U: torch.Tensor, V: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
     """
     Compute a batch of phi_1(s_i * S) where S = V^T U, using block matrix exponentials.
-    Inputs:
+
+    Args:
       U: (n, r)
       V: (n, r)
       s: (m,) or (m, 1) real scalars (can be any float dtype)
+
     Returns:
       phi: (m, r, r) with phi[i] = phi_1(s[i] * S)
+
     Complexity:
       One-time S = V^T U: O(n r^2); then per s_i a matrix exp of size (2r x 2r).
       This is exact and stable even if S is singular.
@@ -290,7 +314,7 @@ def expm_low_rank(U: torch.Tensor,
     Uses the identity: exp(sA) = I + U [s * phi_1(s S)] V^T,  S = V^T U.
     So: b @ exp(sA) = b + (bU) [s * phi_1(s S)] V^T.
 
-    Inputs:
+    Args:
       U: (n, r)
       V: (n, r)
       s: (m,) list/1D tensor of scalars
@@ -364,3 +388,41 @@ def expm_full_rank(W: torch.Tensor,
     out = torch.bmm(b_expanded, expW)                  # (m, batch, n)
 
     return out
+
+def logm_low_rank(V: np.ndarray, U: np.ndarray, dt: float = 1.0):
+    """
+    Given A = V U^T dt (n x n, rank r) with V, U (n x r), compute logm(A).
+
+    Technically, this logarithm is ill-defined if A is not full rank,
+    but here we compute the following:
+
+    Suppose A has the eigendecomposition
+    A = W @ L @ R^H
+    and we let
+    logm(A) = W @ (log(L)/dt) @ R^H
+
+    For computational purpose, we return two real factors of logm(A),
+    with the help of real_lowrank_from_eigpairs.
+
+    Notes:
+        This approach does not work when A has negative real eigenvalues.
+
+    Args:
+        V, U : (n, r) real arrays
+            Tall factors of A = V U^T. Columns need not be orthonormal.
+
+    Returns:
+        V_out, U_out : (n, r) real arrays
+            Tall factors of logm(A).
+    """
+    wd, vl, vr = eig_low_rank(V, U)
+    wc = disc2cont(wd, dt)
+
+    _msk = (wd.real < 0) & (np.abs(wd.imag) <= 1e-10 * (1.0 + np.abs(wd.real)))
+    if np.any(_msk):
+        raise Warning(f"logm_low_rank: A has negative real eigenvalues: {wd[_msk]}.")
+
+    B, U_real, V_out = real_lowrank_from_eigpairs(wc, vl, vr)
+    U_out = U_real @ B.T
+
+    return V_out, U_out
