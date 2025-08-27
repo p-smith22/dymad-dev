@@ -69,7 +69,7 @@ class SpectralAnalysis:
     """
     def __init__(self,
                  model_class: Type[torch.nn.Module], checkpoint_path: str,
-                 forder='full', dt: float = 1.0, reps: float = 1e-10, remove_one=True):
+                 forder='full', dt: float = 1.0, reps: float = 1e-10, remove_one=True, etol: float = 1e-13):
         self._dt = dt
         self._reset()
 
@@ -78,7 +78,7 @@ class SpectralAnalysis:
         self._solve_eigs()
         logger.info(f"Orthonormality violation: {check_orthogonality(self._vl, self._vr)[1]:4.3e}")
         self._proc_eigs()
-        self._sako = SAKO(self._ctx._P0, self._ctx._P1, None, reps=reps)
+        self._sako = SAKO(self._ctx._P0, self._ctx._P1, None, reps=reps, etol=etol)
         self._rals = RALowRank(self._vr, np.diag(self._wc.conj()), self._vl, dt=self._dt)
 
         self.filter_spectrum(forder, remove_one=remove_one)

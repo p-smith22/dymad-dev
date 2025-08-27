@@ -101,12 +101,12 @@ def _ls_truncated(A: np.ndarray, b: np.ndarray, params=None) -> Tuple[np.ndarray
     tsvd = params
     V, U = truncated_lstsq(A, b, tsvd=tsvd)
     return V, U
-    
+
 def _ls_sako(A: np.ndarray, b: np.ndarray, params=None) -> Tuple[np.ndarray, np.ndarray]:
     """Using the SAKO object."""
     W = np.linalg.lstsq(A, b, rcond=None)[0]
     _w, _vl, _vr = scaled_eig(W)
-    sako = SAKO(A, b, reps=1e-10)
+    sako = SAKO(A, b, reps=1e-10, etol=1e-13)
     if isinstance(params, list):
         order = params[0]
         remove_one = params[1] if len(params) > 1 else True
@@ -157,7 +157,7 @@ def _ct_truncated_der(dataloader, model, dt, params=None):
 def _ct_full_log(dataloader, model, dt, params=None):
     A, b = get_batch_dt(dataloader, model, dt)
     W = _ls_full(A, b, params)
-    W = spl.logm(W[0]) / dt
+    W = spl.logm(W) / dt
     return (A, b), (W,)
 
 def _ct_truncated_log(dataloader, model, dt, params=None):

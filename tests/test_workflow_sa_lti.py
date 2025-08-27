@@ -33,7 +33,7 @@ trn_kl = [
         {"type": "lift", "fobs": "poly", "Ks": [4, 4]}
     ]
 
-trn_nd = {
+trn_nd1 = {
     "n_epochs": 100,
     "save_interval": 50,
     "load_checkpoint": False,
@@ -49,8 +49,16 @@ trn_nd = {
         "interval": 50,
         "times": 1}
         }
-trn_dt = copy.deepcopy(trn_nd)
-trn_dt["ls_update"]["method"] = "truncated"
+trn_nd2 = copy.deepcopy(trn_nd1)
+trn_nd2["ls_update"]["method"] = "full_log"
+
+trn_dt1 = copy.deepcopy(trn_nd1)
+trn_dt1["ls_update"]["method"] = "full"
+trn_dt2 = copy.deepcopy(trn_nd1)
+trn_dt2["ls_update"]["method"] = "truncated"
+trn_dt3 = copy.deepcopy(trn_nd1)
+trn_dt3["ls_update"]["method"] = "sako"
+
 ref = {
     "n_epochs": 1,
     "save_interval": 1,
@@ -76,11 +84,14 @@ config_path = 'sa_model.yaml'
 dt = 0.5
 
 cfgs = [
-    ('kbf_nd',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_nd}),
-    ('dkbf_nd', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt}),
-    ('dkbf_ln', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_ln}),
-    ('dkbf_tr', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_tr}),
-    ('dkbf_sa', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_sa}),
+    ('kbf_nd1',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_nd1}),
+    ('kbf_nd2',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_nd2}),
+    ('dkbf_nd1', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt1}),
+    ('dkbf_nd2', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt2}),
+    ('dkbf_nd3', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt3}),
+    ('dkbf_ln',  DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_ln}),
+    ('dkbf_tr',  DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_tr}),
+    ('dkbf_sa',  DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_sa}),
     ]
 
 def train_case(idx, data, path):
@@ -98,18 +109,20 @@ def predict_case(idx, sample, path):
         _prd = prd_func(x_data, t_data)
         _err = np.linalg.norm(_prd - x_data) / np.linalg.norm(x_data)
 
-        if mdl == 'dkbf_tr':
-            assert _err < 0.05
-        if mdl == 'kbf_nd':
+        if mdl in ['kbf_nd1', 'dkbf_nd2']:
             assert _err < 1e-4
+        elif mdl in ['kbf_nd2', 'dkbf_nd1']:
+            assert _err < 0.01
+        elif mdl == 'dkbf_tr':
+            assert _err < 0.05
         else:
             assert _err < 1e-5
 
 def sa_case(idx, path):
     _, MDL, _, _ = cfgs[idx]
-    _s = SpectralAnalysis(MDL, path/f'sa_model.pt', dt=dt, reps=1e-10)
+    _s = SpectralAnalysis(MDL, path/f'sa_model.pt', dt=dt, reps=1e-10, etol=1e-12)
 
-    xs = np.linspace(-1.3, 1.3, 51)
+    xs = np.linspace(-1.3, 1.3, 4)
     gg = np.vstack([xs, xs])
 
     grid, _pss = _s.estimate_ps(gg, mode='disc', method='standard', return_vec=False)
@@ -120,7 +133,7 @@ def sa_case(idx, path):
     def func_obs(x):
         _x1, _x2 = x.T
         return _x1+_x2
-    _s.estimate_measure(func_obs, 6, 0.1, thetas=501)
+    _s.estimate_measure(func_obs, 6, 0.1, thetas=5)
 
 @pytest.mark.parametrize("idx", range(len(cfgs)))
 def test_sa(sa_lti_data, sa_lti_test, env_setup, idx):

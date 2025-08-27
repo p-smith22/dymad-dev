@@ -7,6 +7,14 @@ from dymad.numerics import generate_coef
 
 logger = logging.getLogger(__name__)
 
+def clip_eig(M, tol=1e-13):
+    w, v = spl.eigh(M)
+    msk = w < tol
+    if np.any(msk):
+        logger.info(f"clip_eig: {np.sum(msk)} small eigenvalues found, max {np.max(-w[msk]):4.3e}")
+        w[msk] = tol
+    return v @ np.diag(w) @ v.conj().T
+
 class SAKO:
     """
     Spectral Analysis for Koopman Operators
@@ -24,8 +32,11 @@ class SAKO:
         P1 (np.ndarray): Psi_1
         W (np.ndarray): Weights for the inner product, default is identity matrix
         reps (float): Threshold for the imaginary part of the residual, default is 1e-10
+        etol (float): Tolerance for clipping small eigenvalues in the inner product matrices, default is 1e-13
     """
-    def __init__(self, P0: np.ndarray, P1: np.ndarray, W: np.ndarray = None, reps: float = 1e-10):
+    def __init__(
+            self, P0: np.ndarray, P1: np.ndarray,
+            W: np.ndarray = None, reps: float = 1e-10, etol: float = 1e-13):
         self._P0 = P0
         self._P1 = P1
         self._W  = np.array(W) if W is not None else np.ones(len(P0),)
@@ -50,6 +61,10 @@ class SAKO:
         self._M10 = self._M01.conj().T
         _M11 = (self._P1.conj().T * self._W).dot(self._P1)
         self._M11 = 0.5 * (_M11 + _M11.conj().T)
+
+        if etol is not None:
+            self._M00 = clip_eig(self._M00, tol=etol)
+            self._M11 = clip_eig(self._M11, tol=etol)
 
         self._M0 = self._M00
         self._M1 = self._M01

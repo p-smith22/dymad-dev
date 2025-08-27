@@ -20,14 +20,14 @@ dt = t_grid[1] - t_grid[0]
 # A = np.array([
 #     [0.0, 1.0],
 #     [-4.0, 0.0]])
-# prf = 'lti_dmp'
-# A = np.array([
-#     [0.0, 1.0],
-#     [-4.0, -1.0]])
-prf = 'lti_dgn'
-A = 0.5*np.array([
-    [-1.0,-0.9],
-    [0.0, -1.0]])
+prf = 'lti_dmp'
+A = np.array([
+    [0.0, 1.0],
+    [-4.0, -1.0]])
+# prf = 'lti_dgn'
+# A = 0.5*np.array([
+#     [-1.0,-0.9],
+#     [0.0, -1.0]])
 
 def f(t, x):
     return (x @ A.T)
@@ -156,11 +156,11 @@ if ifprd:
         labels=['Truth'] + labels, ifclose=False)
 
 if ifint:
-    sact = SpectralAnalysis(KBF,  'sa_kbf_nd.pt',  dt=dt, reps=1e-10)
-    sand = SpectralAnalysis(DKBF, 'sa_dkbf_nd.pt', dt=dt, reps=1e-10)
-    saln = SpectralAnalysis(DKBF, 'sa_dkbf_ln.pt', dt=dt, reps=1e-10)
-    satr = SpectralAnalysis(DKBF, 'sa_dkbf_tr.pt', dt=dt, reps=1e-10)
-    sasa = SpectralAnalysis(DKBF, 'sa_dkbf_sa.pt', dt=dt, reps=1e-10)
+    sact = SpectralAnalysis(KBF,  'sa_kbf_nd.pt',  dt=dt, reps=1e-10, etol=1e-12)
+    sand = SpectralAnalysis(DKBF, 'sa_dkbf_nd.pt', dt=dt, reps=1e-10, etol=1e-12)
+    saln = SpectralAnalysis(DKBF, 'sa_dkbf_ln.pt', dt=dt, reps=1e-10, etol=None)
+    satr = SpectralAnalysis(DKBF, 'sa_dkbf_tr.pt', dt=dt, reps=1e-10, etol=None)
+    sasa = SpectralAnalysis(DKBF, 'sa_dkbf_sa.pt', dt=dt, reps=1e-10, etol=None)
 
     sas = [saln, satr, sasa, sand, sact]
     lbs = ['DT-LN', 'DT-TR', 'DT-SA', 'DT-ND', 'CT-ND']
@@ -188,9 +188,9 @@ if ifint:
             pss, psk = [], []
             for _s in sas:
                 grid, _pss = _s.estimate_ps(gg, mode='disc', method='standard', return_vec=False)
-                # grid, _psk = _s.estimate_ps(gg, mode='disc', method='sako', return_vec=False)
+                grid, _psk = _s.estimate_ps(gg, mode='disc', method='sako', return_vec=False)
                 pss.append((grid, _pss))
-                # psk.append((grid, _psk))
+                psk.append((grid, _psk))
             # Exact
             psrf = estimate_pseudospectrum(
                 grid, resolvent_analysis, return_vec=False,
@@ -198,10 +198,10 @@ if ifint:
 
             for _i in range(5):
                 grid, _pss = pss[_i]
-                # grid, _psk = psk[_i]
+                grid, _psk = psk[_i]
                 f, ax[_i] = complex_plot(grid, 1/psrf, rng, fig=(f, ax[_i]), mode='line', lwid=0.5, lsty='dashed')
                 f, ax[_i] = complex_plot(grid, 1/_pss, rng, fig=(f, ax[_i]), mode='line', lwid=2, lsty='dotted')
-                # f, ax[_i] = complex_plot(grid, 1/_psk, rng, fig=(f, ax[_i]), mode='line', lwid=1)
+                f, ax[_i] = complex_plot(grid, 1/_psk, rng, fig=(f, ax[_i]), mode='line', lwid=1)
 
     if ifeic:
         ## Eigenvalues
@@ -223,9 +223,9 @@ if ifint:
             pss, psk = [], []
             for _s in sas:
                 grid, _pss = _s.estimate_ps(gg, mode='cont', method='standard', return_vec=False)
-                # grid, _psk = _s.estimate_ps(gg, mode='cont', method='sako', return_vec=False)
+                grid, _psk = _s.estimate_ps(gg, mode='cont', method='sako', return_vec=False)
                 pss.append((grid, _pss))
-                # psk.append((grid, _psk))
+                psk.append((grid, _psk))
             # Exact
             psrf = estimate_pseudospectrum(
                 grid, resolvent_analysis, return_vec=False,
@@ -233,10 +233,10 @@ if ifint:
 
             for _i in range(5):
                 grid, _pss = pss[_i]
-                # grid, _psk = psk[_i]
+                grid, _psk = psk[_i]
                 f, ax[_i] = complex_plot(grid, 1/psrf, rng, fig=(f, ax[_i]), mode='line', lwid=0.5, lsty='dashed')
                 f, ax[_i] = complex_plot(grid, 1/_pss, rng, fig=(f, ax[_i]), mode='line', lwid=2, lsty='dotted')
-                # f, ax[_i] = complex_plot(grid, 1/_psk, rng, fig=(f, ax[_i]), mode='line', lwid=1)
+                f, ax[_i] = complex_plot(grid, 1/_psk, rng, fig=(f, ax[_i]), mode='line', lwid=1)
 
         for _i in range(5):
             ax[_i].set_xlim([-4.0, 0.5])
