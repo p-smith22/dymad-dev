@@ -226,3 +226,55 @@ def ltga_test():
 
     # ---- Interface to the tests ----
     yield (x_data, t_data, edge_index)
+
+@pytest.fixture(scope='session')
+def sa_lti_data():
+    # ---- runs ONCE before any tests execute ----
+
+    # --------------------
+    # Data generation
+    B = 64
+    N = 21
+    t_grid = np.linspace(0, 10, N)
+
+    A = np.array([
+        [0.0, 1.0],
+        [-4.0, -1.0]])
+
+    def f(t, x):
+        return (x @ A.T)
+    g = lambda t, x: x
+
+    sampler = TrajectorySampler(f, g, config=HERE/'sa_data.yaml')
+    ts, xs, ys = sampler.sample(t_grid, batch=B)
+    np.savez_compressed(HERE/'sa.npz', t=ts, x=ys)
+
+    # ---- Interface to the tests ----
+    yield HERE/'sa.npz'
+
+    # ---- runs ONCE after all tests finish (even on failure) ----
+
+    # --------------------
+    # Clean up
+    if os.path.exists(HERE/'sa.npz'):
+        os.remove(HERE/'sa.npz')
+
+@pytest.fixture(scope='session')
+def sa_lti_test():
+    # ---- runs ONCE before any tests execute ----
+    N = 21
+    t_grid = np.linspace(0, 10, N)
+
+    A = np.array([
+        [0.0, 1.0],
+        [-4.0, -1.0]])
+
+    def f(t, x):
+        return (x @ A.T)
+    g = lambda t, x: x
+
+    sampler = TrajectorySampler(f, g, config=HERE/'sa_data.yaml')
+    ts, xs, ys = sampler.sample(t_grid, batch=1)
+
+    # ---- Interface to the tests ----
+    yield (xs[0], ts[0])

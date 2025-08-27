@@ -1,0 +1,131 @@
+import copy
+import numpy as np
+import os
+import pytest
+import torch
+
+from dymad.models import DKBF, KBF
+from dymad.sako import SpectralAnalysis
+from dymad.training import LinearTrainer, NODETrainer
+from dymad.utils import load_model
+
+mdl_kb = {
+    "name" : 'sa_model',
+    "encoder_layers" : 1,
+    "decoder_layers" : 1,
+    "koopman_dimension" : 16,
+    "activation" : "none",
+    "autoencoder_type" : "cat",
+    "weight_init" : "xavier_uniform",
+    "predictor_type" : "exp",
+    }
+
+mdl_kl = {
+    "name" : 'sa_model',
+    "encoder_layers" : 0,
+    "decoder_layers" : 0,
+    "koopman_dimension" : 16,
+    "activation" : "none",
+    "weight_init" : "xavier_uniform",
+    "predictor_type" : "exp",}
+trn_kl = [
+        {"type": "scaler", "mode": "-11"},
+        {"type": "lift", "fobs": "poly", "Ks": [4, 4]}
+    ]
+
+trn_nd = {
+    "n_epochs": 100,
+    "save_interval": 50,
+    "load_checkpoint": False,
+    "learning_rate": 5e-3,
+    "decay_rate": 0.999,
+    "reconstruction_weight": 1.0,
+    "dynamics_weight": 1.0,
+    "sweep_lengths": [2, 4],
+    "sweep_epoch_step": 100,
+    "ls_update": {
+        "method": "truncated_log",
+        "params": 2,
+        "interval": 50,
+        "times": 1}
+        }
+trn_dt = copy.deepcopy(trn_nd)
+trn_dt["ls_update"]["method"] = "truncated"
+ref = {
+    "n_epochs": 1,
+    "save_interval": 1,
+    "load_checkpoint": False,}
+trn_ln = {
+    "ls_update": {
+        "method": "full"}}
+trn_ln.update(ref)
+trn_tr = {
+    "ls_update": {
+        "method": "truncated",
+        "params": 0.999}}
+trn_tr.update(ref)
+trn_sa = {
+    "ls_update": {
+        "method": "sako",
+        "params": 9,
+        "remove_one": True}}
+trn_sa.update(ref)
+
+config_path = 'sa_model.yaml'
+
+dt = 0.5
+
+cfgs = [
+    ('kbf_nd',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_nd}),
+    ('dkbf_nd', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt}),
+    ('dkbf_ln', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_ln}),
+    ('dkbf_tr', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_tr}),
+    ('dkbf_sa', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_sa}),
+    ]
+
+def train_case(idx, data, path):
+    _, MDL, Trainer, opt = cfgs[idx]
+    opt.update({"data": {"path": data}})
+    config_path = path/'sa_model.yaml'
+    trainer = Trainer(config_path, MDL, config_mod=opt)
+    trainer.train()
+
+def predict_case(idx, sample, path):
+    x_data, t_data = sample
+    mdl, MDL, _, opt = cfgs[idx]
+    _, prd_func = load_model(MDL, path/'sa_model.pt', path/'sa_model.yaml', config_mod=opt)
+    with torch.no_grad():
+        _prd = prd_func(x_data, t_data)
+        _err = np.linalg.norm(_prd - x_data) / np.linalg.norm(x_data)
+
+        if mdl == 'dkbf_tr':
+            assert _err < 0.05
+        if mdl == 'kbf_nd':
+            assert _err < 1e-4
+        else:
+            assert _err < 1e-5
+
+def sa_case(idx, path):
+    _, MDL, _, _ = cfgs[idx]
+    _s = SpectralAnalysis(MDL, path/f'sa_model.pt', dt=dt, reps=1e-10)
+
+    xs = np.linspace(-1.3, 1.3, 51)
+    gg = np.vstack([xs, xs])
+
+    grid, _pss = _s.estimate_ps(gg, mode='disc', method='standard', return_vec=False)
+    grid, _psk = _s.estimate_ps(gg, mode='disc', method='sako', return_vec=False)
+    grid, _pss = _s.estimate_ps(gg, mode='cont', method='standard', return_vec=False)
+    grid, _psk = _s.estimate_ps(gg, mode='cont', method='sako', return_vec=False)
+
+    def func_obs(x):
+        _x1, _x2 = x.T
+        return _x1+_x2
+    _s.estimate_measure(func_obs, 6, 0.1, thetas=501)
+
+@pytest.mark.parametrize("idx", range(len(cfgs)))
+def test_sa(sa_lti_data, sa_lti_test, env_setup, idx):
+    train_case(idx, sa_lti_data, env_setup)
+    predict_case(idx, sa_lti_test, env_setup)
+    sa_case(idx, env_setup)
+    if os.path.exists(env_setup/'sa_model.pt'):
+        os.remove(env_setup/'sa_model.pt')

@@ -1,5 +1,3 @@
-# from pysako import resolventAnalysis, estimatePSpec
-
 import copy
 import logging
 import matplotlib.pyplot as plt
