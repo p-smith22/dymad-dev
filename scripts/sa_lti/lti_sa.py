@@ -1,5 +1,6 @@
 # from pysako import resolventAnalysis, estimatePSpec
 
+import copy
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,32 +18,37 @@ N = 21
 t_grid = np.linspace(0, 10, N)
 dt = t_grid[1] - t_grid[0]
 
-prf = 'lti_har'
-A = np.array([
-    [0.0, 1.0],
-    [-4.0, 0.0]])
+# prf = 'lti_har'
+# A = np.array([
+#     [0.0, 1.0],
+#     [-4.0, 0.0]])
 # prf = 'lti_dmp'
 # A = np.array([
 #     [0.0, 1.0],
 #     [-4.0, -1.0]])
-# prf = 'lti_dgn'
-# A = 0.5*np.array([
-#     [-1.0,-0.9],
-#     [0.0, -1.0]])
+prf = 'lti_dgn'
+A = 0.5*np.array([
+    [-1.0,-0.9],
+    [0.0, -1.0]])
 
 def f(t, x):
     return (x @ A.T)
 g = lambda t, x: x
 
 # True eigenvalues
-wa = np.exp(np.linalg.eig(A)[0]*dt)
 w0 = np.linalg.eig(A)[0]
+w0 = np.hstack(
+    [w0,
+     2*w0[0], 2*w0[1], w0[0]+w0[1],
+     3*w0[0], 3*w0[1], 2*w0[0]+w0[1], w0[0]+2*w0[1],
+     4*w0[0], 4*w0[1], 3*w0[0]+w0[1], 2*w0[0]+2*w0[1], w0[0]+3*w0[1]])
+wa = np.exp(w0*dt)
 
 mdl_kb = {
     "name" : 'sa_model',
     "encoder_layers" : 1,
     "decoder_layers" : 1,
-    "koopman_dimension" : 4,
+    "koopman_dimension" : 16,
     "activation" : "none",
     "autoencoder_type" : "cat",
     "weight_init" : "xavier_uniform",
@@ -53,13 +59,13 @@ mdl_kl = {
     "name" : 'sa_model',
     "encoder_layers" : 0,
     "decoder_layers" : 0,
-    "koopman_dimension" : 4,
+    "koopman_dimension" : 16,
     "activation" : "none",
     "weight_init" : "xavier_uniform",
     "predictor_type" : "exp",}
 trn_kl = [
         {"type": "scaler", "mode": "-11"},
-        {"type": "lift", "fobs": "poly", "Ks": [2, 2]}
+        {"type": "lift", "fobs": "poly", "Ks": [4, 4]}
     ]
 
 trn_nd = {
@@ -73,11 +79,13 @@ trn_nd = {
     "sweep_lengths": [2, 4],
     "sweep_epoch_step": 100,
     "ls_update": {
-        "method": "truncated",
+        "method": "truncated_log",
         "params": 2,
         "interval": 50,
-        "times": 2}
+        "times": 1}
         }
+trn_dt = copy.deepcopy(trn_nd)
+trn_dt["ls_update"]["method"] = "truncated"
 ref = {
     "n_epochs": 1,
     "save_interval": 1,
@@ -89,33 +97,34 @@ trn_ln.update(ref)
 trn_tr = {
     "ls_update": {
         "method": "truncated",
-        "params": 2}}
+        "params": 0.999}}
 trn_tr.update(ref)
 trn_sa = {
     "ls_update": {
         "method": "sako",
-        "params": 2}}
+        "params": 9,
+        "remove_one": True}}
 trn_sa.update(ref)
 
 config_path = 'sa_model.yaml'
 
 cfgs = [
     ('kbf_nd',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_nd}),
-    ('dkbf_nd', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_nd}),
+    ('dkbf_nd', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt}),
     ('dkbf_ln', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_ln}),
     ('dkbf_tr', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_tr}),
     ('dkbf_sa', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_sa}),
     ]
 
 IDX = [0, 1, 2, 3, 4]
-# IDX = [0, 1]
+# IDX = [0]
 # IDX = [2, 3, 4]
 labels = [cfgs[i][0] for i in IDX]
 
-ifdat = 0
+ifdat = 1
 iftrn = 1
 ifprd = 1
-ifint = 0
+ifint = 1
 
 if ifdat:
     sampler = TrajectorySampler(f, g, config='sa_data.yaml')
@@ -169,7 +178,7 @@ if ifint:
             f, ax[_i], _ls = sas[_i].plot_eigs(fig=(f, ax[_i]))
             _l, = ax[_i].plot(wa.real, wa.imag, 'kx', markersize=MRK)
             ax[_i].set_title(f'{lbs[_i]}\nMax res: {sas[_i]._res[-1]:4.3e}')
-            ax[_i].legend(_ls+[_l], [lbs[_i], "Truth"], loc=1)
+            ax[_i].legend(_ls+[_l], [lbs[_i], "Filtered", "Truth"], loc=1)
 
         if ifpsp:
             # Pseudospectra
@@ -196,10 +205,6 @@ if ifint:
                 f, ax[_i] = complex_plot(grid, 1/_pss, rng, fig=(f, ax[_i]), mode='line', lwid=2, lsty='dotted')
                 # f, ax[_i] = complex_plot(grid, 1/_psk, rng, fig=(f, ax[_i]), mode='line', lwid=1)
 
-        for _i in range(5):
-            ax[_i].set_xlim([-0.1, 1.3])
-            ax[_i].set_ylim([-1.1, 1.1])
-
     if ifeic:
         ## Eigenvalues
         MRK = 15
@@ -208,12 +213,12 @@ if ifint:
             f, ax[_i], _ls = sas[_i].plot_eigs(fig=(f, ax[_i]), mode='cont')
             _l, = ax[_i].plot(w0.real, w0.imag, 'kx', markersize=MRK)
             ax[_i].set_title(f'{lbs[_i]}\nMax res: {sas[_i]._res[-1]:4.3e}')
-            ax[_i].legend(_ls+[_l], [lbs[_i], "Truth"], loc=1)
+            ax[_i].legend(_ls+[_l], [lbs[_i], "Filtered", "Truth"], loc=1)
 
         if ifpsp:
             # Pseudospectra
-            zs = np.linspace(-1.2,0.5,51)
-            ws = np.linspace(-3.0,3.0,51)
+            zs = np.linspace(-4.0,0.5,51)
+            ws = np.linspace(-4.5,4.5,51)
             gg = np.vstack([zs,ws])
             rng = np.array([0.25, 0.5])
             # Predicted
@@ -236,8 +241,8 @@ if ifint:
                 # f, ax[_i] = complex_plot(grid, 1/_psk, rng, fig=(f, ax[_i]), mode='line', lwid=1)
 
         for _i in range(5):
-            ax[_i].set_xlim([-1.2, 0.5])
-            ax[_i].set_ylim([-3.0, 3.0])
+            ax[_i].set_xlim([-4.0, 0.5])
+            ax[_i].set_ylim([-4.5, 4.5])
 
     if ifres:
         ## Residuals
@@ -277,11 +282,11 @@ if ifint:
         ## Eigenfunctions
         rngs = [[-np.pi/2.5, np.pi/2.5], [-1.4, 1.4]]
         Ns = [101, 121]
-        md = 'real'
+        md = 'angle'
 
-        f, ax = plt.subplots(nrows=5, ncols=3, sharex=True, sharey=True, figsize=(10,10))
+        f, ax = plt.subplots(nrows=5, ncols=4, sharex=True, sharey=True, figsize=(10,10))
         for i in range(5):
-            _n = min(sas[i]._Nrank, 3)
+            _n = min(sas[i]._Nrank, 4)
             sas[i].plot_eigfun_2d(rngs, Ns, _n, mode=md, fig=(f, ax[i]))
             ax[i][0].set_ylabel(lbs[i])
 

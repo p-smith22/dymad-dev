@@ -1,16 +1,20 @@
 import inspect
 import logging
 import numpy as np
+import scipy.linalg as spl
 import torch
 from torch.utils.data import DataLoader
-from typing import Union
+from typing import Tuple, Union
 
 from dymad.data import DynData, DynGeoData
-from dymad.numerics.linalg import real_lowrank_from_eigpairs, scaled_eig, truncated_lstsq
+from dymad.numerics.linalg import logm_low_rank, real_lowrank_from_eigpairs, scaled_eig, truncated_lstsq
 from dymad.sako import filter_spectrum, SAKO
 
 logger = logging.getLogger(__name__)
 
+# ----------------
+# Elementary functions
+# ----------------
 def _dt_target(z: torch.Tensor) -> torch.Tensor:
     """Compute discrete-time targets."""
     return z[..., 1:, :]
@@ -61,31 +65,147 @@ def check_linear_impl(model) -> bool:
 
     return True
 
+# ----------------
+# Helper functions
+# ----------------
+def get_batch_dt(dataloader, model, dt) -> Tuple[np.ndarray, np.ndarray]:
+    A, b = [], []
+    for batch in dataloader:
+        _A, _b = _comp_linear_features_dt(model, batch, dt=dt)
+        A.append(_A)
+        b.append(_b)
+    A = torch.cat(A, dim=0).cpu().numpy()
+    b = torch.cat(b, dim=0).cpu().numpy()
+    return A, b
+
+def get_batch_ct(dataloader, model, dt) -> Tuple[np.ndarray, np.ndarray]:
+    A, b = [], []
+    for batch in dataloader:
+        _A, _b = _comp_linear_features_ct(model, batch, dt=dt)
+        A.append(_A)
+        b.append(_b)
+    A = torch.cat(A, dim=0).cpu().numpy()
+    b = torch.cat(b, dim=0).cpu().numpy()
+    return A, b
+
+# ----------------
+# LS solvers
+# ----------------
+def _ls_full(A: np.ndarray, b: np.ndarray, params=None) -> np.ndarray:
+    """Full least squares solver."""
+    W = np.linalg.lstsq(A, b, rcond=None)[0]
+    return W
+
+def _ls_truncated(A: np.ndarray, b: np.ndarray, params=None) -> Tuple[np.ndarray, np.ndarray]:
+    """Truncated least squares solver."""
+    tsvd = params
+    V, U = truncated_lstsq(A, b, tsvd=tsvd)
+    return V, U
+    
+def _ls_sako(A: np.ndarray, b: np.ndarray, params=None) -> Tuple[np.ndarray, np.ndarray]:
+    """Using the SAKO object."""
+    W = np.linalg.lstsq(A, b, rcond=None)[0]
+    _w, _vl, _vr = scaled_eig(W)
+    sako = SAKO(A, b, reps=1e-10)
+    if isinstance(params, list):
+        order = params[0]
+        remove_one = params[1] if len(params) > 1 else True
+    else:
+        order = params
+        remove_one = True
+    eigs, _, res = filter_spectrum(sako, (_w, _vl, _vr),
+                                    order=order, remove_one=remove_one)
+    logger.info(f"SAKO filtered {len(_w)-len(eigs)} out of {len(_w)} eigenvalues. Max residual: {max(res[0]):3.1e}")
+
+    _B, _R, _S = real_lowrank_from_eigpairs(*eigs)
+    # S @ B @ R.T = _vr @ _w @ _vl^H = W by linalg
+    # W = V @ U^T for FlexLinear
+    # So 
+    _V = _S @ _B
+    _U = _R
+
+    return _V, _U
+
+# ----------------
+# Combinations
+# ----------------
+def _dt_full(dataloader, model, dt, params=None):
+    A, b = get_batch_dt(dataloader, model, dt)
+    W = _ls_full(A, b, params)
+    return (A, b), (W,)
+
+def _dt_truncated(dataloader, model, dt, params=None):
+    A, b = get_batch_dt(dataloader, model, dt)
+    V, U = _ls_truncated(A, b, params)
+    return (A, b), (V, U)
+
+def _dt_sako(dataloader, model, dt, params=None):
+    A, b = get_batch_dt(dataloader, model, dt)
+    V, U = _ls_sako(A, b, params)
+    return (A, b), (V, U)
+
+def _ct_full_der(dataloader, model, dt, params=None):
+    A, b = get_batch_ct(dataloader, model, dt)
+    W = _ls_full(A, b, params)
+    return (A, b), (W,)
+
+def _ct_truncated_der(dataloader, model, dt, params=None):
+    A, b = get_batch_ct(dataloader, model, dt)
+    V, U = _ls_truncated(A, b, params)
+    return (A, b), (V, U)
+
+def _ct_full_log(dataloader, model, dt, params=None):
+    A, b = get_batch_dt(dataloader, model, dt)
+    W = _ls_full(A, b, params)
+    W = spl.logm(W[0]) / dt
+    return (A, b), (W,)
+
+def _ct_truncated_log(dataloader, model, dt, params=None):
+    A, b = get_batch_dt(dataloader, model, dt)
+    V, U = _ls_truncated(A, b, params)
+    V, U = logm_low_rank(V, U, dt=dt)
+    return (A, b), (V, U)
+
+def _ct_sako_log(dataloader, model, dt, params=None):
+    A, b = get_batch_dt(dataloader, model, dt)
+    V, U = _ls_sako(A, b, params)
+    V, U = logm_low_rank(V, U, dt=dt)
+    return (A, b), (V, U)
+
+SOL_MAP = {
+    'dt_full'      : _dt_full,
+    'dt_truncated' : _dt_truncated,
+    'dt_sako'      : _dt_sako,
+    'ct_full'      : _ct_full_der,
+    'ct_truncated' : _ct_truncated_der,
+    'ct_full_log'  : _ct_full_log,
+    'ct_truncated_log' : _ct_truncated_log,
+    'ct_sako_log'  : _ct_sako_log,
+}
+
 class LSUpdater:
     """
     Update linear weights by least squares.
     """
 
     def __init__(self, method, model, dt=None, params=None):
-        self.method = method
+        prefix = 'ct_' if model.CONT else 'dt_'
+        self.method = prefix + method
         self.params = params
         self.dt     = dt
 
         if not check_linear_impl(model):
             raise ValueError(f"{model} does not implement linear_features and linear_eval methods required for LS updates.")
 
-        if self.method not in ['full', 'truncated', 'sako']:
-            raise ValueError(f"Unsupported method: {self.method}. Supported methods are 'full', 'truncated', and 'sako'.")
+        if self.method not in SOL_MAP:
+            raise ValueError(f"Unsupported method: {self.method}. Supported methods are {list(SOL_MAP.keys())}.")
+        self.solver = SOL_MAP[self.method]
 
         if model.CONT:
-            if self.method == 'sako':
-                logger.warning("SAKO is designed for discrete-time systems.")
-            self._comp_linear_features = _comp_linear_features_ct
-            self._comp_linear_eval     = _comp_linear_eval_ct
+            self._comp_linear_eval = _comp_linear_eval_ct
             logger.info(f"Using continuous-time model for linear updates, dt={self.dt}.")
         else:
-            self._comp_linear_features = _comp_linear_features_dt
-            self._comp_linear_eval     = _comp_linear_eval_dt
+            self._comp_linear_eval = _comp_linear_eval_dt
             logger.info("Using discrete-time model for linear updates.")
 
         # Additional logging
@@ -108,53 +228,18 @@ class LSUpdater:
         dtype, device = next(model.parameters()).dtype, next(model.parameters()).device
 
         with torch.no_grad():
-            # Assemble the linear system
-            A, b = [], []
-            for batch in dataloader:
-                _A, _b = self._comp_linear_features(model, batch, dt=self.dt)
-                A.append(_A)
-                b.append(_b)
-            A = torch.cat(A, dim=0).cpu().numpy()
-            b = torch.cat(b, dim=0).cpu().numpy()
+            (A, b), weights = self.solver(dataloader, model, self.dt, self.params)
 
-            # Solve the linear system
-            if self.method == 'full':
-                W = np.linalg.lstsq(A, b, rcond=None)[0]
+            if len(weights) == 1:
+                W = weights[0]
                 Wt = torch.tensor(W, dtype=dtype, device=device)
                 params = model.set_linear_weights(Wt.T)
                 avg_epoch_loss = np.linalg.norm(A @ W - b) / A.shape[0]
-
-            elif self.method == 'truncated':
-                _V, _U = truncated_lstsq(A, b, tsvd=self.params)
+            else:
+                _V, _U = weights
+                avg_epoch_loss = np.linalg.norm((A @ _V) @ _U.T - b) / A.shape[0]
                 params = model.set_linear_weights(
                     U=torch.tensor(_U, dtype=dtype, device=device),
                     V=torch.tensor(_V, dtype=dtype, device=device))
-                avg_epoch_loss = np.linalg.norm((A @ _V) @ _U.T - b) / A.shape[0]
-
-            elif self.method == 'sako':
-                W = np.linalg.lstsq(A, b, rcond=None)[0]
-                _w, _vl, _vr = scaled_eig(W)
-                sako = SAKO(A, b, reps=1e-10)
-                if isinstance(self.params, list):
-                    order = self.params[0]
-                    remove_one = self.params[1] if len(self.params) > 1 else True
-                else:
-                    order = self.params
-                    remove_one = True
-                eigs, _, res = filter_spectrum(sako, (_w, _vl, _vr),
-                                               order=order, remove_one=remove_one)
-                logger.info(f"SAKO filtered {len(_w)-len(eigs)} out of {len(_w)} eigenvalues. Max residual: {max(res[0]):3.1e}")
-
-                _B, _R, _S = real_lowrank_from_eigpairs(*eigs)
-                # S @ B @ R.T = _vr @ _w @ _vl^H = W by linalg
-                # W = V @ U^T for FlexLinear
-                # So 
-                _V = _S @ _B
-                _U = _R
-
-                params = model.set_linear_weights(
-                    U=torch.tensor(_U, dtype=dtype, device=device),
-                    V=torch.tensor(_V, dtype=dtype, device=device))
-                avg_epoch_loss = np.linalg.norm((A @ _V) @ _U.T - b) / A.shape[0]
 
         return avg_epoch_loss, params
