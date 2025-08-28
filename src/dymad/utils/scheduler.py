@@ -51,7 +51,7 @@ class StandardScheduler(SchedulerBase):
     def step(self, **kwargs) -> bool:
         """Step through the wrapped scheduler."""
         self.scheduler.step()
-        return False
+        return False, False
 
     def state_dict(self) -> dict:
         """Return the state dictionary of the wrapped scheduler."""
@@ -122,12 +122,12 @@ class SweepScheduler(SchedulerBase):
     def step(self, eploss: float = None) -> bool:
         self.current_epoch += 1
 
-        flag = False
+        flag, changed = False, False
         if self._Nlen > 0:
             if self._Ntol == 0:
-                self._step_no_tolerance()
+                changed = self._step_no_tolerance()
             elif self._Ntol > 0:
-                self._step_with_tolerance(eploss)
+                changed = self._step_with_tolerance(eploss)
 
                 if (self.current_len == self._Nlen-1 and self.current_tol == self._Ntol-1):
                     if eploss < self.sweep_tols[-1]:
@@ -137,7 +137,7 @@ class SweepScheduler(SchedulerBase):
             # Do nothing if no sweep lengths are defined
             pass
 
-        return flag
+        return flag, changed
 
     def _step_no_tolerance(self) -> None:
         """Handle stepping when no tolerances are provided."""
@@ -146,6 +146,8 @@ class SweepScheduler(SchedulerBase):
         self.current_len = min(index, self._Nlen-1)
         if old_index != self.current_len:
             logger.info(f"Switching to sweep length {self.sweep_lengths[self.current_len]} at epoch {self.current_epoch}")
+            return True
+        return False
 
     def _step_with_tolerance_skip(self, eploss) -> None:
         self.sweep_epoch += 1
@@ -162,6 +164,8 @@ class SweepScheduler(SchedulerBase):
                     logger.info("Reached end of sweep lengths and tolerances. Stopping sweep.")
             logger.info(f"Switching to sweep length {self.sweep_lengths[self.current_len]} "
                         f"at epoch {self.current_epoch} with loss {eploss:.4e} with tolerance {current_tol:.4e}")
+            return True
+        return False
 
     def _step_with_tolerance_full(self, eploss) -> None:
         self.sweep_epoch += 1
@@ -180,6 +184,8 @@ class SweepScheduler(SchedulerBase):
                     logger.info("Reached end of sweep lengths and tolerances. Stopping sweep.")
             logger.info(f"Switching to sweep length {self.sweep_lengths[self.current_len]} "
                         f"at epoch {self.current_epoch} with loss {eploss:.4e} with tolerance {current_tol:.4e}")
+            return True
+        return False
 
     def get_length(self) -> int:
         return self.sweep_lengths[self.current_len]

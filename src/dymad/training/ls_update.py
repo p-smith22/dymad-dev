@@ -104,9 +104,8 @@ def _ls_truncated(A: np.ndarray, b: np.ndarray, params=None) -> Tuple[np.ndarray
 
 def _ls_sako(A: np.ndarray, b: np.ndarray, params=None) -> Tuple[np.ndarray, np.ndarray]:
     """Using the SAKO object."""
-    W = np.linalg.lstsq(A, b, rcond=None)[0]
-    _w, _vl, _vr = scaled_eig(W)
     sako = SAKO(A, b, reps=1e-10, etol=1e-13)
+    _w, _vl, _vr = sako.solve_eig()
     if isinstance(params, list):
         order = params[0]
         remove_one = params[1] if len(params) > 1 else True

@@ -96,7 +96,7 @@ class SpectralAnalysis:
         _p0 = self._ctx.encode(x0).reshape(-1)
         _b  = self._proj.dot(_p0)
         _ls = np.exp(self._wc.conj().reshape(-1,1) * _ts)
-        _pt = (self._vl*_b).dot(_ls).T
+        _pt = (self._vr*_b).dot(_ls).T
         _xt = self._ctx.decode(_pt)
         if return_obs:
             return _xt, _pt
@@ -117,21 +117,21 @@ class SpectralAnalysis:
         Evaluate the eigenfunctions at given locations
         """
         _P = self.mapto_obs(X)
-        return _P.dot(self._vr[:,idx])
+        return _P.dot(self._vl[:,idx])
 
     def eval_eigfun_em(self, X, idx, rng):
         """
         Evaluate the eigenfunctions at given locations in embedded space
         """
         _P = self._ctx.encode(X, rng)
-        return _P.dot(self._vr[:,idx])
+        return _P.dot(self._vl[:,idx])
 
     def eval_eigfun_par(self, par, idx, func):
         """
         Evaluate the eigenfunctions at given parametrization
         """
         _P = self.mapto_obs(func(par))
-        return _P.dot(self._vr[:,idx])
+        return _P.dot(self._vl[:,idx])
 
     def set_conj_map(self, J):
         """
@@ -155,13 +155,13 @@ class SpectralAnalysis:
             ))
             _idx.append(_i)
             # Check the sign by evaluating along w_i, and v_i^H w_i = +/- 1
-            _f1 = self.eval_eigfun(_eps*_vr[:,_j].reshape(1,-1), _i)
+            _f1 = self.eval_eigfun(_eps*_vl[:,_j].reshape(1,-1), _i)
             _f0 = self.eval_eigfun(np.zeros((1,_N)), _i)   # Supposed to be 0
             _vw =  (_f1-_f0) / _eps
             _sgn.append(np.sign(_vw.real))
         _sgn = np.array(_sgn).reshape(-1)
         logger.info(f"Flipping: {_sgn}")
-        _T = _vr * _sgn
+        _T = _vl * _sgn
         # The mappings
         self.mapto_cnj = lambda X, I=_idx, W=_T: self.eval_eigfun(X, I).dot(W.T)
         self.mapto_nrm = lambda X, I=_idx, S=_sgn: self.eval_eigfun(X, I) * S
@@ -228,7 +228,7 @@ class SpectralAnalysis:
                 # u=(K-zI)v
                 _b  = self._proj.dot(_v)
                 _ls = self._wd.conj().reshape(-1,1)
-                _u = (self._vl*_b).dot(_ls).reshape(-1)
+                _u = (self._vr*_b).dot(_ls).reshape(-1)
                 _u -= _z*_v
             else:
                 _e = self._sako._ps_point(_z, False)
@@ -288,13 +288,6 @@ class SpectralAnalysis:
         self._vr_full = self._vr
 
         self._Nrank = len(self._wd)
-        # Unsure yet whether GEP is needed:
-
-        # _M0 = self._sako._M0
-        # _M1 = self._sako._M1
-        # ## Generalized eigenvalue problem
-        # self._wd_full, _vl_full, self._vr_full = scaled_eig(_M1, _M0)
-        # self._vl_full = _M0.conj().T.dot(_vl_full)
 
     def _proc_eigs(self):
         """
@@ -302,8 +295,8 @@ class SpectralAnalysis:
         """
         self._wc_full = disc2cont(self._wd_full, self._dt)
         self._wc = disc2cont(self._wd, self._dt)
-        # self._proj = np.linalg.solve(self._vl.conj().T.dot(self._vl), self._vl.conj().T)
-        self._proj = self._vr.conj().T   # Mathemetically correct, but numerically inaccurate.
+        # self._proj = np.linalg.solve(self._vr.conj().T.dot(self._vr), self._vr.conj().T)
+        self._proj = self._vl.conj().T   # Mathemetically correct, but numerically inaccurate.
 
     def plot_eigs(self, fig=None, plot_full='bo', plot_filt='r^', mode='disc'):
         if fig is None:
@@ -436,9 +429,9 @@ class SpectralAnalysis:
 
         # Vectors
         if which == 'func':
-            _vec = self._vr
-        elif which == 'mode':
             _vec = self._vl
+        elif which == 'mode':
+            _vec = self._vr
         else:
             raise ValueError(f"Unknown quantity to plot: {which}")
 

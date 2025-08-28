@@ -106,7 +106,7 @@ class SAInterface:
         """
         if rng is None:
             _X = torch.tensor(X, dtype=self.dtype).to(self.device)
-            _Z = self.model.decoder(_X).cpu().detach().numpy()
+            _Z = self.model.decoder(_X, None).cpu().detach().numpy()
             _Z = self._trans_x.inverse_transform([_Z])[0]
             return _Z
         raise NotImplementedError("Decoding with a range is not implemented yet.")

@@ -15,4 +15,4 @@ split:
   train_frac: 0.75
 
 dataloader:
-  batch_size: 32
+  batch_size: 64

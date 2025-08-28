@@ -3,7 +3,7 @@ import numpy as np
 import scipy.linalg as spl
 from typing import Tuple, Union
 
-from dymad.numerics import generate_coef
+from dymad.numerics import generate_coef, scaled_eig
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,11 @@ class SAKO:
 
         self._M0 = self._M00
         self._M1 = self._M01
+
+    def solve_eig(self):
+        _wd_full, _vl_full, _vr_full = scaled_eig(self._M01, self._M00)
+        _vl_full = self._M00.conj().T.dot(_vl_full)
+        return _wd_full, _vl_full, _vr_full
 
     def estimate_residual(self, ls: np.ndarray, gs: np.ndarray) -> np.ndarray:
         """
