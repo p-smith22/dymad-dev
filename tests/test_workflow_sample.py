@@ -8,8 +8,8 @@ HERE = Path(__file__).parent
 
 config_path = HERE/'lti_data.yaml'
 
-B = 128
-N = 501
+B = 32
+N = 101
 t_grid = np.linspace(0, 5, N)
 
 A = np.array([
@@ -72,10 +72,17 @@ x0_grd = {
                 [-1.0, 1.0],
                 [0.0, 1.0]],
             "n_points": [15, 10]}}
+x0_per = {
+        "kind": "perturb",
+        "params": {
+            "bounds": [
+                [-1.0, 1.0],
+                [0.0, 1.0]],
+            "ref": np.array([[3, 3], [3, -3], [-3, -3]])}}
 
-ctrls = [ctrl_sin, ctrl_gau, ctrl_chr, ctrl_sph]
-x0s   = [x0_ga1, x0_ga2, x0_uni, x0_grd]
-ttls  = ['Sine+Gaussian1', 'Gaussian+Gaussian2', 'Chirp+Uniform', 'Sphere+Grid']
+ctrls = [ctrl_sin, ctrl_gau, ctrl_chr, ctrl_sph, ctrl_chr]
+x0s   = [x0_ga1, x0_ga2, x0_uni, x0_grd, x0_per]
+ttls  = ['Sine+Gaussian1', 'Gaussian+Gaussian2', 'Chirp+Uniform', 'Sphere+Grid', 'Perturbation']
 
 def sample_case(j):
     config_mod = {

@@ -112,8 +112,7 @@ def _ls_sako(A: np.ndarray, b: np.ndarray, params=None) -> Tuple[np.ndarray, np.
     else:
         order = params
         remove_one = True
-    eigs, _, res = filter_spectrum(sako, (_w, _vl, _vr),
-                                    order=order, remove_one=remove_one)
+    eigs, _, res = filter_spectrum(sako, (_w, _vl, _vr), order=order, remove_one=remove_one)
     logger.info(f"SAKO filtered {len(_w)-len(eigs)} out of {len(_w)} eigenvalues. Max residual: {max(res[0]):3.1e}")
 
     _B, _R, _S = real_lowrank_from_eigpairs(*eigs)

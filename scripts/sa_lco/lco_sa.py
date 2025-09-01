@@ -12,9 +12,9 @@ from dymad.sako import SpectralAnalysis
 from dymad.training import LinearTrainer, NODETrainer
 from dymad.utils import load_model, plot_trajectory, setup_logging, TrajectorySampler
 
-B = 400
-N = 61
-t_grid = np.linspace(0, 6, N)
+B = 500
+N = 41
+t_grid = np.linspace(0, 4, N)
 dt = t_grid[1] - t_grid[0]
 
 mu = 1.0
@@ -27,17 +27,25 @@ def f(t, x):
     return dx
 g = lambda t, x: x
 
+# Reference trajectory
+_Nt = 161
+_ts = np.linspace(0, 40.0, 8*_Nt)
+_res = spi.solve_ivp(f, [0,_ts[-1]], [2,2], t_eval=_ts)
+_ref = _res.y[:,-240:].T
+
 # Reference frequencies
-_Nt, _T = 161, 40.0
-_ts = np.linspace(0, _T, 8*_Nt)
-_dt = _ts[1]
-_res = spi.solve_ivp(f, [0,_T], [2,2], t_eval=_ts)
 _tmp = _res.y[0,-4*_Nt:]
+_dt = _ts[1]           # dt from reference
 sp = np.fft.fft(_tmp)
 fr = np.fft.fftfreq(4*_Nt)/_dt*(2*np.pi)
 ii = np.argmax(np.abs(sp))
 w0 = np.abs(fr[ii])
-wa = np.exp(np.array([-5,-4,-3,-2,-1,1,2,3,4,5]) * (1j*w0*dt))
+wa = np.exp(np.array([-5,-4,-3,-2,-1,1,2,3,4,5]) * (1j*w0*dt)) # Use dt from data
+
+# Transition to LCO
+db = 0.2
+# # LCO
+# db = 0.001
 
 mdl_kb = {
     "name" : 'sa_model',
@@ -90,6 +98,11 @@ trn_ln = {
         "method": "sako",
         "params": 0.2}
     }
+
+smpl = {'x0': {
+    'kind': 'perturb',
+    'params': {'bounds': [-db, db], 'ref': _ref}}
+    }
 config_path = 'sa_model.yaml'
 
 cfgs = [
@@ -102,15 +115,16 @@ IDX = [2]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
-iftrn = 1
+iftrn = 0
+ifprd = 0
 ifint = 1
 
 if ifdat:
-    sampler = TrajectorySampler(f, g, config='sa_data.yaml', config_mod={'postprocess': {'n_skip': 20}})
+    sampler = TrajectorySampler(f, g, config='sa_data.yaml', config_mod=smpl)
     ts, xs, ys = sampler.sample(t_grid, batch=B, save='./data/sa.npz')
 
     for i in range(B):
-        plt.plot(xs[i, :, 0], xs[i, :, 1])
+        plt.plot(ys[i, :, 0], ys[i, :, 1])
 
 if iftrn:
     for i in IDX:
@@ -121,7 +135,8 @@ if iftrn:
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
-    sampler = TrajectorySampler(f, config='sa_data.yaml')
+if ifprd:
+    sampler = TrajectorySampler(f, g, config='sa_data.yaml', config_mod=smpl)
     ts, xs, ys = sampler.sample(t_grid, batch=1)
     x_data = xs[0]
     t_data = ts[0]
@@ -143,99 +158,131 @@ if ifint:
     sadt = SpectralAnalysis(DKBF, 'sa_dkbf_ln.pt', dt=dt, reps=1e-10)
     sact = SpectralAnalysis(KBF,  'sa_kbf_nd.pt',  dt=dt, reps=1e-10)
 
-    ifeig, ifeic, ifpsp, ifres = 1, 1, 1, 1
-    ifspe, ifegf = 1, 1
+    sas = [sadt, sact]
+    lbs = ['DT-LN', 'CT-ND']
+    Ns  = len(sas)
+
+    ifprd = 0
+    ifeig, ifeic, ifpsp, ifres = 1, 0, 1, 0
+    ifspe, ifegf = 0, 0
+
+    if ifprd:
+        J = 16
+        sampler = TrajectorySampler(f, g, config='sa_data.yaml', config_mod=smpl)
+        ts, xs, _ = sampler.sample(t_grid, batch=J)
+
+        xp = []
+        for i in range(J):
+            xp.append(sadt.predict(xs[i, 0, :], t_grid))
+        xp = np.array(xp)
+
+        fig, axs = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
+        for i in range(J):
+            axs[0].plot(ts[i], xp[i, :, 0], 'b-')
+            axs[0].plot(ts[i], xs[i, :, 0], 'r--')
+            axs[1].plot(ts[i], xp[i, :, 1], 'b-')
+            axs[1].plot(ts[i], xs[i, :, 1], 'r--')
+        axs[0].set_ylabel('x1')
+        axs[1].set_xlabel('Time')
+        axs[1].set_ylabel('x2')
+        plt.tight_layout()
 
     if ifeig:
         ## Eigenvalues
         MRK = 15
-        f, ax = plt.subplots(ncols=2, sharey=True, figsize=(12,5))
-        f, ax[0], _ls = sadt.plot_eigs(fig=(f, ax[0]))
-        _l, = ax[0].plot(wa.real, wa.imag, 'kx', markersize=MRK)
-        ax[0].set_title(f'DT, Max res: {sadt._res[-1]:4.3e}')
-        ax[0].legend(_ls+[_l], ["Full-order", "Filtered", "Truth"], loc=1)
-
-        f, ax[1], _l1 = sact.plot_eigs(fig=(f, ax[1]))
-        _l, = ax[1].plot(wa.real, wa.imag, 'kx', markersize=MRK)
-        ax[1].set_title(f'CT, Max res: {sact._res[-1]:4.3e}')
+        fig, ax = plt.subplots(ncols=Ns, sharey=True, figsize=(12,5))
+        for _i in range(Ns):
+            fig, ax[_i], _ls = sas[_i].plot_eigs(fig=(fig, ax[_i]), plot_filt=None)
+            _l, = ax[_i].plot(wa.real, wa.imag, 'kx', markersize=MRK)
+            ax[_i].set_title(f'{lbs[_i]}\nMax res: {sas[_i]._res[-1]:4.3e}')
+            ax[_i].legend(_ls+[_l], ["Full-Order", "Truth"], loc=1)
 
         if ifpsp:
             # Pseudospectra
             xs = np.linspace(-1.3, 1.3, 51)
             gg = np.vstack([xs, xs])
             rng = np.array([0.1, 0.25])
-            # DT
-            grid, psrd = sadt.estimate_ps(gg, mode='disc', method='sako', return_vec=False)
-            grid, psrs = sadt.estimate_ps(gg, mode='disc', method='standard', return_vec=False)
-            # CT
-            grid, psed = sact.estimate_ps(gg, mode='disc', method='standard', return_vec=False)
 
-            f, ax[0] = complex_plot(grid, 1/psrd, rng, fig=(f, ax[0]), mode='line', lwid=1)
-            f, ax[0] = complex_plot(grid, 1/psrs, rng, fig=(f, ax[0]), mode='line', lsty='dotted')
-            f, ax[1] = complex_plot(grid, 1/psed, rng, fig=(f, ax[1]), mode='line')
+            # Predicted
+            pss, psk = [], []
+            for _s in sas:
+                grid, _pss = _s.estimate_ps(gg, mode='disc', method='standard', return_vec=False)
+                grid, _psk = _s.estimate_ps(gg, mode='disc', method='sako', return_vec=False)
+                pss.append((grid, _pss))
+                psk.append((grid, _psk))
 
-        for _i in range(2):
+            for _i in range(Ns):
+                grid, _pss = pss[_i]
+                grid, _psk = psk[_i]
+                f, ax[_i] = complex_plot(grid, 1/_pss, rng, fig=(f, ax[_i]), mode='line', lwid=2, lsty='dotted')
+                f, ax[_i] = complex_plot(grid, 1/_psk, rng, fig=(f, ax[_i]), mode='line', lwid=1)
+
+        for _i in range(Ns):
             ax[_i].set_xlim([-0.1, 1.3])
             ax[_i].set_ylim([-1.1, 1.1])
 
     if ifeic:
         ## Eigenvalues
         MRK = 15
-        f, ax = plt.subplots(ncols=2, sharey=True, figsize=(12,5))
-        f, ax[0], _ls = sadt.plot_eigs(fig=(f, ax[0]), mode='cont')
-        _l, = ax[0].plot(w0.real, w0.imag, 'kx', markersize=MRK)
-        ax[0].set_title(f'DT, Max res: {sadt._res[-1]:4.3e}')
-        ax[0].legend(_ls+[_l], ["Full-order", "Filtered", "Truth"], loc=1)
-
-        f, ax[1], _l1 = sact.plot_eigs(fig=(f, ax[1]), mode='cont')
-        _l, = ax[1].plot(w0.real, w0.imag, 'kx', markersize=MRK)
-        ax[1].set_title(f'CT, Max res: {sact._res[-1]:4.3e}')
+        fig, ax = plt.subplots(ncols=3, sharey=True, figsize=(15,5))
+        for _i in range(Ns):
+            fig, ax[_i], _ls = sas[_i].plot_eigs(fig=(fig, ax[_i]), mode='cont', plot_filt=None)
+            _l, = ax[_i].plot(w0.real, w0.imag, 'kx', markersize=MRK)
+            ax[_i].set_title(f'{lbs[_i]}\nMax res: {sas[_i]._res[-1]:4.3e}')
+            ax[_i].legend(_ls+[_l], ["Full-Order", "Truth"], loc=1)
 
         if ifpsp:
             # Pseudospectra
-            zs = np.linspace(-1.0,0.5,51)
-            ws = np.linspace(-3.0,3.0,51)
+            zs = np.linspace(-4.0,0.5,51)
+            ws = np.linspace(-6.6,6.6,51)
             gg = np.vstack([zs,ws])
-            rng = np.array([0.1, 0.25])
-            # DT
-            grid, psrd = sadt.estimate_ps(gg, mode='cont', method='sako', return_vec=False)
-            grid, psrs = sadt.estimate_ps(gg, mode='cont', method='standard', return_vec=False)
-            # CT
-            grid, psed = sact.estimate_ps(gg, mode='cont', method='standard', return_vec=False)
+            rng = np.array([0.25, 0.5])
+            # Predicted
+            pss, psk = [], []
+            for _s in sas:
+                grid, _pss = _s.estimate_ps(gg, mode='cont', method='standard', return_vec=False)
+                grid, _psk = _s.estimate_ps(gg, mode='cont', method='sako', return_vec=False)
+                pss.append((grid, _pss))
+                psk.append((grid, _psk))
 
-            f, ax[0] = complex_plot(grid, 1/psrd, rng, fig=(f, ax[0]), mode='line', lwid=1)
-            f, ax[0] = complex_plot(grid, 1/psrs, rng, fig=(f, ax[0]), mode='line', lsty='dotted')
-            f, ax[1] = complex_plot(grid, 1/psed, rng, fig=(f, ax[1]), mode='line')
+            for _i in range(Ns):
+                grid, _pss = pss[_i]
+                grid, _psk = psk[_i]
+                fig, ax[_i] = complex_plot(grid, 1/_pss, rng, fig=(fig, ax[_i]), mode='line', lwid=2, lsty='dotted')
+                fig, ax[_i] = complex_plot(grid, 1/_psk, rng, fig=(fig, ax[_i]), mode='line', lwid=1)
 
-        # for _i in range(2):
-        #     ax[_i].set_xlim([-1.0, 0.5])
-#         ax[_i].set_ylim([-3.0, 3.0])
+        for _i in range(2):
+            ax[_i].set_xlim([-4.0, 0.5])
+            ax[_i].set_ylim([-6.6, 6.6])
 
     if ifres:
         ## Residuals
-        f, ax = plt.subplots()
-        ax.semilogy(np.abs(sadt._wd_full), sadt._res_full, 'bo', label='Full-order')
-        ax.semilogy(np.abs(sadt._wd), sadt._res, 'r^', label='DT')
-        ax.semilogy(np.abs(sact._wd), sact._res, 'gs', markerfacecolor='none', label='CT')
+        stys = ['bo', 'r^', 'gs', 'md', 'c*']
+        fig, ax = plt.subplots()
+        for _i in range(Ns):
+            ax.semilogy(np.abs(sas[_i]._wd), sas[_i]._res, stys[_i], label=lbs[_i], markerfacecolor='none')
         ax.set_xlabel('Norm of eigenvalue')
         ax.set_ylabel('Residual')
         ax.legend()
 
     if ifspe:
         # Spectral measure
+        stys = ['b-', 'r-', 'g--', 'm--', 'c-']
         def func_obs(x):
             _x1, _x2 = x.T
             return _x1+_x2
-        gobs = sact.apply_obs(func_obs)
-        th1, vg1 = sadt._sako.estimate_measure(gobs, 6, 0.1, thetas=501)
-        th2, vg2 = sact._sako.estimate_measure(gobs, 6, 0.1, thetas=501)
+        vgs = []
+        for _s in sas:
+            _t, _v = _s.estimate_measure(func_obs, 6, 0.1, thetas=501)
+            vgs.append((_t, _v))
 
         _arg = np.angle(wa)
-        _amp = np.max(vg1)
+        _amp = np.max(vgs[0][1])
 
         f = plt.figure()
-        plt.plot(th1, vg1, 'b-',  label='DT')
-        plt.plot(th2, vg2, 'r--', label='CT')
+        for _i in range(Ns):
+            th, vg = vgs[_i]
+            plt.plot(th, vg, stys[_i], label=lbs[_i], markerfacecolor='none')
         plt.plot([_arg[0], _arg[0]], [0, _amp], 'k:', label='System frequency')
         for _a in _arg[1:]:
             plt.plot([_a, _a], [0, _amp], 'k:')
@@ -246,11 +293,16 @@ if ifint:
     if ifegf:
         ## Eigenfunctions
         rngs = [[-np.pi/2.5, np.pi/2.5], [-1.4, 1.4]]
-        Ns = [101, 121]
-        md = 'abs'
-        sadt.plot_eigfun_2d(rngs, Ns, 3, mode=md, ncols=3, figsize=(10,6))
-        sadt.plot_eigfun_2d(rngs, Ns, 3, mode='angle', ncols=3, figsize=(10,6))
-        sact.plot_eigfun_2d(rngs, Ns, 3, mode=md, ncols=3, figsize=(10,6))
+        Ne = [101, 121]
+
+        f1, a1 = plt.subplots(nrows=Ns, ncols=4, sharex=True, sharey=True, figsize=(10,10))
+        f2, a2 = plt.subplots(nrows=Ns, ncols=4, sharex=True, sharey=True, figsize=(10,10))
+        for i in range(Ns):
+            _n = min(sas[i]._Nrank, 4)
+            sas[i].plot_eigfun_2d(rngs, Ne, _n, mode='abs', fig=(f1, a1[i]))
+            a1[i][0].set_ylabel(lbs[i])
+            sas[i].plot_eigfun_2d(rngs, Ne, _n, mode='angle', fig=(f2, a2[i]))
+            a2[i][0].set_ylabel(lbs[i])
 
 plt.show()
 

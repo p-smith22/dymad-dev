@@ -289,9 +289,38 @@ def uniform_x0(*,
         return _rng.uniform(low=bounds[0], high=bounds[1], size=(dim,))
     return _sampler
 
+def perturb_x0(*,
+               bounds: Union[float, Array],
+               dim:  int,
+               ref:  Array,
+               rng:  np.random.Generator = None) -> Callable:
+    """
+    Generate a uniformly random initial condition sampler.
+
+    Args:
+        bounds (Union[float, Array]): Bounds for the uniform sampling.
+
+            - If scalar, it is broadcasted to the dimension.
+            - If an array, it should have shape (dim,2).
+
+        dim (int): Dimension of the initial condition.
+        ref (Array): Reference trajectory to perturb, shape (n_steps, dim).
+        rng (np.random.Generator): Random number generator for sampling.
+
+    Returns:
+        Callable:
+            A callable that takes an index and returns a perturbed sample.
+    """
+    bounds = np.broadcast_to(bounds, (dim, 2)).T
+    def _sampler(i: int, _rng=rng, _ref=ref) -> Array:
+        _j = _rng.integers(0, _ref.shape[0])
+        return _ref[_j] + _rng.uniform(low=bounds[0], high=bounds[1], size=(dim,))
+    return _sampler
+
 _X0_MAP = {
     "gaussian" : gaussian_x0,
     "grid"     : grid_x0,
+    "perturb"  : perturb_x0,
     "uniform"  : uniform_x0,
 }
 

@@ -1,6 +1,6 @@
 data:
   path: './data/sa.npz'
-  n_samples: 400
+  n_samples: 500
   n_steps: 41
   double_precision: true
 
@@ -12,7 +12,7 @@ transform_u:
   type: "identity"
 
 split:
-  train_frac: 0.75
+  train_frac: 0.8
 
 dataloader:
   batch_size: 300

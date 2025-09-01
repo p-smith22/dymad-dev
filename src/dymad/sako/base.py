@@ -323,7 +323,12 @@ class SpectralAnalysis:
             raise ValueError(f"Unknwon mode {mode} for plotting spectrum")
         ax.set_xlabel('Real')
         ax.set_ylabel('Imag')
-        return f, ax, [_l1, _l2]
+        _ls = []
+        if _l1 is not None:
+            _ls.append(_l1)
+        if _l2 is not None:
+            _ls.append(_l2)
+        return f, ax, _ls
 
     def plot_pred_x(self, x0s, ts, ref=None, idx='all', figsize=(6,8)):
         if idx == 'all':
