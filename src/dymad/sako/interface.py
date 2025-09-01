@@ -78,7 +78,7 @@ class SAInterface:
         self._P0 = np.concatenate(P0, axis=0)
         self._P1 = np.concatenate(P1, axis=0)
 
-        self._Ninp = self.model.n_total_state_features
+        self._Ninp = self._trans_x._inp_dim
         self._Nout = self.model.koopman_dimension
 
     def get_weights(self) -> Tuple[np.ndarray]:

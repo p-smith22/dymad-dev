@@ -156,22 +156,10 @@ if ifint:
         J = 16
         sampler = TrajectorySampler(f, config='kp_data.yaml')
         ts, xs, _ = sampler.sample(t_grid, batch=J)
+        x0s = xs[:, 0, :].squeeze()
 
-        xp = []
-        for i in range(J):
-            xp.append(sasa.predict(xs[i, 0, :], t_grid))
-        xp = np.array(xp)
-
-        fig, axs = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
-        for i in range(J):
-            axs[0].plot(ts[i], xp[i, :, 0], 'b-')
-            axs[0].plot(ts[i], xs[i, :, 0], 'r--')
-            axs[1].plot(ts[i], xp[i, :, 1], 'b-')
-            axs[1].plot(ts[i], xs[i, :, 1], 'r--')
-        axs[0].set_ylabel('x1')
-        axs[1].set_xlabel('Time')
-        axs[1].set_ylabel('x2')
-        plt.tight_layout()
+        for _i in range(3):
+            sas[_i].plot_pred_x(x0s, ts[0], ref=xs, idx='all', figsize=(6,8), title=lbs[_i])
 
     if ifeig:
         ## Eigenvalues

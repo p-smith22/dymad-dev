@@ -90,14 +90,26 @@ trn_nd = {
         "times": 2,
         "start_with_ls": False}
         }
-trn_ln = {
+
+ref = {
     "n_epochs": 1,
     "save_interval": 1,
-    "load_checkpoint": False,
+    "load_checkpoint": False,}
+trn_ln = {
+    "ls_update": {
+        "method": "full"}}
+trn_ln.update(ref)
+trn_tr = {
+    "ls_update": {
+        "method": "truncated",
+        "params": 0.999}}
+trn_tr.update(ref)
+trn_sa = {
     "ls_update": {
         "method": "sako",
-        "params": 0.2}
-    }
+        "params": 15,
+        "remove_one": True}}
+trn_sa.update(ref)
 
 smpl = {'x0': {
     'kind': 'perturb',
@@ -109,9 +121,11 @@ cfgs = [
     ('kbf_nd',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_nd}),
     ('dkbf_nd', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_nd}),
     ('dkbf_ln', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_ln}),
+    ('dkbf_tr', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_tr}),
+    ('dkbf_sa', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_sa}),
     ]
 
-IDX = [2]
+IDX = [2, 3, 4]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
@@ -154,38 +168,29 @@ if ifprd:
         labels=['Truth'] + labels, ifclose=False)
 
 if ifint:
-    # sadt = SpectralAnalysis(DKBF, 'sa_dkbf_nd.pt', dt=dt, reps=1e-10)
-    sadt = SpectralAnalysis(DKBF, 'sa_dkbf_ln.pt', dt=dt, reps=1e-10)
+    saln = SpectralAnalysis(DKBF, 'sa_dkbf_ln.pt', dt=dt, reps=1e-10, etol=None)
+    satr = SpectralAnalysis(DKBF, 'sa_dkbf_tr.pt', dt=dt, reps=1e-10, etol=None)
+    sasa = SpectralAnalysis(DKBF, 'sa_dkbf_sa.pt', dt=dt, reps=1e-10, etol=None)
     sact = SpectralAnalysis(KBF,  'sa_kbf_nd.pt',  dt=dt, reps=1e-10)
 
-    sas = [sadt, sact]
-    lbs = ['DT-LN', 'CT-ND']
+    sas = [saln, satr, sasa, sact]
+    lbs = ['DT-LN', 'DT-TR', 'DT-SA', 'CT-ND']
+
     Ns  = len(sas)
 
-    ifprd = 0
-    ifeig, ifeic, ifpsp, ifres = 1, 0, 1, 0
+    ifprd = 1
+    ifeig, ifeic, ifpsp, ifres = 0, 0, 1, 0
     ifspe, ifegf = 0, 0
 
     if ifprd:
         J = 16
         sampler = TrajectorySampler(f, g, config='sa_data.yaml', config_mod=smpl)
         ts, xs, _ = sampler.sample(t_grid, batch=J)
+        x0s = xs[:, 0, :].squeeze()
 
-        xp = []
-        for i in range(J):
-            xp.append(sadt.predict(xs[i, 0, :], t_grid))
-        xp = np.array(xp)
-
-        fig, axs = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
-        for i in range(J):
-            axs[0].plot(ts[i], xp[i, :, 0], 'b-')
-            axs[0].plot(ts[i], xs[i, :, 0], 'r--')
-            axs[1].plot(ts[i], xp[i, :, 1], 'b-')
-            axs[1].plot(ts[i], xs[i, :, 1], 'r--')
-        axs[0].set_ylabel('x1')
-        axs[1].set_xlabel('Time')
-        axs[1].set_ylabel('x2')
-        plt.tight_layout()
+        for _i in range(Ns):
+        # for _i in [2]:
+            sas[_i].plot_pred_x(x0s, ts[0], ref=xs, idx='all', figsize=(6,8), title=lbs[_i])
 
     if ifeig:
         ## Eigenvalues

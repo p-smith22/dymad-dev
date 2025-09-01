@@ -165,8 +165,18 @@ if ifint:
     sas = [saln, satr, sasa, sand, sact]
     lbs = ['DT-LN', 'DT-TR', 'DT-SA', 'DT-ND', 'CT-ND']
 
+    ifprd = 1
     ifeig, ifeic, ifpsp, ifres = 1, 1, 1, 1
     ifspe, ifegf = 1, 1
+
+    if ifprd:
+        J = 16
+        sampler = TrajectorySampler(f, g, config='sa_data.yaml')
+        ts, xs, _ = sampler.sample(t_grid, batch=J)
+        x0s = xs[:, 0, :].squeeze()
+
+        for _i in range(5):
+            sas[_i].plot_pred_x(x0s, ts[0], ref=xs, idx='all', figsize=(6,8), title=lbs[_i])
 
     if ifeig:
         ## Eigenvalues

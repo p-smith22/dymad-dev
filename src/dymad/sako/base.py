@@ -95,7 +95,7 @@ class SpectralAnalysis:
         _ts = tseries - tseries[0]
         _p0 = self._ctx.encode(x0).reshape(-1)
         _b  = self._proj.dot(_p0)
-        _ls = np.exp(self._wc.conj().reshape(-1,1) * _ts)
+        _ls = np.exp(self._wc.reshape(-1,1) * _ts)
         _pt = (self._vr*_b).dot(_ls).T
         _xt = self._ctx.decode(_pt)
         if return_obs:
@@ -330,7 +330,7 @@ class SpectralAnalysis:
             _ls.append(_l2)
         return f, ax, _ls
 
-    def plot_pred_x(self, x0s, ts, ref=None, idx='all', figsize=(6,8)):
+    def plot_pred_x(self, x0s, ts, ref=None, idx='all', figsize=(6,8), title=None):
         if idx == 'all':
             _idx = np.arange(self._ctx._Ninp, dtype=int)
         elif isinstance(idx, int):
@@ -352,12 +352,12 @@ class SpectralAnalysis:
                 ax[_j].set_ylabel(f'State {_j}')
         ax[0].legend([l1, l2], ['Prediction', 'Reference'])
         for _j in range(_Nst):
-            ax[_j].set_title(f'{self._type}, Error {e0[_j]/_Nx0*100:3.2f}%')
+            ax[_j].set_title(f'{title}, Error {e0[_j]/_Nx0*100:3.2f}%')
         ax[-1].set_xlabel('time, s')
 
         return f, ax
 
-    def plot_pred_psi(self, x0s, ts, ref=None, idx='all', ncols=1, figsize=(6,8)):
+    def plot_pred_psi(self, x0s, ts, ref=None, idx='all', ncols=1, figsize=(6,8), title=None):
         if isinstance(idx, str) and idx == 'all':
             _idx = np.arange(self._ctx._Nout)
         elif isinstance(idx, int):
@@ -381,7 +381,7 @@ class SpectralAnalysis:
                 l2, = ax[_j].plot(ts, _ref[:,_k], 'r--')
                 ax[_j].set_ylabel(f'Observable {_k}')
         ax[0].legend([l1, l2], ['Prediction', 'Reference'])
-        ax[0].set_title(f'{self._type}, Error {e0/_Nx0*100:3.2f}%')
+        ax[0].set_title(f'{title}, Error {e0/_Nx0*100:3.2f}%')
         ax[-1].set_xlabel('time, s')
 
         return f, ax
