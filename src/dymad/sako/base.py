@@ -342,7 +342,7 @@ class SpectralAnalysis:
             _ls.append(_l2)
         return f, ax, _ls
 
-    def plot_pred(self, x0s, ts, ref=None, ifobs=False, idx='all', ncols=1, figsize=(6,8), title=None):
+    def plot_pred(self, x0s, ts, ref=None, ifobs=False, idx='all', ncols=1, figsize=(6,8), title=None, fig=None):
         if idx == 'all':
             if ifobs:
                 _idx = np.arange(self._ctx._Nout, dtype=int)
@@ -376,7 +376,10 @@ class SpectralAnalysis:
             _errs = per_state_err(_prds, _refs)
 
         _nr = _Nst // ncols + _Nst % ncols
-        f, _ax = plt.subplots(nrows=_nr, ncols=ncols, sharex=True, sharey=True, figsize=figsize)
+        if fig is None:
+            f, _ax = plt.subplots(nrows=_nr, ncols=ncols, sharex=True, sharey=True, figsize=figsize)
+        else:
+            f, _ax = fig
         ax = _ax.flatten()
         for _k, _j in enumerate(_idx):
             for _i in range(_Nx0):

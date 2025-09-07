@@ -12,3 +12,5 @@ Examples
    examples/2d_koopman/part2
    examples/2d_koopman/part3
    examples/linear_graph/main
+   examples/sa_lco/part1
+   examples/sa_lco/part2

@@ -185,8 +185,9 @@ if ifint:
         ts, xs, _ = sampler.sample(t_grid, batch=J)
         x0s = xs[:, 0, :].squeeze()
 
+        fig, ax = plt.subplots(nrows=2, ncols=Ns, sharex=True, sharey=True, figsize=(12,6))
         for _i in range(Ns):
-            sas[_i].plot_pred(x0s, ts[0], ref=xs, ifobs=False, idx='all', figsize=(6,8), title=lbs[_i])
+            sas[_i].plot_pred(x0s, ts[0], ref=xs, title=lbs[_i], fig=(fig, ax[:,_i]))
 
     if ifcnv:
         J = 32
