@@ -55,6 +55,13 @@ def filter_spectrum(sako, eigs, order='full', remove_one=True):
 
     return (wd, vl, vr), (wd_full, vl_full, vr_full), (res, res_full)
 
+def per_state_err(prd, ref):
+    # (n_batch, n_steps, n_states)
+    norm_diff = np.linalg.norm(prd - ref, axis=1)   # (n_batch, n_states)
+    norm_ref  = np.sqrt(prd.shape[1]) * (np.max(ref, axis=1) - np.min(ref, axis=1))
+    e0 = np.mean(norm_diff / norm_ref, axis=0)
+    return e0
+
 class SpectralAnalysis:
     """
     The base class for Spectral Analysis based on Koopman operator theory.
@@ -93,13 +100,18 @@ class SpectralAnalysis:
             return_obs: If return observables over time as well
         """
         _ts = tseries - tseries[0]
-        _p0 = self._ctx.encode(x0).reshape(-1)
-        _b  = self._proj.dot(_p0)
-        _ls = np.exp(self._wc.reshape(-1,1) * _ts)
-        _pt = (self._vr*_b).dot(_ls).T
-        _xt = self._ctx.decode(_pt)
+        _p0 = np.atleast_2d(self._ctx.encode(x0))    # (n_batch, n_dim)
+        # Project initial conditions
+        _b = self._proj.dot(_p0.T)                   # (n_modes, n_batch)
+        _ls = np.exp(self._wc.reshape(-1, 1) * _ts)  # (n_modes, n_steps)
+        # Time evolution for each batch
+        # vr (n_dim, n_modes)
+        _pt = np.einsum("ij,jk,jl->kli", self._vr, _b, _ls)  # (n_batch, n_steps, n_dim)
+        # Decode each trajectory
+        _xt = self._ctx.decode(_pt).squeeze()
+
         if return_obs:
-            return _xt, _pt
+            return _xt, _pt.squeeze()
         return _xt
 
     def mapto_obs(self, X):
@@ -330,58 +342,52 @@ class SpectralAnalysis:
             _ls.append(_l2)
         return f, ax, _ls
 
-    def plot_pred_x(self, x0s, ts, ref=None, idx='all', figsize=(6,8), title=None):
+    def plot_pred(self, x0s, ts, ref=None, ifobs=False, idx='all', ncols=1, figsize=(6,8), title=None):
         if idx == 'all':
-            _idx = np.arange(self._ctx._Ninp, dtype=int)
+            if ifobs:
+                _idx = np.arange(self._ctx._Nout, dtype=int)
+            else:
+                _idx = np.arange(self._ctx._Ninp, dtype=int)
         elif isinstance(idx, int):
             _idx = np.arange(idx, dtype=int)
         else:
             _idx = np.array(idx)
         _Nst = len(_idx)
-        _Nx0 = len(x0s)
 
-        f, ax = plt.subplots(nrows=_Nst, sharex=True, figsize=figsize)
-        e0 = 0.0
-        for _i in range(_Nx0):
-            _pred = self.predict(x0s[_i], ts, return_obs=False).real
-            # e0 += np.linalg.norm(_pred-ref[_i]) / np.linalg.norm(ref[_i])
-            e0 += np.linalg.norm(_pred-ref[_i], axis=0) / np.sqrt(len(_pred)) / (np.max(ref[_i], axis=0)-np.min(ref[_i], axis=0))
-            for _j in _idx:
-                l1, = ax[_j].plot(ts, _pred[:,_j], 'b-')
-                l2, = ax[_j].plot(ts, ref[_i][:,_j], 'r--')
-                ax[_j].set_ylabel(f'State {_j}')
-        ax[0].legend([l1, l2], ['Prediction', 'Reference'])
-        for _j in range(_Nst):
-            ax[_j].set_title(f'{title}, Error {e0[_j]/_Nx0*100:3.2f}%')
-        ax[-1].set_xlabel('time, s')
-
-        return f, ax
-
-    def plot_pred_psi(self, x0s, ts, ref=None, idx='all', ncols=1, figsize=(6,8), title=None):
-        if isinstance(idx, str) and idx == 'all':
-            _idx = np.arange(self._ctx._Nout)
-        elif isinstance(idx, int):
-            _idx = np.arange(idx)
+        if ifobs:
+            _prds = self.predict(x0s, ts, return_obs=True)[1].real
+            _ylbl = 'Obs'
         else:
-            _idx = np.array(idx)
-        _Nst = len(_idx)
-        _Nx0 = len(x0s)
+            _prds = self.predict(x0s, ts, return_obs=False).real
+            _ylbl = 'State'
+        if _prds.ndim == 2:
+            _prds = np.array([_prds])
+        _Nx0 = len(_prds)
+
+        if ref is None:
+            _refs, _errs = None, None
+        else:
+            if ifobs:
+                _refs = self.mapto_obs(ref).real
+            else:
+                _refs = np.array(ref)
+            if _refs.ndim == 2:
+                _refs = np.array([_refs])
+            _errs = per_state_err(_prds, _refs)
 
         _nr = _Nst // ncols + _Nst % ncols
         f, _ax = plt.subplots(nrows=_nr, ncols=ncols, sharex=True, sharey=True, figsize=figsize)
         ax = _ax.flatten()
-        e0 = 0.0
-        for _i in range(_Nx0):
-            _pred = self.predict(x0s[_i], ts, return_obs=True)[1].real
-            _ref = self.mapto_obs(ref[_i]).real
-            e0 += np.linalg.norm(_pred-_ref) / np.linalg.norm(_ref)
-            for _j in range(_Nst):
-                _k = _idx[_j]
-                l1, = ax[_j].plot(ts, _pred[:,_k], 'b-')
-                l2, = ax[_j].plot(ts, _ref[:,_k], 'r--')
-                ax[_j].set_ylabel(f'Observable {_k}')
-        ax[0].legend([l1, l2], ['Prediction', 'Reference'])
-        ax[0].set_title(f'{title}, Error {e0/_Nx0*100:3.2f}%')
+        for _k, _j in enumerate(_idx):
+            for _i in range(_Nx0):
+                l1, = ax[_k].plot(ts, _prds[_i][:,_j], 'b-')
+                if _refs is not None:
+                    l2, = ax[_k].plot(ts, _refs[_i][:,_j], 'r--')
+            ax[_k].set_ylabel(f'{_ylbl} {_j}')
+        if _refs is not None:
+            for _k, _j in enumerate(_idx):
+                ax[_k].set_title(f'{title}, Error {_errs[_j]*100:3.2f}%')
+            ax[0].legend([l1, l2], ['Prediction', 'Reference'])
         ax[-1].set_xlabel('time, s')
 
         return f, ax
@@ -418,10 +424,10 @@ class SpectralAnalysis:
         else:
             f, ax = fig
         _ax = ax.flatten()
-        for _i in _idx:
+        for _i, _j in enumerate(_idx):
             _F = _fun[:,_i].reshape(Ns[1], Ns[0])
             _ax[_i].contourf(X1, X2, _func(_F), levels=20)
-            _ax[_i].set_title(f'{_i}: {np.angle(self._wc[_i]):3.2e} / {self._res[_i].real:3.2e}')
+            _ax[_i].set_title(f'{_j}: {np.angle(self._wc[_j]):3.2e} / {self._res[_j].real:3.2e}')
 
         return f, ax
 

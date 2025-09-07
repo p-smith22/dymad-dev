@@ -1,5 +1,4 @@
-# from pysako import resolventAnalysis, estimatePSpec
-
+import copy
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,13 +7,13 @@ import torch
 
 from dymad.models import DKBF, KBF
 from dymad.numerics import complex_plot
-from dymad.sako import SpectralAnalysis
+from dymad.sako import per_state_err, SpectralAnalysis
 from dymad.training import LinearTrainer, NODETrainer
 from dymad.utils import load_model, plot_trajectory, setup_logging, TrajectorySampler
 
 B = 500
-N = 41
-t_grid = np.linspace(0, 4, N)
+N = 81
+t_grid = np.linspace(0, 8, N)
 dt = t_grid[1] - t_grid[0]
 
 mu = 1.0
@@ -40,21 +39,19 @@ sp = np.fft.fft(_tmp)
 fr = np.fft.fftfreq(4*_Nt)/_dt*(2*np.pi)
 ii = np.argmax(np.abs(sp))
 w0 = np.abs(fr[ii])
-wa = np.exp(np.array([-5,-4,-3,-2,-1,1,2,3,4,5]) * (1j*w0*dt)) # Use dt from data
+wc = np.array([-5,-4,-3,-2,-1,1,2,3,4,5]) * (1j*w0)
+wa = np.exp(wc*dt) # Use dt from data
 
 # Transition to LCO
-db = 0.2
-# # LCO
-# db = 0.001
+db = 0.4
 
 mdl_kb = {
     "name" : 'sa_model',
     "encoder_layers" : 2,
     "decoder_layers" : 2,
-    "latent_dimension" : 32,
-    "koopman_dimension" : 32,
-    "activation" : "tanh",
-    # "autoencoder_type" : "cat",
+    "latent_dimension" : 64,
+    "koopman_dimension" : 3,
+    "activation" : "prelu",
     "weight_init" : "xavier_uniform",
     "predictor_type" : "exp",}
 
@@ -62,34 +59,30 @@ mdl_kl = {
     "name" : 'sa_model',
     "encoder_layers" : 0,
     "decoder_layers" : 0,
-    "koopman_dimension" : 64,
+    "koopman_dimension" : 100,
     "activation" : "none",
     "weight_init" : "xavier_uniform",
     "predictor_type" : "exp",}
 trn_kl = [
         {"type": "scaler", "mode": "-11"},
-        {"type": "lift", "fobs": "poly", "Ks": [8, 8]}
+        {"type": "lift", "fobs": "poly", "Ks": [10, 10]}
     ]
 
-trn_nd = {
-    "n_epochs": 2000,
-    "save_interval": 10,
+trn_dt = {
+    "n_epochs": 5000,
+    "save_interval": 100,
     "load_checkpoint": False,
-    "learning_rate": 1e-3,
+    "learning_rate": 1e-2,
     "decay_rate": 0.999,
     "reconstruction_weight": 1.0,
     "dynamics_weight": 1.0,
-    "sweep_lengths": [2, 11, 21, 41],
-    "sweep_epoch_step": 400,
-    "chop_mode": "unfold",
-    "chop_step": 0.5,
     "ls_update": {
-        "method": "sako",
-        "params": 9,
-        "interval": 100,
-        "times": 2,
-        "start_with_ls": False}
+        "method": "full",
+        "interval": 500,
+        "times": 1}
         }
+trn_ct = copy.deepcopy(trn_dt)
+trn_ct["ls_update"]["method"] = "full_log"
 
 ref = {
     "n_epochs": 1,
@@ -102,7 +95,7 @@ trn_ln.update(ref)
 trn_tr = {
     "ls_update": {
         "method": "truncated",
-        "params": 0.999}}
+        "params": 15}}
 trn_tr.update(ref)
 trn_sa = {
     "ls_update": {
@@ -118,14 +111,16 @@ smpl = {'x0': {
 config_path = 'sa_model.yaml'
 
 cfgs = [
-    ('kbf_nd',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_nd}),
-    ('dkbf_nd', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_nd}),
+    ('kbf_nd',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_ct}),
+    ('dkbf_nd', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt}),
     ('dkbf_ln', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_ln}),
     ('dkbf_tr', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_tr}),
     ('dkbf_sa', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_sa}),
     ]
 
-IDX = [2, 3, 4]
+# IDX = [0, 1, 2, 3, 4]
+IDX = [0, 1]
+# IDX = [2, 3, 4]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
@@ -139,6 +134,7 @@ if ifdat:
 
     for i in range(B):
         plt.plot(ys[i, :, 0], ys[i, :, 1])
+    plt.plot(_ref[:,0], _ref[:,1], 'k--', linewidth=2)
 
 if iftrn:
     for i in IDX:
@@ -171,26 +167,57 @@ if ifint:
     saln = SpectralAnalysis(DKBF, 'sa_dkbf_ln.pt', dt=dt, reps=1e-10, etol=None)
     satr = SpectralAnalysis(DKBF, 'sa_dkbf_tr.pt', dt=dt, reps=1e-10, etol=None)
     sasa = SpectralAnalysis(DKBF, 'sa_dkbf_sa.pt', dt=dt, reps=1e-10, etol=None)
+    sadt = SpectralAnalysis(DKBF, 'sa_dkbf_nd.pt', dt=dt, reps=1e-10)
     sact = SpectralAnalysis(KBF,  'sa_kbf_nd.pt',  dt=dt, reps=1e-10)
 
-    sas = [saln, satr, sasa, sact]
-    lbs = ['DT-LN', 'DT-TR', 'DT-SA', 'CT-ND']
+    sas = [saln, satr, sasa, sadt, sact]
+    lbs = ['DT-LN', 'DT-TR', 'DT-SA', 'DT-ND', 'CT-ND']
 
     Ns  = len(sas)
 
-    ifprd = 1
-    ifeig, ifeic, ifpsp, ifres = 0, 0, 1, 0
-    ifspe, ifegf = 0, 0
+    ifprd, ifcnv = 1, 1
+    ifeig, ifeic, ifpsp, ifres = 1, 1, 1, 0
+    ifspe, ifegf = 1, 1
 
     if ifprd:
-        J = 16
+        J = 32
         sampler = TrajectorySampler(f, g, config='sa_data.yaml', config_mod=smpl)
         ts, xs, _ = sampler.sample(t_grid, batch=J)
         x0s = xs[:, 0, :].squeeze()
 
         for _i in range(Ns):
-        # for _i in [2]:
-            sas[_i].plot_pred_x(x0s, ts[0], ref=xs, idx='all', figsize=(6,8), title=lbs[_i])
+            sas[_i].plot_pred(x0s, ts[0], ref=xs, ifobs=False, idx='all', figsize=(6,8), title=lbs[_i])
+
+    if ifcnv:
+        J = 32
+        sampler = TrajectorySampler(f, g, config='sa_data.yaml', config_mod=smpl)
+        ts, xs, _ = sampler.sample(t_grid, batch=J)
+        x0s = xs[:, 0, :].squeeze()
+
+        errs = []
+        # for _o in [1.0, 0.66, 0.45, 0.27, 0.19]:
+        for _o in [3, 9, 15, 27, 47, 65]:
+            saln.filter_spectrum(order=_o, remove_one=False)
+            prd = saln.predict(x0s, ts[0])
+            err = per_state_err(prd.real, xs)
+            errs.append([saln._Nrank, np.mean(err)])
+            # saln.plot_pred(x0s, ts[0], ref=xs, idx='all', figsize=(6,8), title=f"Order {saln._Nrank}")
+        errs = np.array(errs).T
+
+        prd = sasa.predict(x0s, ts[0])
+        esa = per_state_err(prd.real, xs)
+        # sasa.plot_pred(x0s, ts[0], ref=xs, idx='all', figsize=(6,8), title='DT-SA')
+
+        prd = satr.predict(x0s, ts[0])
+        etr = per_state_err(prd.real, xs)
+
+        fig = plt.figure()
+        plt.plot(errs[0], errs[1], 'bo-', label='DT-LN', markerfacecolor='none')
+        plt.plot(sasa._Nrank, np.mean(esa), 'rs', label='DT-SA')
+        plt.plot(satr._Nrank, np.mean(etr), 'g^', label='DT-TR')
+        plt.legend()
+        plt.xlabel('Order')
+        plt.ylabel('Error')
 
     if ifeig:
         ## Eigenvalues
@@ -229,10 +256,10 @@ if ifint:
     if ifeic:
         ## Eigenvalues
         MRK = 15
-        fig, ax = plt.subplots(ncols=3, sharey=True, figsize=(15,5))
+        fig, ax = plt.subplots(ncols=Ns, sharey=True, figsize=(15,5))
         for _i in range(Ns):
             fig, ax[_i], _ls = sas[_i].plot_eigs(fig=(fig, ax[_i]), mode='cont', plot_filt=None)
-            _l, = ax[_i].plot(w0.real, w0.imag, 'kx', markersize=MRK)
+            _l, = ax[_i].plot(wc.real, wc.imag, 'kx', markersize=MRK)
             ax[_i].set_title(f'{lbs[_i]}\nMax res: {sas[_i]._res[-1]:4.3e}')
             ax[_i].legend(_ls+[_l], ["Full-Order", "Truth"], loc=1)
 
@@ -297,32 +324,23 @@ if ifint:
 
     if ifegf:
         ## Eigenfunctions
-        rngs = [[-np.pi/2.5, np.pi/2.5], [-1.4, 1.4]]
+        rngs = [[-2.5, 2.5], [-3.5, 3.5]]
         Ne = [101, 121]
 
-        f1, a1 = plt.subplots(nrows=Ns, ncols=4, sharex=True, sharey=True, figsize=(10,10))
-        f2, a2 = plt.subplots(nrows=Ns, ncols=4, sharex=True, sharey=True, figsize=(10,10))
+        f1, a1 = plt.subplots(nrows=Ns, ncols=3, sharex=True, sharey=True, figsize=(7, 10))
+        f2, a2 = plt.subplots(nrows=Ns, ncols=3, sharex=True, sharey=True, figsize=(7, 10))
         for i in range(Ns):
-            _n = min(sas[i]._Nrank, 4)
-            sas[i].plot_eigfun_2d(rngs, Ne, _n, mode='abs', fig=(f1, a1[i]))
+            _i1 = np.argmin(np.abs(sas[i]._wc - w0*1j))
+            _i2 = np.argmin(np.abs(sas[i]._wc - 2*w0*1j))
+            _i3 = np.argmin(np.abs(sas[i]._wc - 3*w0*1j))
+            _idx = list(set([_i1, _i2, _i3]))
+            sas[i].plot_eigfun_2d(rngs, Ne, _idx, mode='log', fig=(f1, a1[i]))
             a1[i][0].set_ylabel(lbs[i])
-            sas[i].plot_eigfun_2d(rngs, Ne, _n, mode='angle', fig=(f2, a2[i]))
+            sas[i].plot_eigfun_2d(rngs, Ne, _idx, mode='angle', fig=(f2, a2[i]))
             a2[i][0].set_ylabel(lbs[i])
 
+            for _i in range(len(_idx)):
+                a1[i][_i].plot(_ref[:,0], _ref[:,1], 'k--', linewidth=1)
+                a2[i][_i].plot(_ref[:,0], _ref[:,1], 'k--', linewidth=1)
+
 plt.show()
-
-
-
-
-"""
-Limit Cycle Oscillations, which should consist of only point spectrum.
-
-Rule of thumb:
-1. All methods do not perform well in predicting transient responses.
-2. ResDMD and K-ResDMD should perform similarly, with K-ResDMD slightly better in prediction and spectrum.
-3. EDMD gives reasonable eigenfunctions regardless of data type; others do well for transient data (as trajs cover more space)
-
-@author Dr. Daning Huang
-@date 07/06/24
-"""
-

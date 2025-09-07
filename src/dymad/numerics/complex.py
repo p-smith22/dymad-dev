@@ -46,6 +46,7 @@ def complex_plot(grid, sv, levels, fig=None, mode='line', lwid=2, lsty=None):
 complex_map = {
     'angle' : np.angle,
     'abs'   : np.abs,
+    'log'   : lambda x: np.log(np.abs(x)),
     'real'  : np.real,
     'imag'  : np.imag,
     'iden'  : lambda x: x

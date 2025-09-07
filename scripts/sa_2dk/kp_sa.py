@@ -159,7 +159,7 @@ if ifint:
         x0s = xs[:, 0, :].squeeze()
 
         for _i in range(3):
-            sas[_i].plot_pred_x(x0s, ts[0], ref=xs, idx='all', figsize=(6,8), title=lbs[_i])
+            sas[_i].plot_pred(x0s, ts[0], ref=xs, idx='all', figsize=(6,8), title=lbs[_i])
 
     if ifeig:
         ## Eigenvalues

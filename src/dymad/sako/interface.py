@@ -94,10 +94,10 @@ class SAInterface:
         Encode new trajectory data to the observer space.
         """
         if rng is None:
-            _X = self._trans_x.transform([X])[0]
+            _X = self._trans_x.transform(np.atleast_2d(X))
             _X = torch.tensor(_X, dtype=self.dtype).to(self.device)
             _Z = self.model.encoder(DynData(_X, None)).cpu().detach().numpy()
-            return _Z
+            return _Z.squeeze()
         raise NotImplementedError("Encoding with a range is not implemented yet.")
 
     def decode(self, X: np.ndarray, rng: Optional[list | None] = None) -> np.ndarray:
@@ -107,8 +107,8 @@ class SAInterface:
         if rng is None:
             _X = torch.tensor(X, dtype=self.dtype).to(self.device)
             _Z = self.model.decoder(_X, None).cpu().detach().numpy()
-            _Z = self._trans_x.inverse_transform([_Z])[0]
-            return _Z
+            _Z = self._trans_x.inverse_transform(np.atleast_2d(_Z))
+            return np.array(_Z).squeeze()
         raise NotImplementedError("Decoding with a range is not implemented yet.")
 
     def apply_obs(self, fobs: Callable) -> np.ndarray:
