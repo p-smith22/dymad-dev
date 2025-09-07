@@ -10,6 +10,7 @@ def truncated_svd(X, order):
     A vanilla interface for different types of truncation order.
 
     Possible order parameters
+
     - Float, positive: Energy percentage
     - Float, negative: Optimal truncation by Gavish&Donoho.
     - Integer, positive: Keep first N pairs
@@ -61,6 +62,9 @@ def truncated_lstsq(A, B, tsvd=None):
     return _Vr, _B.T
 
 def check_direction(v1, v2):
+    """
+    The cosine values between v1 and v2.
+    """
     if len(v1.shape) == 1:
         # Just one vector
         return _check_direction(v1, v2)

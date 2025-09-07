@@ -6,6 +6,7 @@ import numpy as np
 # --------------------
 ## Single state
 def psi_fourier(x, K):
+    """Lift to Fourier basis up to Kth order."""
     _x = x.reshape(-1)
     _p = [np.ones_like(_x)]
     for _k in K:
@@ -14,22 +15,26 @@ def psi_fourier(x, K):
     return np.vstack(_p)
 
 def psi_fourier_inverse(p, K):
+    """Inverse of psi_fourier."""
     assert K > 0, "Inversion only applies when K>=1"
     _c, _s = p[1], p[2]
     return np.arctan2(_s, _c)
 
 def psi_monomial(x, K):
+    """Lift to monomials up to (K-1)th order."""
     if isinstance(K, int):
         return x.reshape(-1)**K
     _x = x.reshape(-1)
     return np.vstack([_x**k for k in K])
 
 def psi_monomial_inverse(p, K):
+    """Inverse of psi_monomial."""
     assert K > 0, "Inversion only applies when K>=1"
     return p[1]
 
 ## two-state
 def psi_polar(x, K):
+    """Conversion to polar coordinates, and lift in mononomials and Fourier."""
     assert x.shape[0] == 2, "Input must be (2,N) or (,2)"
 
     _r = np.linalg.norm(x, axis=0)
@@ -81,6 +86,7 @@ def _cross(ps):
     return _p1
 
 def poly_cross(x, Ks=None):
+    """Lift to product of all monomials."""
     assert x.shape[1] == len(Ks), "Input dimension does not match the number of powers"
     _Np = len(Ks)
     _ps = []

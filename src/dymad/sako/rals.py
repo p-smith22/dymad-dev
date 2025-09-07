@@ -62,7 +62,7 @@ def estimate_pseudospectrum(grid: np.ndarray, estimator: Callable, return_vec: b
     Args:
         grid (np.ndarray): List of points on complex plane
         estimator (Callable): Function to evaluate gain and I/O modes at a point
-                              Args: complex point, return_vec, **kwargs
+                              Args: complex point, return_vec, kwargs
         verbose (bool): Whether to print info.
         return_vec (bool): If return I/O modes
         kwargs: Args for estimator
@@ -98,28 +98,38 @@ class RALowRank:
     Resolvent analysis for low-rank linear systems
 
     For continuous-time system,
+
         \dot{x} = Ax+Bu
+
     Resolvent operator H(s) = (sI-A)^{-1} B
 
     Following cases are considered:
+
     (1) Low-dimensional full-order systems
+
     (1.1) Regular resolvent
+
         argmax || H(s)u || / ||u||, H(s) = (sI-A)^{-1} B
 
     (1.2) Constrained resolvent, where input & output are in subspace U
+
         argmax || UH_r(s)a || / ||Ua||, H_r(s) = (sI-PAU)^{-1}
+
         where PU=I_r.  B is ignored.
         An alternative view for constrained resolvent is to think as
+
         argmax || YH(s)Ua || / ||Ua||
-            = || Q^HH(s)Qg || / ||g||, U=QR, Ra=g
+        = || Q^HH(s)Qg || / ||g||, U=QR, Ra=g
+
         where Y=QQ^H is the projector onto U.
 
     (2) High-dimensional low-rank systems, where
         A = UTV^H, with V^H U = I_r
         The formulation is essentially the constrained resolvent,
         with subspace U,
+
         argmax || UH_r(s)a || / ||Ua||, H_r(s) = (sI-T)^{-1}
-            = || RH_r(s)R^{-1}g || / ||g||, U=QR, Ra=g
+        = || RH_r(s)R^{-1}g || / ||g||, U=QR, Ra=g
 
     In mode='disc', discrete-time matrix will be used
     Ad = U exp(T*dt) V^H

@@ -82,6 +82,9 @@ class SAInterface:
         self._Nout = self.model.koopman_dimension
 
     def get_weights(self) -> Tuple[np.ndarray]:
+        """
+        Get the linear weights of the dynamics model.
+        """
         if self.model.dynamics_net.mode == "full":
             return (self.model.dynamics_net.weight.data.cpu().numpy(), )
         else:

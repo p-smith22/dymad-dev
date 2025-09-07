@@ -295,7 +295,7 @@ def perturb_x0(*,
                ref:  Array,
                rng:  np.random.Generator = None) -> Callable:
     """
-    Generate a uniformly random initial condition sampler.
+    Generate a uniformly random initial condition sampler around a reference trajectory.
 
     Args:
         bounds (Union[float, Array]): Bounds for the uniform sampling.

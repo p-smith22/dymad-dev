@@ -8,6 +8,9 @@ from dymad.numerics import generate_coef, scaled_eig
 logger = logging.getLogger(__name__)
 
 def clip_eig(M, tol=1e-13):
+    """
+    Clip small eigenvalues in the matrix.
+    """
     w, v = spl.eigh(M)
     msk = w < tol
     if np.any(msk):
@@ -70,6 +73,9 @@ class SAKO:
         self._M1 = self._M01
 
     def solve_eig(self):
+        """
+        Solve the generalized eigenvalue problem to obtain the eigenpairs.
+        """
         _wd_full, _vl_full, _vr_full = scaled_eig(self._M01, self._M00)
         _vl_full = self._M00.conj().T.dot(_vl_full)
         return _wd_full, _vl_full, _vr_full

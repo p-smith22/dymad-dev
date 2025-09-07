@@ -13,6 +13,10 @@ Currently, we have implemented the following features:
 - Training utilities, including
    * Neural-ODE-based optimizer
    * Weak-form optimizer
+   * Linear preconditioners
+- Spectral analysis based on Koopman theory
+   * Eigenvalues and eigenfunctions
+   * Spectrum and pseudospectrum
 - Miscellaneous utilities, including
    * Samplers for inputs and initial conditions
    * Visualization tools

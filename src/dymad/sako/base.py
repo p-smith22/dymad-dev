@@ -56,6 +56,9 @@ def filter_spectrum(sako, eigs, order='full', remove_one=True):
     return (wd, vl, vr), (wd_full, vl_full, vr_full), (res, res_full)
 
 def per_state_err(prd, ref):
+    """
+    Compute the per-state error between predicted and reference trajectories.
+    """
     # (n_batch, n_steps, n_states)
     norm_diff = np.linalg.norm(prd - ref, axis=1)   # (n_batch, n_states)
     norm_ref  = np.sqrt(prd.shape[1]) * (np.max(ref, axis=1) - np.min(ref, axis=1))
@@ -121,6 +124,9 @@ class SpectralAnalysis:
         return self._ctx.encode(X)
 
     def estimate_measure(self, fobs, order, eps, thetas = 101):
+        """
+        Estimate the measure of the observable along the unit circle.
+        """
         gobs = self._ctx.apply_obs(fobs).reshape(-1)
         return self._sako.estimate_measure(gobs, order, eps, thetas)
 
@@ -311,6 +317,9 @@ class SpectralAnalysis:
         self._proj = self._vl.conj().T   # Mathemetically correct, but numerically inaccurate.
 
     def plot_eigs(self, fig=None, plot_full='bo', plot_filt='r^', mode='disc'):
+        """
+        Plot the eigenvalues in the complex plane.
+        """
         if fig is None:
             f, ax = plt.subplots()
         else:
@@ -343,6 +352,9 @@ class SpectralAnalysis:
         return f, ax, _ls
 
     def plot_pred(self, x0s, ts, ref=None, ifobs=False, idx='all', ncols=1, figsize=(6,8), title=None, fig=None):
+        """
+        Plot the predicted trajectories, in either data space or latent space.
+        """
         if idx == 'all':
             if ifobs:
                 _idx = np.arange(self._ctx._Nout, dtype=int)
@@ -396,6 +408,9 @@ class SpectralAnalysis:
         return f, ax
 
     def plot_eigfun_2d(self, rngs, Ns, idx, mode='angle', space='full', ncols=2, figsize=(6,10), fig=None):
+        """
+        Plot the 2D eigenfunctions as contours.
+        """
         # Regular grid
         x1s = np.linspace(rngs[0][0], rngs[0][1], Ns[0])
         x2s = np.linspace(rngs[1][0], rngs[1][1], Ns[1])
@@ -435,6 +450,9 @@ class SpectralAnalysis:
         return f, ax
 
     def plot_vec_line(self, idx, which='func', modes=['angle'], ncols=1, figsize=(6,10)):
+        """
+        Plot slices of eigenfunctions as vectors.
+        """
         # Indexing
         if isinstance(idx, int):
             _idx = np.arange(idx, dtype=int)
