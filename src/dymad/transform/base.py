@@ -264,7 +264,7 @@ class Lift(Transform):
     """
     Lifting into higher-dimensional space by hand-crafted features
     """
-    def __init__(self, fobs: str | Callable = None, finv: str | Callable | None = None, **kwargs):
+    def __init__(self, fobs: Union[str, Callable] = None, finv: Union[str, Callable, None] = None, **kwargs):
         if fobs == 'poly':
             self._fobs = poly_cross
             self._finv = poly_inverse
@@ -307,7 +307,7 @@ class Lift(Transform):
     def _pseudo_inv(self, Z):
         return Z.dot(self._C)
 
-    def state_dict(self) -> dict[str, Any]:
+    def state_dict(self) -> Dict[str, Any]:
         """"""
         return {
             "inp": self._inp_dim,
@@ -318,7 +318,7 @@ class Lift(Transform):
             "fargs": self._fargs,
         }
 
-    def load_state_dict(self, d) -> None:
+    def load_state_dict(self, d: Dict[str, Any]) -> None:
         """"""
         self._inp_dim = d["inp"]
         self._out_dim = d["out"]

@@ -48,7 +48,7 @@ class StandardScheduler(SchedulerBase):
     def diagnostic_info(self):
         return str(self.state_dict())
 
-    def step(self, **kwargs) -> bool:
+    def step(self, **kwargs) -> Tuple[bool, bool]:
         """Step through the wrapped scheduler."""
         self.scheduler.step()
         return False, False
