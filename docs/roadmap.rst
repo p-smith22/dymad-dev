@@ -225,7 +225,7 @@ The details are provided below.
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:notepad_spiral:|
-     - |:notepad_spiral:|
+     - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
    * - (Graph) RNN
@@ -263,8 +263,8 @@ The details are provided below.
      - Controll-/Observ-ability
      - Symmetry
    * - Linear
-     - |:o:|
-     - |:o:|
+     - |:white_check_mark:|
+     - |:white_check_mark:|
      - |:o:|
      - |:notepad_spiral:|
    * - (Graph) LDM
@@ -273,8 +273,8 @@ The details are provided below.
      - |:notepad_spiral:|
      - |:notepad_spiral:|
    * - (Graph) KBF
-     - |:o:|
-     - |:o:|
+     - |:white_check_mark:|
+     - |:white_check_mark:|
      - |:notepad_spiral:|
      - |:notepad_spiral:|
    * - (Graph) RNN
@@ -303,9 +303,9 @@ Lastly, to ease the construction of modeling and analysis pipelines, we provide 
      - Fourier
    * - |:white_check_mark:|
      - |:white_check_mark:|
-     - |:o:|
-     - |:o:|
-     - |:o:|
+     - |:white_check_mark:|
+     - |:white_check_mark:|
+     - |:white_check_mark:|
 
 .. list-table:: Sampling
    :widths: 25 25 25 25 25

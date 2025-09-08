@@ -54,7 +54,9 @@ class FlexLinear(nn.Module):
     or as low-rank factors (U, V) with efficient matvec operations.
 
     In the low-rank mode, the weight matrix is represented as:
+
         W = U @ V^T
+
     where U is (M x r) and V is (N x r).
     """
     def __init__(self, in_features, out_features, bias=True, dtype=None, device=None):

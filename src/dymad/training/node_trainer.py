@@ -106,8 +106,11 @@ class NODETrainer(TrainerBase):
         avg_epoch_loss = total_loss / len(self.train_loader)
 
         for scheduler in self.schedulers:
-            flag = scheduler.step(eploss=avg_epoch_loss)
+            flag, changed = scheduler.step(eploss=avg_epoch_loss)
             self.convergence_tolerance_reached = self.convergence_tolerance_reached or flag
+            if changed:
+                self.best_loss = float('inf')
+                logger.info("Resetting best loss due to sweep length change.")
 
         # Maintain minimum learning rate
         for param_group in self.optimizer.param_groups:
