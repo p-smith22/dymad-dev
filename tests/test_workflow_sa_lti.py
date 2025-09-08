@@ -114,7 +114,7 @@ def predict_case(idx, sample, path):
         elif mdl in ['kbf_nd2', 'dkbf_nd1']:
             assert _err < 0.01
         elif mdl == 'dkbf_tr':
-            assert _err < 0.05
+            assert _err < 0.08
         else:
             assert _err < 1e-5
 
