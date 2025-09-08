@@ -109,7 +109,7 @@ def predict_case(idx, sample, path):
         _prd = prd_func(x_data, t_data)
         _err = np.linalg.norm(_prd - x_data) / np.linalg.norm(x_data)
 
-        if mdl in ['kbf_nd1', 'dkbf_nd2']:
+        if mdl in ['kbf_nd1', 'dkbf_nd2', 'dkbf_nd3']:
             assert _err < 1e-4
         elif mdl in ['kbf_nd2', 'dkbf_nd1']:
             assert _err < 0.01
