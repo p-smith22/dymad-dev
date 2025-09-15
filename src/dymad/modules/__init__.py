@@ -3,7 +3,7 @@ from dymad.modules.kernel import scaled_cdist, \
     KernelAbstract, KernelDataDependent, KernelOperatorValued, KernelScalarValued, KernelOperatorValuedScalars, \
     KernelScRBF, KernelOpSeparable, \
     KernelScDpDM, KernelOpDpSeparable
-from dymad.modules.krr import KRRBase, KRRMultiOutputScalar, KRROperatorValued
+from dymad.modules.krr import KRRBase, KRRMultiOutputIndep, KRRMultiOutputShared, KRROperatorValued
 from dymad.modules.gnn import GNN, ResBlockGNN, IdenCatGNN
 from dymad.modules.mlp import MLP, ResBlockMLP, IdenCatMLP
 from dymad.modules.linear import FlexLinear
@@ -23,7 +23,8 @@ __all__ = [
     "KernelScDpDM",
     "KernelScRBF",
     "KRRBase",
-    "KRRMultiOutputScalar",
+    "KRRMultiOutputIndep",
+    "KRRMultiOutputShared",
     "KRROperatorValued",
     "make_autoencoder",
     "MLP",

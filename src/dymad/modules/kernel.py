@@ -72,7 +72,7 @@ class KernelDataDependent(ABC):
 
 # Drived Bases
 class KernelScalarValued(KernelAbstract, ABC):
-    def __init__(self, in_dim: int, out_dim: int, dtype=None):
+    def __init__(self, in_dim: int, dtype=None):
         super().__init__(in_dim, dtype=dtype)
         self.out_dim = 1
 
@@ -94,10 +94,11 @@ class KernelOperatorValuedScalars(KernelOperatorValued):
     Operator-valued kernel induced by scalar kernels
     Output shape: (N, M, Dy, Dy)
     """
-    def __init__(self, kernels: Union[KernelScalarValued, List[KernelScalarValued]], out_dim: int, dtype=None):
+    def __init__(self, kernels: Union[KernelScalarValued, List], out_dim: int, dtype=None):
         if isinstance(kernels, KernelScalarValued):
-            kernels = [kernels]
-        self.scalar_kernels = kernels
+            kernels = nn.ModuleList([kernels])
+        elif isinstance(kernels, list):
+            kernels = nn.ModuleList(kernels)
         self.n_kernels = len(kernels)
         self.in_dim = kernels[0].in_dim
         for k in kernels:
@@ -105,6 +106,7 @@ class KernelOperatorValuedScalars(KernelOperatorValued):
             assert k.in_dim == self.in_dim
 
         super().__init__(self.in_dim, out_dim, dtype=dtype)
+        self.scalar_kernels = kernels
 
 
 # Actual kernels
@@ -116,7 +118,7 @@ class KernelScRBF(KernelScalarValued):
     """
     def __init__(self, in_dim: int, lengthscale_init: float = 1.0, dtype=None):
         super().__init__(in_dim, dtype=dtype)
-        self._log_ell = nn.Parameter(torch.tensor(float(lengthscale_init)).log(), dtype=self.dtype)
+        self._log_ell = nn.Parameter(torch.tensor(float(lengthscale_init), dtype=self.dtype).log())
 
     @property
     def ell(self):
@@ -133,11 +135,19 @@ class KernelOpSeparable(KernelOperatorValuedScalars):
     where B_i = L_i L_i^T is PSD and learnable.
     Output shape: (N, M, Dy, Dy)
     """
-    def __init__(self, kernels: Union[KernelScalarValued, List[KernelScalarValued]], out_dim: int, dtype=None):
+    def __init__(self,
+                 kernels: Union[KernelScalarValued, List], out_dim: int,
+                 Ls: Union[torch.Tensor, List[torch.Tensor]]=None, dtype=None):
         super().__init__(kernels, out_dim, dtype=dtype)
 
-        L0 = torch.stack([torch.eye(out_dim) for _ in range(self.n_kernels)], dim=0)
-        self.Ls = nn.Parameter(L0.clone(), dtype=self.dtype)  # (n_kernels, Dy, Dy)
+        if Ls is None:
+            L0 = torch.stack([torch.eye(out_dim, dtype=self.dtype) for _ in range(self.n_kernels)], dim=0)
+            self.Ls = nn.Parameter(L0.clone())  # (n_kernels, Dy, Dy)
+        else:
+            Ls = torch.atleast_3d(torch.as_tensor(Ls, dtype=self.dtype))
+            assert Ls.ndim == 3
+            assert Ls.shape[0] == self.n_kernels and Ls.shape[1] == out_dim and Ls.shape[2] == out_dim
+            self.Ls = nn.Parameter(Ls.clone())
 
     def forward(self, X, Z):
         k = torch.stack([_k(X, Z) for _k in self.scalar_kernels], dim=0)  # (n_kernels, N, M)
@@ -168,8 +178,8 @@ class KernelScDpDM(KernelScalarValued, KernelDataDependent):
         super().__init__(in_dim)
         self.n_eigs = int(n_eigs)
         self.jitter = float(jitter)
-        self._log_eps = nn.Parameter(torch.tensor(float(eps_init)).log(), dtype=dtype)
-        self._log_t   = nn.Parameter(torch.tensor(float(t_init)).log(), dtype=dtype)
+        self._log_eps = nn.Parameter(torch.tensor(float(eps_init), dtype=self.dtype).log())
+        self._log_t   = nn.Parameter(torch.tensor(float(t_init), dtype=self.dtype).log())
 
         # caches
         self._Xref = None
