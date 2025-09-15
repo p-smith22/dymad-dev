@@ -5,7 +5,8 @@ from typing import Dict, Union, Tuple
 
 from dymad.data import DynData, DynGeoData
 from dymad.models import ModelBase
-from dymad.utils import FlexLinear, make_autoencoder, predict_continuous, predict_continuous_exp, \
+from dymad.modules import FlexLinear, make_autoencoder
+from dymad.utils import predict_continuous, predict_continuous_exp, \
     predict_discrete, predict_discrete_exp, \
     predict_graph_continuous, predict_graph_discrete
 

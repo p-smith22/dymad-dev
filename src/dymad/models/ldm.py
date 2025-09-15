@@ -5,7 +5,8 @@ from typing import Tuple, Dict, Union
 
 from dymad.data import DynData, DynGeoData
 from dymad.models import ModelBase
-from dymad.utils import make_autoencoder, MLP, predict_continuous, predict_discrete, predict_graph_continuous, predict_graph_discrete
+from dymad.modules import make_autoencoder, MLP
+from dymad.utils import predict_continuous, predict_discrete, predict_graph_continuous, predict_graph_discrete
 
 class LDM(ModelBase):
     """Latent Dynamics Model (LDM)
