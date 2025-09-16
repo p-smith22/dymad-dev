@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from dymad.modules.kernel import KernelDataDependent
-
 def _flatten_block_kernel(K):  # (N,M,Dy,Dy) -> (N*Dy, M*Dy)
     return K.permute(0, 2, 1, 3).reshape(K.size(0) * K.size(2), K.size(1) * K.size(3))
 
@@ -50,12 +48,11 @@ class KRRBase(nn.Module):
         self._Ndat, self._Dy = self.Y_train.shape
         self._solved = False
 
-        if isinstance(self.kernel, KernelDataDependent):
-            self.kernel.set_reference_data(self.X_train)
         if isinstance(self.kernel, list):
             for k in self.kernel:
-                if isinstance(k, KernelDataDependent):
-                    k.set_reference_data(self.X_train)
+                k.set_reference_data(self.X_train)
+        else:
+            self.kernel.set_reference_data(self.X_train)
 
         self._on_set_train_data()  # hook for subclasses
 
@@ -83,7 +80,7 @@ class KRRMultiOutputShared(KRRBase):
 
         - One NxN Cholesky; solve `Dy` outputs together. One lambda (scalar) by default.
     """
-    def __init__(self, kernel, ridge_init=0, shared=True, jitter=1e-10, device=None):
+    def __init__(self, kernel, ridge_init=0, jitter=1e-10, device=None):
         super().__init__(kernel, ridge_init=ridge_init, jitter=jitter, device=device)
 
         self._ridge_unconstrained = nn.Parameter(
@@ -123,7 +120,7 @@ class KRRMultiOutputIndep(KRRBase):
         - A ModuleList of `Dy` scalar kernels (one per output).
         - `Dy` independent NxN Choleskys; `Dy` ridges (vector).
     """
-    def __init__(self, kernel, ridge_init=0, shared=True, jitter=1e-10, device=None):
+    def __init__(self, kernel, ridge_init=0, jitter=1e-10, device=None):
         super().__init__(kernel, ridge_init=ridge_init, jitter=jitter, device=device)
 
         # Update after seeing Dy

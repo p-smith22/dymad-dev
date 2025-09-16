@@ -1,9 +1,10 @@
+import copy
 import numpy as np
 import torch
 
-from dymad.modules import KRRMultiOutputIndep, KRRMultiOutputShared, KRROperatorValued, \
-    KernelScRBF, KernelOpSeparable
+from dymad.modules import make_krr
 
+# Data
 def func(inp):
     x  = np.atleast_2d(inp)
     y1 = x[:,0]**2 + np.sin(x[:,1])
@@ -20,29 +21,62 @@ S, T = np.meshgrid(s, s)
 Xtst = np.vstack([S.reshape(-1), T.reshape(-1)]).T
 Ytst = func(Xtst)
 
+# KRR Options
+RIDGE = 1e-10
+opt_rbf1 = {
+    "type": "sc_rbf",
+    "input_dim": 2,
+    "lengthscale_init": 1.0
+}
+opt_rbf2 = copy.deepcopy(opt_rbf1)
+opt_rbf2["lengthscale_init"] = 5.0
+opt_opk1 = {
+    "type": "op_sep",
+    "input_dim": 2,
+    "output_dim": 2,
+    "kopts": [opt_rbf1],
+    "Ls": np.array([[[1, 0], [0.5, 0]]])
+}
+opt_opk2 = copy.deepcopy(opt_opk1)
+opt_opk2["kopts"] = [opt_rbf1, opt_rbf1]
+opt_opk2["Ls"] = np.array([[[1, 0], [0, 0]], [[0, 0], [0, 1]]])
+
+opt_share = {
+    "type": "share",
+    "kernel": opt_rbf1,
+    "dtype": torch.float64,
+    "ridge_init": RIDGE
+} # Baseline
+opt_indp1 = {
+    "type": "indep",
+    "kernel": [opt_rbf1, opt_rbf1],
+    "dtype": torch.float64,
+    "ridge_init": RIDGE
+} # Should be identical to Baseline
+opt_indp2 = {
+    "type": "indep",
+    "kernel": [opt_rbf1, opt_rbf2],
+    "dtype": torch.float64,
+    "ridge_init": RIDGE
+} # Some difference in the second component
+opt_opva1 = {
+    "type": "opval",
+    "kernel": opt_opk1,
+    "dtype": torch.float64,
+    "ridge_init": RIDGE
+} # Should be very close to Baseline
+opt_opva2 = {
+    "type": "opval",
+    "kernel": opt_opk2,
+    "dtype": torch.float64,
+    "ridge_init": RIDGE
+} # Should be identical to Baseline
+opts = [opt_share, opt_indp1, opt_indp2, opt_opva1, opt_opva2]
+
 def run_krr():
-    k_rbf1 = KernelScRBF(in_dim=2, lengthscale_init=1.0)
-    k_rbf2 = KernelScRBF(in_dim=2, lengthscale_init=5.0)
-    k_opk1 = KernelOpSeparable(
-        kernels=k_rbf1, out_dim=2, Ls=np.array([[[1, 0], [0.5, 0]]]))
-    k_opk2 = KernelOpSeparable(
-        kernels=[k_rbf1, k_rbf1], out_dim=2,
-        Ls=np.array([[[1, 0], [0, 0]], [[0, 0], [0, 1]]]))
-
-    # Baseline
-    krr_share = KRRMultiOutputShared(kernel=k_rbf1, ridge_init=1e-10)
-    # Should be identical to Baseline
-    krr_indp1 = KRRMultiOutputIndep(kernel=[k_rbf1, k_rbf1], ridge_init=1e-10)
-    # Some difference in the second component
-    krr_indp2 = KRRMultiOutputIndep(kernel=[k_rbf1, k_rbf2], ridge_init=1e-10)
-    # Should be very close to Baseline
-    krr_opva1 = KRROperatorValued(kernel=k_opk1, ridge_init=1e-10)
-    # Should be identical to Baseline
-    krr_opva2 = KRROperatorValued(kernel=k_opk2, ridge_init=1e-10)
-
-    krrs = [krr_share, krr_indp1, krr_indp2, krr_opva1, krr_opva2]
     prds = []
-    for _krr in krrs:
+    for opt in opts:
+        _krr = make_krr(**opt)
         _krr.set_train_data(Xtrn, Ytrn)
         _krr.fit()
         with torch.no_grad():

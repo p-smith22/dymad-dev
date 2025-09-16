@@ -24,10 +24,9 @@ def scaled_cdist(X: torch.Tensor, Z: torch.Tensor, scale: Union[float, torch.Ten
 # --------------------
 # Kernels
 #
-# Besides base classes, naming convention: Kernel[A][B][C]
+# Besides base classes, naming convention: Kernel[A][B]
 #   A: Sc (scalar) or Op (operator-valued)
-#   B: Dp (data-dependent) or nothing (data-independent)
-#   C: Specific type of kernel, e.g., RBF, Separable, etc.
+#   B: Specific type of kernel, e.g., RBF, Separable, etc.
 # --------------------
 
 # Bases
@@ -56,16 +55,12 @@ class KernelAbstract(nn.Module, ABC):
         """True for operator-valued kernels; False for scalar kernels."""
         pass
 
-class KernelDataDependent(ABC):
-    """
-    Mixin interface for data-dependent kernels (e.g., diffusion maps).
-    Implement set_reference_data so solvers can notify once per training set.
-    """
-    @abstractmethod
     def set_reference_data(self, Xref: torch.Tensor) -> None:
         """
         Prepare data-dependent structures from Xref (N,d).
         Must be differentiable if kernel params are learnable.
+
+        By default the kernel is data-independent and does nothing.
         """
         pass
 
@@ -108,9 +103,12 @@ class KernelOperatorValuedScalars(KernelOperatorValued):
         super().__init__(self.in_dim, out_dim, dtype=dtype)
         self.scalar_kernels = kernels
 
+    def set_reference_data(self, Xref: torch.Tensor) -> None:
+        for _k in self.scalar_kernels:
+            _k.set_reference_data(Xref)
 
 # Actual kernels
-# Data-INDEPENDENT
+## Scalar kernels
 class KernelScRBF(KernelScalarValued):
     """
     Scalar RBF: k(x,z) = exp(-0.5 * ||x - z||^2 / ell^2)
@@ -129,39 +127,7 @@ class KernelScRBF(KernelScalarValued):
         sq = scaled_cdist(X, Z, self.ell, 2)
         return torch.exp(-0.5 * sq)
 
-class KernelOpSeparable(KernelOperatorValuedScalars):
-    """
-    Separable operator-valued kernel K(x,z) = sum_i k_i(x,z; ell) * B_i
-    where B_i = L_i L_i^T is PSD and learnable.
-    Output shape: (N, M, Dy, Dy)
-    """
-    def __init__(self,
-                 kernels: Union[KernelScalarValued, List], out_dim: int,
-                 Ls: Union[torch.Tensor, List[torch.Tensor]]=None, dtype=None):
-        super().__init__(kernels, out_dim, dtype=dtype)
-
-        if Ls is None:
-            L0 = torch.stack([torch.eye(out_dim, dtype=self.dtype) for _ in range(self.n_kernels)], dim=0)
-            self.Ls = nn.Parameter(L0.clone())  # (n_kernels, Dy, Dy)
-        else:
-            Ls = torch.atleast_3d(torch.as_tensor(Ls, dtype=self.dtype))
-            assert Ls.ndim == 3
-            assert Ls.shape[0] == self.n_kernels and Ls.shape[1] == out_dim and Ls.shape[2] == out_dim
-            self.Ls = nn.Parameter(Ls.clone())
-
-    def forward(self, X, Z):
-        k = torch.stack([_k(X, Z) for _k in self.scalar_kernels], dim=0)  # (n_kernels, N, M)
-        L = torch.tril(self.Ls)
-        B = torch.matmul(L, L.transpose(-1, -2))      # (n_kernels, Dy, Dy)
-
-        # Output: (N, M, Dy, Dy) = sum_i k_i(x,z) * B_i
-        out = torch.einsum('i n m, i a b -> n m a b', k, B)
-        return out
-
-
-# Actual kernels
-# Data-DEPENDENT
-class KernelScDpDM(KernelScalarValued, KernelDataDependent):
+class KernelScDM(KernelScalarValued):
     """
     Symmetric-normalized diffusion kernel via diffusion maps.
 
@@ -244,12 +210,33 @@ class KernelScDpDM(KernelScalarValued, KernelDataDependent):
         PhiZ = self._features(Z)   # (M,m)
         return PhiX @ PhiZ.T       # (N,M)
 
-class KernelOpDpSeparable(KernelOpSeparable, KernelDataDependent):
+
+## Operator kernels
+class KernelOpSeparable(KernelOperatorValuedScalars):
     """
-    Data-dependent version of SeparableOKernel.
+    Separable operator-valued kernel K(x,z) = sum_i k_i(x,z; ell) * B_i
+    where B_i = L_i L_i^T is PSD and learnable.
     Output shape: (N, M, Dy, Dy)
     """
-    def set_reference_data(self, Xref: torch.Tensor) -> None:
-        for _k in self.scalar_kernels:
-            if isinstance(_k, KernelDataDependent):
-                _k.set_reference_data(Xref)
+    def __init__(self,
+                 kernels: Union[KernelScalarValued, List], out_dim: int,
+                 Ls: Union[torch.Tensor, List[torch.Tensor]]=None, dtype=None):
+        super().__init__(kernels, out_dim, dtype=dtype)
+
+        if Ls is None:
+            L0 = torch.stack([torch.eye(out_dim, dtype=self.dtype) for _ in range(self.n_kernels)], dim=0)
+            self.Ls = nn.Parameter(L0.clone())  # (n_kernels, Dy, Dy)
+        else:
+            Ls = torch.atleast_3d(torch.as_tensor(Ls, dtype=self.dtype))
+            assert Ls.ndim == 3
+            assert Ls.shape[0] == self.n_kernels and Ls.shape[1] == out_dim and Ls.shape[2] == out_dim
+            self.Ls = nn.Parameter(Ls.clone())
+
+    def forward(self, X, Z):
+        k = torch.stack([_k(X, Z) for _k in self.scalar_kernels], dim=0)  # (n_kernels, N, M)
+        L = torch.tril(self.Ls)
+        B = torch.matmul(L, L.transpose(-1, -2))      # (n_kernels, Dy, Dy)
+
+        # Output: (N, M, Dy, Dy) = sum_i k_i(x,z) * B_i
+        out = torch.einsum('i n m, i a b -> n m a b', k, B)
+        return out
