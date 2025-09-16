@@ -89,6 +89,11 @@ class KRRMultiOutputShared(KRRBase):
         # caches
         self._alphas = None      # (N, Dy)
 
+    def __repr__(self) -> str:
+        _s = self.kernel.__repr__()
+        return f"KRRMultiOutputShared(\n\tridge={self.ridge},\n\tjitter={self.jitter},\n\tdtype={self.dtype})" \
+                f"\n\twith:\n\t\tkernel={_s}"
+
     def _on_set_train_data(self):
         self._alphas = nn.Parameter(
             torch.empty((self._Ndat, self._Dy), dtype=self.dtype, device=self.device), requires_grad=False)
@@ -126,6 +131,12 @@ class KRRMultiOutputIndep(KRRBase):
         # Update after seeing Dy
         self._ridge_unconstrained = None
         self._alphas = None      # (N, Dy)
+
+    def __repr__(self) -> str:
+        _r = self.ridge_init if self.X_train is None else self.ridge
+        _b = f", \n\tridge={_r},\n\tjitter={self.jitter},\n\tdtype={self.dtype})"
+        _s = [k.__repr__() for k in self.kernel]
+        return f"KRRMultiOutputIndep(" + _b + f"\n\twith:\n\t\t" + "\n\t\t".join(_s)
 
     def _on_set_train_data(self):
         self._alphas = nn.Parameter(
@@ -178,6 +189,10 @@ class KRROperatorValued(KRRBase):
         self._ridge_unconstrained = nn.Parameter(
             torch.tensor(ridge_init, dtype=self.dtype, device=self.device).log())
         self._alpha_vec = None
+
+    def __repr__(self) -> str:
+        _s = self.kernel.__repr__()
+        return f"KRROperatorValued(\n\tridge={self.ridge},\n\tjitter={self.jitter},\n\tdtype={self.dtype})\n\twith:\n\tkernel={_s}"
 
     def _on_set_train_data(self):
         self._alpha_vec = nn.Parameter(

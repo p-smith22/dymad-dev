@@ -118,6 +118,9 @@ class KernelScRBF(KernelScalarValued):
         super().__init__(in_dim, dtype=dtype)
         self._log_ell = nn.Parameter(torch.tensor(float(lengthscale_init), dtype=self.dtype).log())
 
+    def __repr__(self) -> str:
+        return f"KernelScRBF(in_dim={self.in_dim}, ell={self.ell.item():.4f}, dtype={self.dtype})"
+
     @property
     def ell(self):
         # positive via softplus
@@ -153,6 +156,9 @@ class KernelScDM(KernelScalarValued):
         self._U = None          # (N,m)
         self._lam = None        # (m,)
         self._Phi_ref_t = None  # (N,m)
+
+    def __repr__(self) -> str:
+        return f"KernelScDM(in_dim={self.in_dim}, n_eigs={self.n_eigs}, eps={self.eps.item():.4f}, t={self.t.item():.4f}, dtype={self.dtype})"
 
     @property
     def eps(self):  # ε > 0
@@ -231,6 +237,11 @@ class KernelOpSeparable(KernelOperatorValuedScalars):
             assert Ls.ndim == 3
             assert Ls.shape[0] == self.n_kernels and Ls.shape[1] == out_dim and Ls.shape[2] == out_dim
             self.Ls = nn.Parameter(Ls.clone())
+
+    def __repr__(self) -> str:
+        _s = [self.scalar_kernels[i].__repr__() for i in range(self.n_kernels)]
+        return f"KernelOpSeparable(in_dim={self.in_dim}, out_dim={self.out_dim}, n_kernels={self.n_kernels}, dtype={self.dtype})\n" \
+               f"\t\tLs_shapes={[self.Ls.shape]}\n\twith:\n\t\t" + "\n\t\t".join(_s)
 
     def forward(self, X, Z):
         k = torch.stack([_k(X, Z) for _k in self.scalar_kernels], dim=0)  # (n_kernels, N, M)
