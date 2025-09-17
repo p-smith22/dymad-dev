@@ -1,11 +1,10 @@
-import copy
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.integrate as spi
 import torch
 
-from dymad.models import KM
+from dymad.models import DKM, KM
 from dymad.training import LinearTrainer, NODETrainer
 from dymad.utils import load_model, plot_trajectory, setup_logging, TrajectorySampler
 
@@ -67,6 +66,35 @@ trn_ln = {
         "interval": 500,
         "times": 1}
         }
+trn_ct = {
+    "n_epochs": 200,
+    "save_interval": 50,
+    "load_checkpoint": False,
+    "learning_rate": 1e-2,
+    "decay_rate": 0.999,
+    "reconstruction_weight": 1.0,
+    "dynamics_weight": 1.0,
+    "sweep_lengths": [4],
+    "chop_mode": "initial",
+    "chop_step": 0.5,
+    "ls_update": {
+        "method": "raw",
+        "interval": 50,
+        "times": 3}
+        }
+trn_dt = {
+    "n_epochs": 400,
+    "save_interval": 50,
+    "load_checkpoint": False,
+    "learning_rate": 1e-2,
+    "decay_rate": 0.999,
+    "reconstruction_weight": 1.0,
+    "dynamics_weight": 1.0,
+    "ls_update": {
+        "method": "raw",
+        "interval": 100,
+        "times": 5}
+        }
 
 smpl = {'x0': {
     'kind': 'perturb',
@@ -75,16 +103,14 @@ smpl = {'x0': {
 config_path = 'ker_model.yaml'
 
 cfgs = [
-    ('km_ln',  KM,  LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
-    # ('dkbf_nd', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt}),
-    # ('dkbf_ln', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_ln}),
-    # ('dkbf_tr', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_tr}),
-    # ('dkbf_sa', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_sa}),
+    ('km_ln',  KM,   LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
+    ('km_nd',  KM,   NODETrainer,       {"model": mdl_kl, "training" : trn_ct}),
+    ('dkm_ln', DKM,  LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
+    ('dkm_nd', DKM,  NODETrainer,       {"model": mdl_kl, "training" : trn_dt}),
     ]
 
-# IDX = [0, 1, 2, 3, 4]
-IDX = [0]
-# IDX = [2, 3, 4]
+IDX = [0, 1]
+# IDX = [2, 3]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
@@ -109,21 +135,32 @@ if iftrn:
         trainer.train()
 
 if ifprd:
+    J = 32
     sampler = TrajectorySampler(f, g, config='ker_data.yaml', config_mod=smpl)
-    ts, xs, ys = sampler.sample(t_grid, batch=1)
-    x_data = xs[0]
-    t_data = ts[0]
+    ts, xs, ys = sampler.sample(t_grid, batch=J)
+    x_data = xs
+    t_data = ts
 
     res = [x_data]
     for i in IDX:
         mdl, MDL, _, _ = cfgs[i]
         _, prd_func = load_model(MDL, f'ker_{mdl}.pt')
         with torch.no_grad():
-            pred = prd_func(x_data, t_data)
-        res.append(pred)
+            pred = [prd_func(x, t) for x, t in zip(x_data, t_data)]
+        res.append(np.array(pred))
 
-    plot_trajectory(
-        np.array(res), t_data, "SA",
-        labels=['Truth'] + labels, ifclose=False)
+    for _i in range(1, len(res)):
+        print(labels[_i-1], np.linalg.norm(res[_i]-res[0])/np.linalg.norm(res[0]))
+
+    stys = ['b-', 'r--', 'g:', 'm-.', 'c--']
+    f, ax = plt.subplots(nrows=2, sharex=True)
+    for _i in range(J):
+        for _j in range(len(res)):
+            ax[0].plot(t_data[0], res[_j][_i][:, 0], stys[_j])
+            ax[1].plot(t_data[0], res[_j][_i][:, 1], stys[_j])
+
+    # plot_trajectory(
+    #     np.array(res), t_data, "SA",
+    #     labels=['Truth'] + labels, ifclose=False)
 
 plt.show()

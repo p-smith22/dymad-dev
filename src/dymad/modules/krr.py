@@ -38,9 +38,9 @@ class KRRBase(nn.Module):
 
         # Placeholder for nn.Parameter
         # To be materialized in subclasses
-        self.register_parameter("_ridge_unconstrained", nn.Parameter(torch.empty(0)))
-        self.register_parameter("_alphas", nn.Parameter(torch.empty(0)))
-        self.register_parameter("_Xref", nn.Parameter(torch.empty(0)))
+        self.register_parameter("_ridge_unconstrained", nn.Parameter(torch.empty(0, dtype=self.dtype, device=self.device)))
+        self.register_parameter("_alphas", nn.Parameter(torch.empty(0, dtype=self.dtype, device=self.device)))
+        self.register_parameter("_Xref", nn.Parameter(torch.empty(0, dtype=self.dtype, device=self.device)))
 
     @property
     def ridge(self):
@@ -104,9 +104,11 @@ class KRRMultiOutputShared(KRRBase):
                 f"\n\twith:\n\t\tkernel={_s}"
 
     def _on_set_train_data(self):
-        self._alphas = nn.Parameter(
-            torch.empty((self._Ndat, self._Dy), dtype=self.dtype, device=self.device), requires_grad=True)
-        self._Xref = nn.Parameter(self.X_train, requires_grad=False)
+        self._alphas.set_(
+            torch.empty((self._Ndat, self._Dy), dtype=self.dtype, device=self.device))
+        self._alphas.requires_grad = True
+        self._Xref.set_(self.X_train)
+        self._Xref.requires_grad = False
 
     def _ensure_solved(self):
         if self._residual is not None:
@@ -135,13 +137,6 @@ class KRRMultiOutputIndep(KRRBase):
         - A ModuleList of `Dy` scalar kernels (one per output).
         - `Dy` independent NxN Choleskys; `Dy` ridges (vector).
     """
-    def __init__(self, kernel, ridge_init=0, jitter=1e-10, device=None):
-        super().__init__(kernel, ridge_init=ridge_init, jitter=jitter, device=device)
-
-        # Update after seeing Dy
-        self._ridge_unconstrained = None
-        self._alphas = None      # (N, Dy)
-
     def __repr__(self) -> str:
         _r = self.ridge_init if self.X_train is None else self.ridge
         _b = f", \n\tridge={_r},\n\tjitter={self.jitter},\n\tdtype={self.dtype})"
@@ -149,18 +144,20 @@ class KRRMultiOutputIndep(KRRBase):
         return f"KRRMultiOutputIndep(" + _b + f"\n\twith:\n\t\t" + "\n\t\t".join(_s)
 
     def _on_set_train_data(self):
-        self._alphas = nn.Parameter(
-            torch.empty((self._Ndat, self._Dy), dtype=self.dtype, device=self.device), requires_grad=False)
-        self._Xref = nn.Parameter(self.X_train, requires_grad=False)
+        self._alphas.set_(
+            torch.empty((self._Ndat, self._Dy), dtype=self.dtype, device=self.device))
+        self._alphas.requires_grad = True
+        self._Xref.set_(self.X_train)
+        self._Xref.requires_grad = False
 
         # per-output ridge vector (Dy,)
         if self._ridge_unconstrained is None:
             if isinstance(self.ridge_init, (float, int)):
-                self._ridge_unconstrained = nn.Parameter(
+                self._ridge_unconstrained.set_(
                     torch.full((self._Dy,), self.ridge_init, dtype=self.dtype, device=self.device).log())
             else:
                 assert len(self.ridge_init) == self._Dy
-                self._ridge_unconstrained = nn.Parameter(
+                self._ridge_unconstrained.set_(
                     torch.tensor(self.ridge_init, dtype=self.dtype, device=self.device).log())
 
     def _ensure_solved(self):
@@ -198,18 +195,20 @@ class KRROperatorValued(KRRBase):
     """
     def __init__(self, kernel, ridge_init=0, jitter=1e-10, device=None):
         super().__init__(kernel, ridge_init=ridge_init, jitter=jitter, device=device)
+
         self._ridge_unconstrained = nn.Parameter(
             torch.tensor(ridge_init, dtype=self.dtype, device=self.device).log())
-        self._alphas = None
 
     def __repr__(self) -> str:
         _s = self.kernel.__repr__()
         return f"KRROperatorValued(\n\tridge={self.ridge},\n\tjitter={self.jitter},\n\tdtype={self.dtype})\n\twith:\n\tkernel={_s}"
 
     def _on_set_train_data(self):
-        self._alphas = nn.Parameter(
-            torch.empty(self._Ndat * self._Dy, dtype=self.dtype, device=self.device), requires_grad=False)
-        self._Xref = nn.Parameter(self.X_train, requires_grad=False)
+        self._alphas.set_(
+            torch.empty(self._Ndat * self._Dy, dtype=self.dtype, device=self.device))
+        self._alphas.requires_grad = True
+        self._Xref.set_(self.X_train)
+        self._Xref.requires_grad = False
 
     def _ensure_solved(self):
         if self._residual is not None:
