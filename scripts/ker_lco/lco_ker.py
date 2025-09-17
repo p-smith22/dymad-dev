@@ -4,7 +4,7 @@ import numpy as np
 import scipy.integrate as spi
 import torch
 
-from dymad.models import DKM, KM
+from dymad.models import DKM, DKMSK, KM
 from dymad.training import LinearTrainer, NODETrainer
 from dymad.utils import load_model, plot_trajectory, setup_logging, TrajectorySampler
 
@@ -105,14 +105,18 @@ smpl = {'x0': {
 config_path = 'ker_model.yaml'
 
 cfgs = [
-    ('km_ln',  KM,   LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
-    ('km_nd',  KM,   NODETrainer,       {"model": mdl_kl, "training" : trn_ct}),
-    ('dkm_ln', DKM,  LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
-    ('dkm_nd', DKM,  NODETrainer,       {"model": mdl_kl, "training" : trn_dt}),
+    ('km_ln',  KM,     LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
+    ('km_nd',  KM,     NODETrainer,       {"model": mdl_kl, "training" : trn_ct}),
+    ('dkm_ln', DKM,    LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
+    ('dkm_nd', DKM,    NODETrainer,       {"model": mdl_kl, "training" : trn_dt}),
+    ('dks_ln', DKMSK,  LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
+    ('dks_nd', DKMSK,  NODETrainer,       {"model": mdl_kl, "training" : trn_dt}),
     ]
 
-IDX = [0, 1]
+# IDX = [0, 1, 2, 3, 4, 5]
+# IDX = [0, 1]
 # IDX = [2, 3]
+IDX = [4, 5]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
@@ -154,7 +158,7 @@ if ifprd:
     for _i in range(1, len(res)):
         print(labels[_i-1], np.linalg.norm(res[_i]-res[0])/np.linalg.norm(res[0]))
 
-    stys = ['b-', 'r--', 'g:', 'm-.', 'c--']
+    stys = ['b-', 'r--', 'g:', 'm-.', 'c--', 'y:', 'k-.']
     f, ax = plt.subplots(nrows=2, sharex=True)
     for _i in range(J):
         for _j in range(len(res)):

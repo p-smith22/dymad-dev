@@ -197,3 +197,31 @@ class DKM(KM):
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
         return predict_discrete(self, x0, ts, us=w.u)
+
+class DKMSK(KM):
+    """
+    Dynamics based on kernel machine with skip connections in dynamics.
+    """
+    GRAPH = False
+    CONT  = False
+
+    def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
+        super(DKMSK, self).__init__(model_config, data_meta, dtype=dtype, device=device)
+
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        """
+        Compute latent dynamics (derivative).
+        """
+        return z + self.dynamics_net(z)
+
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
+        """Predict trajectory using discrete-time iterations."""
+        return predict_discrete(self, x0, ts, us=w.u)
+
+    def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Fit the kernel dynamics using input-output pairs.
+        """
+        self.dynamics_net.set_train_data(inp, out-inp)
+        residual = self.dynamics_net.fit()
+        return self.dynamics_net._alphas, residual
