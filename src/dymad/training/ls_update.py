@@ -190,13 +190,13 @@ def _dt_raw(dataloader, model, dt, params=None):
     _p = {} if params is None else params
     A, b = get_batch_dt(dataloader, model, dt)
     W, r = model.linear_solve(A, b, **_p)
-    return W, r
+    return (W,), r
 
 def _ct_raw(dataloader, model, dt, params=None):
     _p = {} if params is None else params
     A, b = get_batch_ct(dataloader, model, dt)
     W, r = model.linear_solve(A, b, **_p)
-    return W, r
+    return (W,), r
 
 SOL_MAP = {
     'dt_full'      : _dt_full,

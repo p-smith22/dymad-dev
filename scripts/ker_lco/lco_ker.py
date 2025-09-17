@@ -80,7 +80,8 @@ trn_ct = {
     "ls_update": {
         "method": "raw",
         "interval": 50,
-        "times": 3}
+        "times": 3,
+        "reset": False}
         }
 trn_dt = {
     "n_epochs": 400,
@@ -93,7 +94,8 @@ trn_dt = {
     "ls_update": {
         "method": "raw",
         "interval": 100,
-        "times": 5}
+        "times": 5,
+        "reset": False}
         }
 
 smpl = {'x0': {
