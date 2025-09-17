@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -29,13 +30,17 @@ class KRRBase(nn.Module):
 
         self.ridge_init = ridge_init
         self.jitter = float(jitter)
-        # Ridge params are defined by subclasses (scalar, vector, etc.)
-        self._ridge_unconstrained = None
 
         # Train data & caches
         self.X_train = None
         self.Y_train = None
-        self._solved = False
+        self._residual = None
+
+        # Placeholder for nn.Parameter
+        # To be materialized in subclasses
+        self.register_parameter("_ridge_unconstrained", nn.Parameter(torch.empty(0)))
+        self.register_parameter("_alphas", nn.Parameter(torch.empty(0)))
+        self.register_parameter("_Xref", nn.Parameter(torch.empty(0)))
 
     @property
     def ridge(self):
@@ -46,7 +51,7 @@ class KRRBase(nn.Module):
         self.X_train = torch.tensor(X, dtype=self.dtype, device=self.device)
         self.Y_train = torch.tensor(Y, dtype=self.dtype, device=self.device)
         self._Ndat, self._Dy = self.Y_train.shape
-        self._solved = False
+        self._residual = None  # reset
 
         if isinstance(self.kernel, list):
             for k in self.kernel:
@@ -63,10 +68,17 @@ class KRRBase(nn.Module):
         """
         Precompute the linear solve, which can be backprop'd.
         """
-        self._ensure_solved()
+        return self._ensure_solved()
 
     def forward(self, Xnew: torch.Tensor):
         return self._predict_from_solution(Xnew)
+
+    def _comp_residual(self):
+        """
+        Return the training residual after fit().
+        """
+        Ypred = self._predict_from_solution(self.X_train)
+        return torch.linalg.norm(self.Y_train - Ypred) / np.sqrt(self._Ndat)
 
     def _ensure_solved(self):
         raise NotImplementedError("This is the base class.")
@@ -86,9 +98,6 @@ class KRRMultiOutputShared(KRRBase):
         self._ridge_unconstrained = nn.Parameter(
             torch.tensor(ridge_init, dtype=self.dtype, device=self.device).log())
 
-        # caches
-        self._alphas = None      # (N, Dy)
-
     def __repr__(self) -> str:
         _s = self.kernel.__repr__()
         return f"KRRMultiOutputShared(\n\tridge={self.ridge},\n\tjitter={self.jitter},\n\tdtype={self.dtype})" \
@@ -96,11 +105,12 @@ class KRRMultiOutputShared(KRRBase):
 
     def _on_set_train_data(self):
         self._alphas = nn.Parameter(
-            torch.empty((self._Ndat, self._Dy), dtype=self.dtype, device=self.device), requires_grad=False)
+            torch.empty((self._Ndat, self._Dy), dtype=self.dtype, device=self.device), requires_grad=True)
+        self._Xref = nn.Parameter(self.X_train, requires_grad=False)
 
     def _ensure_solved(self):
-        if self._solved:
-            return
+        if self._residual is not None:
+            return self._residual
 
         assert self.X_train is not None and self.Y_train is not None, "Call set_train_data first."
 
@@ -111,12 +121,12 @@ class KRRMultiOutputShared(KRRBase):
         A = torch.cholesky_solve(Y, L)  # (N,Dy)
         self._alphas.data.copy_(A)
 
-        self._solved = True
+        self._residual = self._comp_residual()
+        return self._residual
 
     def _predict_from_solution(self, Xnew: torch.Tensor):
-        M = Xnew.shape[0]
-        Kxz = self.kernel(Xnew, self.X_train)  # (M,N)
-        return Kxz @ self._alphas              # (M,Dy)
+        Kxz = self.kernel(Xnew, self._Xref)  # (M,N)
+        return Kxz @ self._alphas            # (M,Dy)
 
 class KRRMultiOutputIndep(KRRBase):
     """
@@ -141,6 +151,7 @@ class KRRMultiOutputIndep(KRRBase):
     def _on_set_train_data(self):
         self._alphas = nn.Parameter(
             torch.empty((self._Ndat, self._Dy), dtype=self.dtype, device=self.device), requires_grad=False)
+        self._Xref = nn.Parameter(self.X_train, requires_grad=False)
 
         # per-output ridge vector (Dy,)
         if self._ridge_unconstrained is None:
@@ -153,8 +164,8 @@ class KRRMultiOutputIndep(KRRBase):
                     torch.tensor(self.ridge_init, dtype=self.dtype, device=self.device).log())
 
     def _ensure_solved(self):
-        if self._solved:
-            return
+        if self._residual is not None:
+            return self._residual
 
         assert self.X_train is not None and self.Y_train is not None, "Call set_train_data first."
 
@@ -168,13 +179,14 @@ class KRRMultiOutputIndep(KRRBase):
             A[:, d] = torch.cholesky_solve(Y[:, d:d+1], L).squeeze(-1)
         self._alphas.data.copy_(A)
 
-        self._solved = True
+        self._residual = self._comp_residual()
+        return self._residual
 
     def _predict_from_solution(self, Xnew: torch.Tensor):
         M = Xnew.shape[0]
         Yhat = torch.empty((M, self._Dy), dtype=self.dtype, device=self.device)
         for d in range(self._Dy):
-            Kxz = self.kernel[d](Xnew, self.X_train)
+            Kxz = self.kernel[d](Xnew, self._Xref)
             Yhat[:, d] = (Kxz @ self._alphas[:, d]).view(-1)
         return Yhat
 
@@ -188,19 +200,20 @@ class KRROperatorValued(KRRBase):
         super().__init__(kernel, ridge_init=ridge_init, jitter=jitter, device=device)
         self._ridge_unconstrained = nn.Parameter(
             torch.tensor(ridge_init, dtype=self.dtype, device=self.device).log())
-        self._alpha_vec = None
+        self._alphas = None
 
     def __repr__(self) -> str:
         _s = self.kernel.__repr__()
         return f"KRROperatorValued(\n\tridge={self.ridge},\n\tjitter={self.jitter},\n\tdtype={self.dtype})\n\twith:\n\tkernel={_s}"
 
     def _on_set_train_data(self):
-        self._alpha_vec = nn.Parameter(
+        self._alphas = nn.Parameter(
             torch.empty(self._Ndat * self._Dy, dtype=self.dtype, device=self.device), requires_grad=False)
+        self._Xref = nn.Parameter(self.X_train, requires_grad=False)
 
     def _ensure_solved(self):
-        if self._solved:
-            return
+        if self._residual is not None:
+            return self._residual
 
         assert self.X_train is not None and self.Y_train is not None, "Call set_train_data first."
 
@@ -211,13 +224,14 @@ class KRROperatorValued(KRRBase):
         A = Kflat + self.ridge * torch.eye(self._Ndat * self._Dy, dtype=self.dtype, device=self.device)
         L = torch.linalg.cholesky(A + self.jitter * torch.eye(A.size(0), dtype=self.dtype, device=self.device))
         _tmp = torch.cholesky_solve(Y.reshape(-1, 1), L).squeeze(-1)  # (N*Dy,)
-        self._alpha_vec.data.copy_(_tmp)
+        self._alphas.data.copy_(_tmp)
 
-        self._solved = True
+        self._residual = self._comp_residual()
+        return self._residual
 
     def _predict_from_solution(self, Xnew: torch.Tensor):
         M = Xnew.shape[0]
-        Kxz = self.kernel(Xnew, self.X_train) # (M,N,Dy,Dy)
+        Kxz = self.kernel(Xnew, self._Xref) # (M,N,Dy,Dy)
         Kflat = _flatten_block_kernel(Kxz)    # (M*Dy, N*Dy)
-        ynew_vec = Kflat @ self._alpha_vec    # (M*Dy,)
+        ynew_vec = Kflat @ self._alphas       # (M*Dy,)
         return ynew_vec.reshape(M, self._Dy)
