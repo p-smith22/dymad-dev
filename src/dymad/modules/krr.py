@@ -104,9 +104,11 @@ class KRRMultiOutputShared(KRRBase):
                 f"\n\twith:\n\t\tkernel={_s}"
 
     def _on_set_train_data(self):
+        self._alphas.requires_grad = False
         self._alphas.set_(
             torch.empty((self._Ndat, self._Dy), dtype=self.dtype, device=self.device))
         self._alphas.requires_grad = True
+        self._Xref.requires_grad = False
         self._Xref.set_(self.X_train)
         self._Xref.requires_grad = False
 
@@ -144,14 +146,17 @@ class KRRMultiOutputIndep(KRRBase):
         return f"KRRMultiOutputIndep(" + _b + f"\n\twith:\n\t\t" + "\n\t\t".join(_s)
 
     def _on_set_train_data(self):
+        self._alphas.requires_grad = False
         self._alphas.set_(
             torch.empty((self._Ndat, self._Dy), dtype=self.dtype, device=self.device))
         self._alphas.requires_grad = True
+        self._Xref.requires_grad = False
         self._Xref.set_(self.X_train)
         self._Xref.requires_grad = False
 
         # per-output ridge vector (Dy,)
-        if self._ridge_unconstrained is None:
+        if len(self._ridge_unconstrained) == 0:
+            self._ridge_unconstrained.requires_grad = False
             if isinstance(self.ridge_init, (float, int)):
                 self._ridge_unconstrained.set_(
                     torch.full((self._Dy,), self.ridge_init, dtype=self.dtype, device=self.device).log())
@@ -204,9 +209,11 @@ class KRROperatorValued(KRRBase):
         return f"KRROperatorValued(\n\tridge={self.ridge},\n\tjitter={self.jitter},\n\tdtype={self.dtype})\n\twith:\n\tkernel={_s}"
 
     def _on_set_train_data(self):
+        self._alphas.requires_grad = False
         self._alphas.set_(
             torch.empty(self._Ndat * self._Dy, dtype=self.dtype, device=self.device))
         self._alphas.requires_grad = True
+        self._Xref.requires_grad = False
         self._Xref.set_(self.X_train)
         self._Xref.requires_grad = False
 
