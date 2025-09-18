@@ -39,19 +39,41 @@ opt_rbf1 = {
     "input_dim": 2,
     "lengthscale_init": 1.0
 }
+opt_opk1 = {
+    "type": "op_sep",
+    "input_dim": 2,
+    "output_dim": 2,
+    "kopts": [opt_rbf1],
+    "Ls": np.array([[[1, 0], [0, 1]]])
+}
 opt_share = {
     "type": "share",
     "kernel": opt_rbf1,
     "dtype": torch.float64,
     "ridge_init": RIDGE
 }
+opt_indep = {
+    "type": "indep",
+    "kernel": [opt_rbf1, opt_rbf1],
+    "dtype": torch.float64,
+    "ridge_init": RIDGE
+}
+opt_opval = {
+    "type": "opval",
+    "kernel": opt_opk1,
+    "dtype": torch.float64,
+    "ridge_init": RIDGE,
+}
 
+# opt_krr = opt_share
+# opt_krr = opt_indep
+opt_krr = opt_opval
 mdl_kl = {
     "name" : 'ker_model',
     "encoder_layers" : 0,
     "decoder_layers" : 0
     }
-mdl_kl.update(**opt_share)
+mdl_kl.update(**opt_krr)
 
 trn_ln = {
     "n_epochs": 1,
@@ -116,7 +138,7 @@ cfgs = [
 # IDX = [0, 1, 2, 3, 4, 5]
 # IDX = [0, 1]
 # IDX = [2, 3]
-IDX = [4, 5]
+IDX = [3]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
@@ -145,15 +167,15 @@ if ifprd:
     sampler = TrajectorySampler(f, g, config='ker_data.yaml', config_mod=smpl)
     ts, xs, ys = sampler.sample(t_grid, batch=J)
     x_data = xs
-    t_data = ts
+    t_data = ts[0]
 
     res = [x_data]
     for i in IDX:
         mdl, MDL, _, _ = cfgs[i]
         _, prd_func = load_model(MDL, f'ker_{mdl}.pt')
         with torch.no_grad():
-            pred = [prd_func(x, t) for x, t in zip(x_data, t_data)]
-        res.append(np.array(pred))
+            pred = prd_func(x_data, t_data)
+        res.append(pred)
 
     for _i in range(1, len(res)):
         print(labels[_i-1], np.linalg.norm(res[_i]-res[0])/np.linalg.norm(res[0]))
@@ -162,8 +184,8 @@ if ifprd:
     f, ax = plt.subplots(nrows=2, sharex=True)
     for _i in range(J):
         for _j in range(len(res)):
-            ax[0].plot(t_data[0], res[_j][_i][:, 0], stys[_j])
-            ax[1].plot(t_data[0], res[_j][_i][:, 1], stys[_j])
+            ax[0].plot(t_data, res[_j][_i][:, 0], stys[_j])
+            ax[1].plot(t_data, res[_j][_i][:, 1], stys[_j])
 
     # plot_trajectory(
     #     np.array(res), t_data, "SA",

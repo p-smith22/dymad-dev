@@ -45,7 +45,7 @@ class KernelAbstract(nn.Module, ABC):
         Compute kernel between X (N,d) and Z (M,d).
         Returns:
           - Scalar kernels: (N, M)
-          - Operator-valued kernels: (N, M, Dy, Dy)
+          - Operator-valued kernels: (N, Dy, M, Dy)
         """
         pass
 
@@ -87,7 +87,7 @@ class KernelOperatorValued(KernelAbstract, ABC):
 class KernelOperatorValuedScalars(KernelOperatorValued):
     """
     Operator-valued kernel induced by scalar kernels
-    Output shape: (N, M, Dy, Dy)
+    Output shape: (..., N, Dy, M, Dy)
     """
     def __init__(self, kernels: Union[KernelScalarValued, List], out_dim: int, dtype=None):
         if isinstance(kernels, KernelScalarValued):
@@ -222,7 +222,7 @@ class KernelOpSeparable(KernelOperatorValuedScalars):
     """
     Separable operator-valued kernel K(x,z) = sum_i k_i(x,z; ell) * B_i
     where B_i = L_i L_i^T is PSD and learnable.
-    Output shape: (N, M, Dy, Dy)
+    Output shape: (..., N, Dy, M, Dy)
     """
     def __init__(self,
                  kernels: Union[KernelScalarValued, List], out_dim: int,
@@ -244,10 +244,9 @@ class KernelOpSeparable(KernelOperatorValuedScalars):
                f"\t\tLs_shapes={[self.Ls.shape]}\n\twith:\n\t\t" + "\n\t\t".join(_s)
 
     def forward(self, X, Z):
-        k = torch.stack([_k(X, Z) for _k in self.scalar_kernels], dim=0)  # (n_kernels, N, M)
+        k = torch.stack([_k(X, Z) for _k in self.scalar_kernels], dim=0)  # (n_kernels, ..., M)
         L = torch.tril(self.Ls)
         B = torch.matmul(L, L.transpose(-1, -2))      # (n_kernels, Dy, Dy)
-
-        # Output: (N, M, Dy, Dy) = sum_i k_i(x,z) * B_i
-        out = torch.einsum('i n m, i a b -> n m a b', k, B)
+        # Output: (..., Dy, M, Dy) = sum_i k_i(x,z) * B_i
+        out = torch.einsum('i ... m, i a b -> ... a m b', k, B)
         return out

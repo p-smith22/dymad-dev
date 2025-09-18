@@ -3,9 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-def _flatten_block_kernel(K):  # (N,M,Dy,Dy) -> (N*Dy, M*Dy)
-    return K.permute(0, 2, 1, 3).reshape(K.size(0) * K.size(2), K.size(1) * K.size(3))
-
 class KRRBase(nn.Module):
     """
     Base class for Kernel Ridge Regression, in particular:
@@ -93,6 +90,8 @@ class KRRMultiOutputShared(KRRBase):
         - One NxN Cholesky; solve `Dy` outputs together. One lambda (scalar) by default.
     """
     def __init__(self, kernel, ridge_init=0, jitter=1e-10, device=None):
+        assert not kernel.is_operator_valued, "kernel should be scalar-valued."
+
         super().__init__(kernel, ridge_init=ridge_init, jitter=jitter, device=device)
 
         self._ridge_unconstrained = nn.Parameter(
@@ -139,6 +138,13 @@ class KRRMultiOutputIndep(KRRBase):
         - A ModuleList of `Dy` scalar kernels (one per output).
         - `Dy` independent NxN Choleskys; `Dy` ridges (vector).
     """
+    def __init__(self, kernel, ridge_init=0, jitter=1e-10, device=None):
+        assert isinstance(kernel, (nn.ModuleList, list)), "kernel should be a list of kernels."
+        for _k in kernel:
+            assert not _k.is_operator_valued, "kernel should be scalar-valued."
+
+        super().__init__(kernel, ridge_init=ridge_init, jitter=jitter, device=device)
+
     def __repr__(self) -> str:
         _r = self.ridge_init if self.X_train is None else self.ridge
         _b = f", \n\tridge={_r},\n\tjitter={self.jitter},\n\tdtype={self.dtype})"
@@ -185,11 +191,12 @@ class KRRMultiOutputIndep(KRRBase):
         return self._residual
 
     def _predict_from_solution(self, Xnew: torch.Tensor):
-        M = Xnew.shape[0]
-        Yhat = torch.empty((M, self._Dy), dtype=self.dtype, device=self.device)
-        for d in range(self._Dy):
+        M = Xnew.shape[:-1]
+        D = len(self.kernel)
+        Yhat = torch.empty((*M, D), dtype=self.dtype, device=self.device)
+        for d in range(D):
             Kxz = self.kernel[d](Xnew, self._Xref)
-            Yhat[:, d] = (Kxz @ self._alphas[:, d]).view(-1)
+            Yhat[..., d] = Kxz @ self._alphas[:, d]
         return Yhat
 
 class KRROperatorValued(KRRBase):
@@ -199,6 +206,8 @@ class KRROperatorValued(KRRBase):
     Solves (Kxx + lambda I) vec(alpha) = vec(Y), using a single (N*Dy)x(N*Dy) Cholesky.
     """
     def __init__(self, kernel, ridge_init=0, jitter=1e-10, device=None):
+        assert kernel.is_operator_valued, "kernel must be operator-valued."
+
         super().__init__(kernel, ridge_init=ridge_init, jitter=jitter, device=device)
 
         self._ridge_unconstrained = nn.Parameter(
@@ -226,7 +235,7 @@ class KRROperatorValued(KRRBase):
         X, Y = self.X_train, self.Y_train
 
         Kxx = self.kernel(X, X)               # (N,N,Dy,Dy)
-        Kflat = _flatten_block_kernel(Kxx)    # (N*Dy, N*Dy)
+        Kflat = Kxx.reshape(self._Ndat*self._Dy, self._Ndat*self._Dy)
         A = Kflat + self.ridge * torch.eye(self._Ndat * self._Dy, dtype=self.dtype, device=self.device)
         L = torch.linalg.cholesky(A + self.jitter * torch.eye(A.size(0), dtype=self.dtype, device=self.device))
         _tmp = torch.cholesky_solve(Y.reshape(-1, 1), L).squeeze(-1)  # (N*Dy,)
@@ -236,8 +245,9 @@ class KRROperatorValued(KRRBase):
         return self._residual
 
     def _predict_from_solution(self, Xnew: torch.Tensor):
-        M = Xnew.shape[0]
-        Kxz = self.kernel(Xnew, self._Xref) # (M,N,Dy,Dy)
-        Kflat = _flatten_block_kernel(Kxz)    # (M*Dy, N*Dy)
-        ynew_vec = Kflat @ self._alphas       # (M*Dy,)
-        return ynew_vec.reshape(M, self._Dy)
+        dim = Xnew.shape[:-2]
+        Kxz = self.kernel(Xnew, self._Xref)   # (...,M,Dy,N,Dy)
+        M, D, N, _ = Kxz.shape[-4:]
+        Kflat = Kxz.reshape(*dim, M*D, N*D)   # (..., M*Dy, N*Dy)
+        ynew_vec = Kflat @ self._alphas       # (..., M*Dy)
+        return ynew_vec.reshape(*dim, M, D)   # (..., M, Dy)
