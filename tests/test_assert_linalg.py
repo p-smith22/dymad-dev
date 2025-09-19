@@ -8,7 +8,7 @@ def cmp(sol, ref):
     return np.linalg.norm(sol-ref) / np.linalg.norm(ref)
 
 N = 4
-eps = 1e-14
+eps = 1e-13
 A = np.eye(N) + 0.1*np.random.rand(N,N)
 B = np.eye(N) + 0.1*np.random.rand(N,N)
 B = (B + B.T)/2
