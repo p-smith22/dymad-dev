@@ -294,18 +294,20 @@ Supporting Functions
 Lastly, to ease the construction of modeling and analysis pipelines, we provide a set of tools.
 
 .. list-table:: Data Pre-processing
-   :widths: 25 25 25 25 25
+   :widths: 25 25 25 25 25 25
 
    * - Normalization
      - Time delay
      - SVD/PCA
      - Polynomial
      - Fourier
+     - NL Dim. reduction
    * - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
+     - |:o:|
 
 .. list-table:: Sampling
    :widths: 25 25 25 25 25
@@ -353,8 +355,8 @@ Lastly, to ease the construction of modeling and analysis pipelines, we provide 
    * - Plotting
      - Loss history
      - Model prediction
-     -
+     - Animation
    * -
      - |:white_check_mark:|
      - |:white_check_mark:|
-     -
+     - |:o:|

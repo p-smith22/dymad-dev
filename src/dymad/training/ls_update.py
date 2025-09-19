@@ -65,6 +65,20 @@ def check_linear_impl(model) -> bool:
 
     return True
 
+def check_linear_solve(model) -> bool:
+    """
+    Check if the model implements linear_solve method.
+    """
+    has_linear_solve = hasattr(model, 'linear_solve')
+    if not has_linear_solve:
+        return False
+
+    source = inspect.getsource(model.linear_solve)
+    if "raise NotImplementedError" in source:
+        return False
+
+    return True
+
 # ----------------
 # Helper functions
 # ----------------
@@ -170,6 +184,20 @@ def _ct_sako_log(dataloader, model, dt, params=None):
     V, U = logm_low_rank(V, U, dt=dt)
     return (A, b), (V, U)
 
+# The two below behave differently from the above,
+# as they use the model's own linear_solve method
+def _dt_raw(dataloader, model, dt, params=None):
+    _p = {} if params is None else params
+    A, b = get_batch_dt(dataloader, model, dt)
+    W, r = model.linear_solve(A, b, **_p)
+    return (W,), r
+
+def _ct_raw(dataloader, model, dt, params=None):
+    _p = {} if params is None else params
+    A, b = get_batch_ct(dataloader, model, dt)
+    W, r = model.linear_solve(A, b, **_p)
+    return (W,), r
+
 SOL_MAP = {
     'dt_full'      : _dt_full,
     'dt_truncated' : _dt_truncated,
@@ -179,6 +207,8 @@ SOL_MAP = {
     'ct_full_log'  : _ct_full_log,
     'ct_truncated_log' : _ct_truncated_log,
     'ct_sako_log'  : _ct_sako_log,
+    'dt_raw'       : _dt_raw,
+    'ct_raw'       : _ct_raw,
 }
 
 class LSUpdater:
@@ -187,17 +217,22 @@ class LSUpdater:
     """
 
     def __init__(self, method, model, dt=None, params=None):
-        prefix = 'ct_' if model.CONT else 'dt_'
-        self.method = prefix + method
         self.params = params
         self.dt     = dt
 
         if not check_linear_impl(model):
             raise ValueError(f"{model} does not implement linear_features and linear_eval methods required for LS updates.")
 
-        if self.method not in SOL_MAP:
-            raise ValueError(f"Unsupported method: {self.method}. Supported methods are {list(SOL_MAP.keys())}.")
-        self.solver = SOL_MAP[self.method]
+        prefix = 'ct_' if model.CONT else 'dt_'
+        if check_linear_solve(model):
+            self.method = prefix + 'raw'
+            self.solver = SOL_MAP[self.method]
+            logger.info(f"{model} has linear_solve, default to {self.method}.")
+        else:
+            self.method = prefix + method
+            if self.method not in SOL_MAP:
+                raise ValueError(f"Unsupported method: {self.method}. Supported methods are {list(SOL_MAP.keys())}.")
+            self.solver = SOL_MAP[self.method]
 
         if model.CONT:
             self._comp_linear_eval = _comp_linear_eval_ct
@@ -224,6 +259,13 @@ class LSUpdater:
         model.train()
 
         dtype, device = next(model.parameters()).dtype, next(model.parameters()).device
+
+        if self.method.endswith('raw'):
+            # Use model's own linear_solve method
+            with torch.no_grad():
+                params, residual = self.solver(dataloader, model, self.dt, self.params)
+                avg_epoch_loss = residual.mean().item()
+            return avg_epoch_loss, params
 
         with torch.no_grad():
             (A, b), weights = self.solver(dataloader, model, self.dt, self.params)

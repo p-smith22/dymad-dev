@@ -118,6 +118,7 @@ class TrainerBase:
             )
             self._ls_update_interval = self.config['training']['ls_update'].get('interval', 10)
             self._ls_update_times    = self.config['training']['ls_update'].get('times', 10)
+            self._ls_reset           = self.config['training']['ls_update'].get('reset', True)
             self._start_w_ls         = self.config['training'].get('start_with_ls', True)
 
             self._param_to_name = {param: name for name, param in self.model.named_parameters()}
@@ -125,6 +126,7 @@ class TrainerBase:
             self._ls = None
             self._ls_update_interval = None
             self._ls_update_times    = None
+            self._ls_reset           = None
             self._param_to_name      = None
             self._start_w_ls         = None
 
@@ -259,13 +261,14 @@ class TrainerBase:
                         _, params = self._ls.update(self.model, self.train_loader)
 
                         # Remove optimizer state for parameters updated by LS
-                        target_names = [self._param_to_name.get(p, "<unnamed>") for p in params]
-                        for _p, _n in zip(params, target_names):
-                            for param_group in self.optimizer.param_groups:
-                                param_names = [self._param_to_name.get(_q, "<unnamed>") for _q in param_group['params']]
-                                if _n in param_names:
-                                    self.optimizer.state.pop(_p, None)
-                                    logger.info(f"Removed optimizer state for {_n} after LS update.")
+                        if self._ls_reset:
+                            target_names = [self._param_to_name.get(p, "<unnamed>") for p in params]
+                            for _p, _n in zip(params, target_names):
+                                for param_group in self.optimizer.param_groups:
+                                    param_names = [self._param_to_name.get(_q, "<unnamed>") for _q in param_group['params']]
+                                    if _n in param_names:
+                                        self.optimizer.state.pop(_p, None)
+                                        logger.info(f"Removed optimizer state for {_n} after LS update.")
 
             train_loss = self.train_epoch()
             val_loss = self.evaluate(self.validation_loader)

@@ -4,7 +4,7 @@ Test cases for dynamics with inputs on graph.
 `ct`: Continuous time models, GLDM and GKBF, with NODE and weak form training.
 `dt`: Discrete time models, DGLDM and DGKBF, with NODE training.
 
-Also GKBF/DGKBF with linear training.
+Also GKBF/GKM/DGKBF/DGKM/DGKMSK with linear training.
 
 Sweep mode included for NODE training.
 """
@@ -14,7 +14,7 @@ import os
 import pytest
 import torch
 
-from dymad.models import DGKBF, DGLDM, GKBF, GLDM
+from dymad.models import DGKBF, DGKM, DGKMSK, DGLDM, GKBF, GKM, GLDM
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
 from dymad.utils import load_model
 
@@ -41,6 +41,19 @@ mdl_ld = {
     "activation": "none",
     "weight_init": "xavier_uniform",
     "input_order": "cubic"}
+mdl_km = {
+    "name": "ltga_model",
+    "encoder_layers": 0,
+    "decoder_layers": 0,
+    "kernel_dimension": 2,
+    "input_order": "cubic",
+    "type": "share",
+    "kernel": {
+        "type": "sc_rbf",
+        "input_dim": 2,
+        "lengthscale_init": 1.0
+    },
+    "ridge_init": 1.e-4}
 
 ls_opt = {
     "method": "full",
@@ -101,6 +114,8 @@ trn_ln = {
     "ls_update": {
     "method": "truncated",
     "params": 2}}
+trn_l2 = copy.deepcopy(trn_ln)
+trn_l2['ls_update'] = {"method": "full"}
 
 cfgs = [
     ('ldm_wf',    GLDM,  WeakFormTrainer, {"model": mdl_ld, "training" : trn_wf}),
@@ -110,10 +125,13 @@ cfgs = [
     ('kbf_wfls',  GKBF,  WeakFormTrainer, {"model": mdl_kb, "training" : trn_wfls}),
     ('kbf_ndls',  GKBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_ndls}),
     ('kbf_ln',    GKBF,  LinearTrainer,   {"model": mdl_kb, "training" : trn_ln}),
+    ('km_ln',     GKM,   LinearTrainer,   {"model": mdl_km, "training" : trn_l2}),
     ('dldm_nd',   DGLDM, NODETrainer,     {"model": mdl_ld, "training" : trn_dt}),
     ('dkbf_nd',   DGKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt}),
     ('dkbf_ndls', DGKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dtls}),
-    ('dkbf_ln',   DGKBF, LinearTrainer,   {"model": mdl_kb, "training" : trn_ln}),]
+    ('dkbf_ln',   DGKBF, LinearTrainer,   {"model": mdl_kb, "training" : trn_ln}),
+    ('dkm_ln',    DGKM,  LinearTrainer,   {"model": mdl_km, "training" : trn_l2}),
+    ('dkmsk_ln',  DGKMSK,LinearTrainer,   {"model": mdl_km, "training" : trn_l2}),]
 
 def train_case(idx, data, path):
     _, MDL, Trainer, opt = cfgs[idx]

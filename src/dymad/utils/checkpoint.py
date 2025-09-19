@@ -92,6 +92,11 @@ def save_checkpoint(model, optimizer, schedulers, epoch, best_loss, hist, rmse, 
         "metadata": metadata,
     }, checkpoint_path)
 
+def _atleast_3d(x):
+    if x.ndim == 2:
+        return np.expand_dims(x, axis=0)
+    return x
+
 def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
     """
     Load a model from a checkpoint file.
@@ -133,50 +138,57 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
         _data_transform_u = make_transform(md['config'].get('transform_u', None))
         _data_transform_u.load_state_dict(md["transform_u_state"])
 
+    def _proc_x0(x0, device):
+        _x0 = np.array(_data_transform_x.transform(_atleast_3d(x0)))[:,0,:]
+        _x0 = torch.tensor(_x0, dtype=dtype, device=device)
+        return _x0
+
+    def _proc_u(us, device):
+        _u  = np.array(_data_transform_u.transform(_atleast_3d(us)))
+        if isinstance(_u, np.ndarray):
+            _u = torch.tensor(_u, dtype=dtype, device=device)
+        else:
+            _u = _u.clone().detach().to(device)
+        return _u
+
+    def _proc_prd(pred):
+        _prd = np.array(_data_transform_x.inverse_transform(_atleast_3d(pred))).squeeze()
+        if _prd.ndim == 2:
+            return _prd
+        return np.transpose(_prd, (1, 0, 2))
+
     # Prediction in data space
     if model.GRAPH:
         if _is_autonomous:
             def predict_fn(x0, t, ei=None, device="cpu"):
                 """Predict trajectory in data space."""
-                _x0 = _data_transform_x.transform([x0])[0][0]
-                _x0 = torch.tensor(_x0, dtype=dtype, device=device)
+                _x0 = _proc_x0(x0, device)
                 with torch.no_grad():
                     pred = model.predict(_x0, DynGeoData(None, None, ei), t).cpu().numpy()
-                return _data_transform_x.inverse_transform([pred])[0]
+                return _proc_prd(pred)
         else:
             def predict_fn(x0, us, t, ei=None, device="cpu"):
                 """Predict trajectory in data space."""
-                _x0 = _data_transform_x.transform([x0])[0][0]
-                _x0 = torch.tensor(_x0, dtype=dtype, device=device)
-                _u  = _data_transform_u.transform([us])[0]
-                if isinstance(_u, np.ndarray):
-                    _u = torch.tensor(_u, dtype=dtype, device=device)
-                else:
-                    _u = _u.clone().detach().to(device)
+                _x0 = _proc_x0(x0, device)
+                _u  = _proc_u(us, device)
                 with torch.no_grad():
                     pred = model.predict(_x0, DynGeoData(None, _u, ei), t).cpu().numpy()
-                return _data_transform_x.inverse_transform([pred])[0]
+                return _proc_prd(pred)
     else:
         if _is_autonomous:
             def predict_fn(x0, t, device="cpu"):
                 """Predict trajectory in data space."""
-                _x0 = _data_transform_x.transform([x0])[0][0]
-                _x0 = torch.tensor(_x0, dtype=dtype, device=device)
+                _x0 = _proc_x0(x0, device)
                 with torch.no_grad():
                     pred = model.predict(_x0, DynData(None, None), t).cpu().numpy()
-                return _data_transform_x.inverse_transform([pred])[0]
+                return _proc_prd(pred)
         else:
             def predict_fn(x0, us, t, device="cpu"):
                 """Predict trajectory in data space."""
-                _x0 = _data_transform_x.transform([x0])[0][0]
-                _x0 = torch.tensor(_x0, dtype=dtype, device=device)
-                _u  = _data_transform_u.transform([us])[0]
-                if isinstance(_u, np.ndarray):
-                    _u = torch.tensor(_u, dtype=dtype, device=device)
-                else:
-                    _u = _u.clone().detach().to(device)
+                _x0 = _proc_x0(x0, device)
+                _u  = _proc_u(us, device)
                 with torch.no_grad():
                     pred = model.predict(_x0, DynData(None, _u), t).cpu().numpy()
-                return _data_transform_x.inverse_transform([pred])[0]
+                return _proc_prd(pred)
 
     return model, predict_fn
