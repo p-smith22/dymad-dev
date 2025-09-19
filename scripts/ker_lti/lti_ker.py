@@ -1,36 +1,31 @@
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.integrate as spi
 import torch
 
 from dymad.models import DKM, DKMSK, KM
-from dymad.training import LinearTrainer, NODETrainer
-from dymad.utils import load_model, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.training import NODETrainer, LinearTrainer
+from dymad.utils import load_model, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
 
-B = 50
-N = 81
-t_grid = np.linspace(0, 8, N)
-dt = t_grid[1] - t_grid[0]
+B = 30
+N = 41
+t_grid = np.linspace(0, 2, N)
 
-mu = 1.0
-def f(t, x):
-    _x, _y = x
-    dx = np.array([
-        _y,
-        mu * (1-_x**2)*_y - _x
-    ])
-    return dx
-g = lambda t, x: x
+A = np.array([
+            [0., 1.],
+            [-1., -0.1]])
+def f(t, x, u):
+    return (x @ A.T) + u
+g = lambda t, x, u: x
 
-# Reference trajectory
-_Nt = 161
-_ts = np.linspace(0, 40.0, 8*_Nt)
-_res = spi.solve_ivp(f, [0,_ts[-1]], [2,2], t_eval=_ts)
-_ref = _res.y[:,-220:].T
-
-# Transition to LCO
-db = 0.4
+config_chr = {
+    "control" : {
+        "kind": "chirp",
+        "params": {
+            "t1": 4.0,
+            "freq_range": (0.5, 2.0),
+            "amp_range": (0.5, 1.0),
+            "phase_range": (0.0, 360.0)}}}
 
 # Training options
 RIDGE = 1e-10
@@ -121,10 +116,6 @@ trn_dt = {
         "reset": False}
         }
 
-smpl = {'x0': {
-    'kind': 'perturb',
-    'params': {'bounds': [-db, db], 'ref': _ref}}
-    }
 config_path = 'ker_model.yaml'
 
 cfgs = [
@@ -139,7 +130,7 @@ cfgs = [
 # IDX = [0, 1, 2, 3, 4, 5]
 # IDX = [0, 1]
 # IDX = [2, 3]
-IDX = [0, 2, 4]
+IDX = [5]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
@@ -147,12 +138,11 @@ iftrn = 1
 ifprd = 1
 
 if ifdat:
-    sampler = TrajectorySampler(f, g, config='ker_data.yaml', config_mod=smpl)
-    ts, xs, ys = sampler.sample(t_grid, batch=B, save='./data/ker.npz')
+    sampler = TrajectorySampler(f, g, config='ker_data.yaml', config_mod=config_chr)
+    ts, xs, us, ys = sampler.sample(t_grid, batch=B, save='./data/ker.npz')
 
     for i in range(B):
         plt.plot(ys[i, :, 0], ys[i, :, 1])
-    plt.plot(_ref[:,0], _ref[:,1], 'k--', linewidth=2)
 
 if iftrn:
     for i in IDX:
@@ -164,32 +154,22 @@ if iftrn:
         trainer.train()
 
 if ifprd:
-    J = 32
-    sampler = TrajectorySampler(f, g, config='ker_data.yaml', config_mod=smpl)
-    ts, xs, ys = sampler.sample(t_grid, batch=J)
-    x_data = xs
+    sampler = TrajectorySampler(f, g, config='ker_data.yaml', config_mod=config_chr)
+    ts, xs, us, ys = sampler.sample(t_grid, batch=1)
+    x_data = xs[0]
     t_data = ts[0]
+    u_data = us[0]
 
     res = [x_data]
-    for i in IDX:
-        mdl, MDL, _, _ = cfgs[i]
+    for _i in IDX:
+        mdl, MDL, _, _ = cfgs[_i]
         _, prd_func = load_model(MDL, f'ker_{mdl}.pt')
         with torch.no_grad():
-            pred = prd_func(x_data, t_data)
+            pred = prd_func(x_data, u_data, t_data)
         res.append(pred)
 
-    for _i in range(1, len(res)):
-        print(labels[_i-1], np.linalg.norm(res[_i]-res[0])/np.linalg.norm(res[0]))
-
-    stys = ['b-', 'r--', 'g:', 'm-.', 'c--', 'y:', 'k-.']
-    f, ax = plt.subplots(nrows=2, sharex=True)
-    for _i in range(J):
-        for _j in range(len(res)):
-            ax[0].plot(t_data, res[_j][_i][:, 0], stys[_j])
-            ax[1].plot(t_data, res[_j][_i][:, 1], stys[_j])
-
-    # plot_trajectory(
-    #     np.array(res), t_data, "SA",
-    #     labels=['Truth'] + labels, ifclose=False)
+    plot_trajectory(
+        np.array(res), t_data, "LTI",
+        us=u_data, labels=['Truth']+labels, ifclose=False)
 
 plt.show()

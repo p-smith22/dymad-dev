@@ -1,5 +1,5 @@
 """
-Test cases for kernel dynamics without inputs.
+Test cases for kernel dynamics with inputs.
 """
 
 import copy
@@ -15,15 +15,15 @@ from dymad.utils import load_model
 RIDGE = 1e-10
 opt_rbf1 = {
     "type": "sc_rbf",
-    "input_dim": 2,
+    "input_dim": 3,
     "lengthscale_init": 1.0
 }
 opt_opk1 = {
     "type": "op_sep",
-    "input_dim": 2,
+    "input_dim": 3,
     "output_dim": 2,
     "kopts": [opt_rbf1],
-    "Ls": np.array([[[1, 0], [0, 1]]])
+    "Ls": np.array([np.eye(2)])
 }
 opt_share = {
     "type": "share",
@@ -97,20 +97,20 @@ cfgs = [
 def train_case(idx, data, path):
     _, MDL, Trainer, opt = cfgs[idx]
     opt.update({"data": {"path": data}})
-    config_path = path/'ker_model_auto.yaml'
+    config_path = path/'ker_model_ctrl.yaml'
     trainer = Trainer(config_path, MDL, config_mod=opt)
     trainer.train()
 
 def predict_case(idx, sample, path):
-    x_data, t_data = sample
+    x_data, t_data, u_data = sample
     _, MDL, _, opt = cfgs[idx]
-    _, prd_func = load_model(MDL, path/'ker_model.pt', path/'ker_model_auto.yaml', config_mod=opt)
+    _, prd_func = load_model(MDL, path/'ker_model.pt', path/'ker_model_ctrl.yaml', config_mod=opt)
     with torch.no_grad():
-        prd_func(x_data, t_data)
+        prd_func(x_data, u_data, t_data)
 
 @pytest.mark.parametrize("idx", range(len(cfgs)))
-def test_ker(kp_data, kp_test, env_setup, idx):
-    train_case(idx, kp_data, env_setup)
-    predict_case(idx, kp_test, env_setup)
+def test_ker(lti_data, lti_gau, env_setup, idx):
+    train_case(idx, lti_data, env_setup)
+    predict_case(idx, lti_gau, env_setup)
     if os.path.exists(env_setup/'ker_model.pt'):
         os.remove(env_setup/'ker_model.pt')

@@ -25,8 +25,8 @@ class KM(ModelBase):
         super(KM, self).__init__()
         self.n_total_state_features = data_meta.get('n_total_state_features')
         self.n_total_control_features = data_meta.get('n_total_control_features')
-        self.n_total_features = data_meta.get('n_total_features')
         self.latent_dimension = model_config.get('latent_dimension', 64)
+        self.kernel_dimension = model_config.get('kernel_dimension', 16)
 
         # Method for input handling
         self.input_order = model_config.get('input_order', 'cubic')
@@ -35,9 +35,11 @@ class KM(ModelBase):
         enc_depth = model_config.get('encoder_layers', 2)
         dec_depth = model_config.get('decoder_layers', 2)
 
-        # Determine dimensions
-        enc_out_dim = self.latent_dimension if enc_depth > 0 else self.n_total_features
-        dec_inp_dim = self.latent_dimension if dec_depth > 0 else self.n_total_features
+        if self.n_total_state_features != self.kernel_dimension:
+            if enc_depth == 0 or dec_depth == 0:
+                raise ValueError(f"Encoder depth {enc_depth}, decoder depth {dec_depth}: "
+                                 f"but n_total_state_features ({self.n_total_state_features}) "
+                                 f"must match kernel_dimension ({self.kernel_dimension})")
 
         # Determine other options for MLP layers
         opts = {
@@ -54,9 +56,9 @@ class KM(ModelBase):
         # Build encoder/decoder networks
         self.encoder_net, self.decoder_net = make_autoencoder(
             type="mlp_"+aec_type,
-            input_dim=self.n_total_features,
+            input_dim=self.n_total_state_features,
             latent_dim=self.latent_dimension,
-            hidden_dim=enc_out_dim,
+            hidden_dim=self.kernel_dimension,
             enc_depth=enc_depth,
             dec_depth=dec_depth,
             output_dim=self.n_total_state_features,
@@ -74,9 +76,9 @@ class KM(ModelBase):
         self.dynamics_net = make_krr(**opts)
 
         if self.n_total_control_features == 0:
-            self.encoder = self._encoder_auto
+            self._zu_cat = self._zu_cat_auto
         else:
-            self.encoder = self._encoder_ctrl
+            self._zu_cat = self._zu_cat_ctrl
 
     def diagnostic_info(self) -> str:
         model_info = super(KM, self).diagnostic_info()
@@ -86,29 +88,27 @@ class KM(ModelBase):
         model_info += f"Input order: {self.input_order}"
         return model_info
 
-    def _encoder_ctrl(self, w: DynData) -> torch.Tensor:
-        """
-        Map features to latent space for systems with inputs.
-        """
-        return self.encoder_net(torch.cat([w.x, w.u], dim=-1))
-
-    def _encoder_auto(self, w: DynData) -> torch.Tensor:
-        """
-        Map features to latent space for autonomous systems.
-        """
+    def encoder(self, w: DynData) -> torch.Tensor:
+        """Encode combined features to kernel space."""
         return self.encoder_net(w.x)
 
     def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """
-        Map from latent space back to state space.
-        """
+        """Decode from kernel space back to state space."""
         return self.decoder_net(z)
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """
         Compute latent dynamics (derivative).
         """
-        return self.dynamics_net(z)
+        return self.dynamics_net(self._zu_cat(z, w))
+
+    def _zu_cat_ctrl(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        """Concatenate state and control inputs."""
+        return torch.cat([z, w.u], dim=-1)
+
+    def _zu_cat_auto(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        """Concatenate state and control inputs."""
+        return z
 
     def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -136,7 +136,7 @@ class KM(ModelBase):
         dz is the output of KM dynamics, z_dot for cont-time, z_next for disc-time.
         """
         z = self.encoder(w)
-        return z, z
+        return self._zu_cat(z, w), z
 
     def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute linear evaluation, dz, and states, z, for (D)KM model.
@@ -212,7 +212,7 @@ class DKMSK(KM):
         """
         Compute latent dynamics (derivative).
         """
-        return z + self.dynamics_net(z)
+        return z + self.dynamics_net(self._zu_cat(z, w))
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
@@ -222,6 +222,6 @@ class DKMSK(KM):
         """
         Fit the kernel dynamics using input-output pairs.
         """
-        self.dynamics_net.set_train_data(inp, out-inp)
+        self.dynamics_net.set_train_data(inp, out-inp[..., :self.kernel_dimension])
         residual = self.dynamics_net.fit()
         return self.dynamics_net._alphas, residual
