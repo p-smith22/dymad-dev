@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch_geometric.utils import dense_to_sparse
 
-from dymad.models import DGLDM, DGKBF
+from dymad.models import DGLDM, DGKBF, DGKM, DGKMSK
 from dymad.training import NODETrainer, LinearTrainer
 from dymad.utils import load_model, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
 
@@ -47,10 +47,13 @@ config_gau = {
 cases = [
     {"name" : "dldm", "model" : DGLDM, "trainer": NODETrainer,   "config": 'ltg_dldm.yaml'},
     {"name" : "dkbf", "model" : DGKBF, "trainer": NODETrainer,   "config": 'ltg_dkbf.yaml'},
-    {"name" : "dkbl", "model" : DGKBF, "trainer": LinearTrainer, "config": 'ltg_dkbl.yaml'}
+    {"name" : "dkbl", "model" : DGKBF, "trainer": LinearTrainer, "config": 'ltg_dkbl.yaml'},
+    {"name" : "dkm",  "model" : DGKM,  "trainer": LinearTrainer, "config": 'ltg_dkm.yaml'},
+    {"name" : "dkmsk","model" : DGKMSK,"trainer": LinearTrainer, "config": 'ltg_dkmsk.yaml'}
 ]
 
-IDX = [1, 2]
+# IDX = [1, 2]
+IDX = [4]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0

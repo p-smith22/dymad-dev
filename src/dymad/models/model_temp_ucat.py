@@ -174,8 +174,6 @@ class ModelTempUCatGraph(ModelBase):
         self.n_total_state_features = data_meta.get('n_total_state_features')
         self.n_total_control_features = data_meta.get('n_total_control_features')
         self.latent_dimension = model_config.get('latent_dimension', 64)
-        # self.koopman_dimension = model_config.get('koopman_dimension', 16)
-        # self.const_term = model_config.get('const_term', True)
 
         # Method for input handling
         self.input_order = model_config.get('input_order', 'cubic')
@@ -190,18 +188,6 @@ class ModelTempUCatGraph(ModelBase):
         self.encoder_net  = None
         self.dynamics_net = None
         self.decoder_net  = None
-
-        # # Create KBF operators, concatenated
-        # if self.n_total_control_features > 0:
-        #     if self.const_term:
-        #         dyn_dim = self.koopman_dimension * (self.n_total_control_features + 1) + self.n_total_control_features
-        #     else:
-        #         dyn_dim = self.koopman_dimension * (self.n_total_control_features + 1)
-        # else:
-        #     dyn_dim = self.koopman_dimension
-        # self.dynamics_net = FlexLinear(dyn_dim, self.koopman_dimension, bias=False, dtype=dtype, device=device)
-
-        # self.set_linear_weights = self.dynamics_net.set_weights
 
     def _build_autoencoder(self, hidden_dim, model_config, dtype, device):
         # Get layer depths from config
@@ -260,11 +246,6 @@ class ModelTempUCatGraph(ModelBase):
     def _zu_cat_ctrl(self, z: torch.Tensor, w: DynGeoData) -> torch.Tensor:
         """Concatenate state and control inputs."""
         raise NotImplementedError("Implement in derived class.")
-        # u_reshaped = w.ug
-        # z_u = (z.unsqueeze(-1) * u_reshaped.unsqueeze(-2)).reshape(*z.shape[:-1], -1)
-        # if self.const_term:
-        #     return torch.cat([z, z_u, u_reshaped], dim=-1)
-        # return torch.cat([z, z_u], dim=-1)
 
     def _zu_cat_auto(self, z: torch.Tensor, w: DynGeoData) -> torch.Tensor:
         """Concatenate state and control inputs."""
@@ -278,7 +259,6 @@ class ModelTempUCatGraph(ModelBase):
 
     def predict(self, x0: torch.Tensor, w: DynGeoData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
         raise NotImplementedError("Implement in derived class.")
-        # return predict_graph_continuous(self, x0, ts, w.edge_index, us=w.u, method=method, order=self.input_order, **kwargs)
 
     def linear_features(self, w: DynGeoData) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute linear features, f, and outputs, dz, for the model.

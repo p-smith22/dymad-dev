@@ -1,0 +1,41 @@
+data:
+  path: './data/ltg.npz'
+  n_samples: 32
+  n_steps: 101
+  double_precision: false
+
+transform_x:
+  type: "identity"
+
+transform_u:
+  type: "identity"
+
+split:
+  train_frac: 0.75
+
+dataloader:
+  batch_size: 64
+
+model:
+  name: 'ltg_dkm'
+  encoder_layers: 0
+  decoder_layers: 0
+  kernel_dimension: 2
+  input_order: "cubic"
+  type: "share"
+  kernel:
+    type: "sc_rbf"
+    input_dim: 2
+    lengthscale_init: 1.0
+  ridge_init: 1.e-4
+
+training:
+  n_epochs: 1
+  save_interval: 1
+  load_checkpoint: false
+  learning_rate: 5e-3
+  decay_rate: 0.999
+  reconstruction_weight: 1.0
+  dynamics_weight: 1.0
+  ls_update:
+    method: "full"

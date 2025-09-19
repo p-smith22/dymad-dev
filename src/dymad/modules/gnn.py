@@ -46,7 +46,6 @@ class GNN(nn.Module):
         dtype=None, device=None
     ):
         super().__init__()
-        assert n_layers > 0, "n_layers must be a positive integer"
 
         _gcl = _resolve_gcl(gcl)
         _act = _resolve_activation(activation, dtype, device)
@@ -57,18 +56,21 @@ class GNN(nn.Module):
         _g = nn.init.calculate_gain(act_name if act_name not in ["gelu", "prelu", "identity"] else "relu")
         self._gain = gain * _g
 
-        layers = []
-        for i in range(n_layers):
-            in_dim = input_dim if i == 0 else latent_dim
-            out_dim = output_dim if i == n_layers - 1 else latent_dim
-            # Each GCL layer can be a new instance
-            gcl_layer = _gcl(in_dim, out_dim)
-            layers.append(gcl_layer)
-            # Only add activation if not last layer or end_activation is True
-            if i < n_layers - 1 or end_activation:
-                # Each activation can be a new instance
-                layers.append(_act())
-        self.layers = nn.ModuleList(layers)
+        if n_layers == 0:
+            self.layers = nn.ModuleList()  # Identity mapping
+        else:
+            layers = []
+            for i in range(n_layers):
+                in_dim = input_dim if i == 0 else latent_dim
+                out_dim = output_dim if i == n_layers - 1 else latent_dim
+                # Each GCL layer can be a new instance
+                gcl_layer = _gcl(in_dim, out_dim)
+                layers.append(gcl_layer)
+                # Only add activation if not last layer or end_activation is True
+                if i < n_layers - 1 or end_activation:
+                    # Each activation can be a new instance
+                    layers.append(_act())
+            self.layers = nn.ModuleList(layers)
 
         self.apply(self._init_gcl)
 
