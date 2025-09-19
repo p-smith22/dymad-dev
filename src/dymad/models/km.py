@@ -3,67 +3,22 @@ import torch
 from typing import Dict, Union, Tuple
 
 from dymad.data import DynData
-from dymad.models import ModelBase
-from dymad.modules import make_autoencoder, make_krr
+from dymad.models import ModelTempUCat, ModelTempUCatGraph
+from dymad.modules import make_krr
 from dymad.utils import predict_continuous, predict_discrete
 
-class KM(ModelBase):
+class KM(ModelTempUCat):
     """
-    Dynamics based on kernel machine, continuous-time version.
-
-    The architecture is very close to LDM, mainly that MLP is replaced by KRR.
-    The linear structure of KRR allows more efficient linear updates during training.
-
-    - z = encoder(x, u)
-    - z_dot = A phi(z)
-    - x_hat = decoder(z)
+    Kernel machine, where dynamics is given by KRR.
     """
     GRAPH = False
-    CONT  = True
+    CONT = True
 
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
-        super(KM, self).__init__()
-        self.n_total_state_features = data_meta.get('n_total_state_features')
-        self.n_total_control_features = data_meta.get('n_total_control_features')
-        self.latent_dimension = model_config.get('latent_dimension', 64)
+        super().__init__(model_config, data_meta, dtype=dtype, device=device)
         self.kernel_dimension = model_config.get('kernel_dimension', 16)
 
-        # Method for input handling
-        self.input_order = model_config.get('input_order', 'cubic')
-
-        # Get layer depths from config
-        enc_depth = model_config.get('encoder_layers', 2)
-        dec_depth = model_config.get('decoder_layers', 2)
-
-        if self.n_total_state_features != self.kernel_dimension:
-            if enc_depth == 0 or dec_depth == 0:
-                raise ValueError(f"Encoder depth {enc_depth}, decoder depth {dec_depth}: "
-                                 f"but n_total_state_features ({self.n_total_state_features}) "
-                                 f"must match kernel_dimension ({self.kernel_dimension})")
-
-        # Determine other options for MLP layers
-        opts = {
-            'activation'     : model_config.get('activation', 'prelu'),
-            'weight_init'    : model_config.get('weight_init', 'xavier_uniform'),
-            'bias_init'      : model_config.get('bias_init', 'zeros'),
-            'gain'           : model_config.get('gain', 1.0),
-            'end_activation' : model_config.get('end_activation', True),
-            'dtype'          : dtype,
-            'device'         : device
-        }
-        aec_type = model_config.get('autoencoder_type', 'smp')
-
-        # Build encoder/decoder networks
-        self.encoder_net, self.decoder_net = make_autoencoder(
-            type="mlp_"+aec_type,
-            input_dim=self.n_total_state_features,
-            latent_dim=self.latent_dimension,
-            hidden_dim=self.kernel_dimension,
-            enc_depth=enc_depth,
-            dec_depth=dec_depth,
-            output_dim=self.n_total_state_features,
-            **opts
-        )
+        self._build_autoencoder(self.kernel_dimension, model_config, dtype, device)
 
         # Build kernel-based dynamics
         opts = {
@@ -75,80 +30,13 @@ class KM(ModelBase):
         }
         self.dynamics_net = make_krr(**opts)
 
-        if self.n_total_control_features == 0:
-            self._zu_cat = self._zu_cat_auto
-        else:
-            self._zu_cat = self._zu_cat_ctrl
-
-    def diagnostic_info(self) -> str:
-        model_info = super(KM, self).diagnostic_info()
-        model_info += f"Encoder: {self.encoder_net.diagnostic_info()}\n"
-        model_info += f"Dynamics: {self.dynamics_net}\n"
-        model_info += f"Decoder: {self.decoder_net.diagnostic_info()}\n"
-        model_info += f"Input order: {self.input_order}"
-        return model_info
-
-    def encoder(self, w: DynData) -> torch.Tensor:
-        """Encode combined features to kernel space."""
-        return self.encoder_net(w.x)
-
-    def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """Decode from kernel space back to state space."""
-        return self.decoder_net(z)
-
-    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """
-        Compute latent dynamics (derivative).
-        """
-        return self.dynamics_net(self._zu_cat(z, w))
-
     def _zu_cat_ctrl(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """Concatenate state and control inputs."""
         return torch.cat([z, w.u], dim=-1)
 
-    def _zu_cat_auto(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """Concatenate state and control inputs."""
-        return z
-
-    def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Forward pass through the model.
-        """
-        z = self.encoder(w)
-        z_dot = self.dynamics(z, w)
-        x_hat = self.decoder(z, w)
-        return z, z_dot, x_hat
-
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],
                 method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        """
-        Predict trajectory using continuous-time integration.
-        """
         return predict_continuous(self, x0, ts, us=w.u, method=method, order=self.input_order, **kwargs)
-
-    def linear_features(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute linear features, f, and outputs, dz, for (D)KM model.
-
-        dz = Af(z)
-
-        For KM, f contains the kernel features, which will be handled internally by KRR;
-        but the call to KRR will be handled by LSUpdater.
-        dz is the output of KM dynamics, z_dot for cont-time, z_next for disc-time.
-        """
-        z = self.encoder(w)
-        return self._zu_cat(z, w), z
-
-    def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute linear evaluation, dz, and states, z, for (D)KM model.
-
-        dz = Af(z)
-
-        For KM, dz is the output of kernel dynamics.
-        z is the encoded state, which will be used to compute the expected output.
-        """
-        z = self.encoder(w)
-        z_dot = self.dynamics(z, w)
-        return z_dot, z
 
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         """
