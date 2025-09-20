@@ -2,7 +2,8 @@ import numpy as np
 import scipy.linalg as spl
 import torch
 
-from dymad.numerics import check_orthogonality, eig_low_rank, expm_full_rank, expm_low_rank, logm_low_rank, real_lowrank_from_eigpairs, scaled_eig
+from dymad.numerics import check_orthogonality, eig_low_rank, expm_full_rank, expm_low_rank, logm_low_rank, \
+     randomized_svd, real_lowrank_from_eigpairs, scaled_eig, truncated_svd
 
 def cmp(sol, ref):
     return np.linalg.norm(sol-ref) / np.linalg.norm(ref)
@@ -12,6 +13,35 @@ eps = 1e-13
 A = np.eye(N) + 0.1*np.random.rand(N,N)
 B = np.eye(N) + 0.1*np.random.rand(N,N)
 B = (B + B.T)/2
+
+def check_subspace(U1, U2):
+    _s = np.linalg.svd(U1.T.dot(U2))[1]
+    return 1-_s.min()
+
+def test_svd():
+    np.random.seed(42)
+
+    As = [np.random.rand(5, 100) for _ in range(5)]
+    LD = lambda i: As[i]
+    Aa = np.vstack(As)
+
+    u, Sref, vh = np.linalg.svd(Aa, full_matrices=False)
+    Uref = u[:, :5]
+    Vref = vh[:5].T
+
+    Utrn, Strn, Vtrn = truncated_svd(Aa, 5)
+    assert np.allclose(Strn, Sref[:5])
+    assert np.allclose(Utrn, Uref)
+    assert np.allclose(Vtrn, Vref)
+
+    Uran, Sran, Vran = randomized_svd(LD, 5, 5, oversample=10, n_iter=2, return_u=True)
+    assert np.linalg.norm(Sref[:5]-Sran) < 0.01
+    assert check_subspace(Uran, Uref) < 0.005
+    assert check_subspace(Vran, Vref) < 0.01
+
+    # Reference singular values:
+    # [25.1554028   4.24122589  3.93344336  3.78680366  3.73375361]
+    # [25.1554028   4.23772365  3.93123059  3.77921143  3.73049082]
 
 def test_scaled_eig_std():
     w, vl, vr = scaled_eig(A)
