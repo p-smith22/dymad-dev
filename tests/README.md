@@ -5,6 +5,7 @@ Organization of the test cases:
 - `test_assert_*`: Exact tests that compare test outputs with reference outputs to numerical accuracy.
   - `krr`: Kernel ridge regression
   - `linalg`: Linear algebra
+  - `manifold`: Manifold-related calculations
   - `resolvent`: Resolvent analysis of linear systems
   - `spectrum`: Kernels used in spectral calculation
   - `trajmgr`: Trajectory manager
