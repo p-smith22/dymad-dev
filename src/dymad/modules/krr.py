@@ -118,7 +118,7 @@ class KRRMultiOutputShared(KRRBase):
         assert self.X_train is not None and self.Y_train is not None, "Call set_train_data first."
 
         X, Y = self.X_train, self.Y_train
-        Kxx = self.kernel(X, X)  # (N,N)
+        Kxx = self.kernel(X, None)  # (N,N)
         I = torch.eye(self._Ndat, dtype=self.dtype, device=self.device)
         L = torch.linalg.cholesky(Kxx + (self.ridge + self.jitter) * I)
         A = torch.cholesky_solve(Y, L)  # (N,Dy)
@@ -182,7 +182,7 @@ class KRRMultiOutputIndep(KRRBase):
         A = torch.empty_like(Y)
         I = torch.eye(self._Ndat, dtype=self.dtype, device=self.device)
         for d in range(self._Dy):
-            Kxx = self.kernel[d](X, X)  # (N,N)
+            Kxx = self.kernel[d](X, None)  # (N,N)
             L = torch.linalg.cholesky(Kxx + (self.ridge[d] + self.jitter) * I)
             A[:, d] = torch.cholesky_solve(Y[:, d:d+1], L).squeeze(-1)
         self._alphas.data.copy_(A)
@@ -234,7 +234,7 @@ class KRROperatorValued(KRRBase):
 
         X, Y = self.X_train, self.Y_train
 
-        Kxx = self.kernel(X, X)               # (N,N,Dy,Dy)
+        Kxx = self.kernel(X, None)            # (N,N,Dy,Dy)
         Kflat = Kxx.reshape(self._Ndat*self._Dy, self._Ndat*self._Dy)
         A = Kflat + self.ridge * torch.eye(self._Ndat * self._Dy, dtype=self.dtype, device=self.device)
         L = torch.linalg.cholesky(A + self.jitter * torch.eye(A.size(0), dtype=self.dtype, device=self.device))

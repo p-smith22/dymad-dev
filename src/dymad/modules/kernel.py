@@ -40,9 +40,12 @@ class KernelAbstract(nn.Module, ABC):
         self.dtype = dtype if dtype is not None else torch.float64
 
     @abstractmethod
-    def forward(self, X: torch.Tensor, Z: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor, Z: torch.Tensor = None) -> torch.Tensor:
         """
         Compute kernel between X (N,d) and Z (M,d).
+
+        If Z is None, compute K(X,X).
+
         Returns:
           - Scalar kernels: (N, M)
           - Operator-valued kernels: (N, Dy, M, Dy)
@@ -126,7 +129,9 @@ class KernelScRBF(KernelScalarValued):
         # positive via softplus
         return F.softplus(self._log_ell)
 
-    def forward(self, X, Z):
+    def forward(self, X, Z = None):
+        if Z is None:
+            Z = X
         sq = scaled_cdist(X, Z, self.ell, 2)
         return torch.exp(-0.5 * sq)
 
@@ -211,7 +216,9 @@ class KernelScDM(KernelScalarValued):
         Phi_new_t = (d_new.pow(-0.5)[:, None] * U_new) * lt[None, :]
         return Phi_new_t
 
-    def forward(self, X, Z):
+    def forward(self, X, Z = None):
+        if Z is None:
+            Z = X
         PhiX = self._features(X)   # (N,m)
         PhiZ = self._features(Z)   # (M,m)
         return PhiX @ PhiZ.T       # (N,M)
@@ -243,7 +250,9 @@ class KernelOpSeparable(KernelOperatorValuedScalars):
         return f"KernelOpSeparable(in_dim={self.in_dim}, out_dim={self.out_dim}, n_kernels={self.n_kernels}, dtype={self.dtype})\n" \
                f"\t\tLs_shapes={[self.Ls.shape]}\n\twith:\n\t\t" + "\n\t\t".join(_s)
 
-    def forward(self, X, Z):
+    def forward(self, X, Z = None):
+        if Z is None:
+            Z = X
         k = torch.stack([_k(X, Z) for _k in self.scalar_kernels], dim=0)  # (n_kernels, ..., M)
         L = torch.tril(self.Ls)
         B = torch.matmul(L, L.transpose(-1, -2))      # (n_kernels, Dy, Dy)
