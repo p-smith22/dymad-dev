@@ -12,7 +12,7 @@ def tangent_1circle(x):
     _x = np.atleast_2d(x)
     _t = np.arctan2(_x[:,1], _x[:,0])
     _T = np.vstack([np.sin(_t), -np.cos(_t)]).T
-    return _T
+    return _T.reshape(len(_x), 1, 2)
 
 def tangent_2torus(x, R):
     _X = np.atleast_2d(x)
@@ -28,9 +28,9 @@ def tangent_2torus(x, R):
         -_z*_c,
         -_z*_s,
         _r-R]).T
-    _T2 /= np.linalg.norm(_T2, axis=1)
+    _T2 /= np.linalg.norm(_T2, axis=1).reshape(-1,1)
     _T = np.swapaxes(np.array([_T1, _T2]), 0, 1)
-    return _T.squeeze()
+    return _T.reshape(len(_x), 2, 3)
 
 class DimensionEstimator:
     """
@@ -200,9 +200,7 @@ class Manifold:
             logger.info("  Already done, or T supplied externally; skipping")
             return
 
-        self._T = []
-        for _d in self._data:
-            self._T.append(self._estimate_tangent(_d))
+        self._T = self._estimate_tangent(self._data)
         if self._iforit:
             logger.info("  Orienting tangent vectors")
             if self._Nman == 1:
@@ -227,37 +225,47 @@ class Manifold:
     def gmls(self, x, Y):
         _, _i = self._tree.query(x, k=self._Nknn)
         _T, _V = self._estimate_tangent(x, ret_V=True)
-        _B = _V.dot(_T.T)
-        _P = self._fpsi.fit_transform(_B)
-        _C = np.linalg.pinv(_P).dot(Y[_i])
-        _r = self._fpsi.fit_transform(np.zeros((1,self._Nman))).dot(_C)
-        return _r
+        _B = np.matmul(_V, np.swapaxes(_T, -2, -1))
+        _P = self._poly_eval(self._fpsi, _B)
+        _C = np.matmul(np.linalg.pinv(_P), Y[_i][..., None])
+        _tmp = self._fpsi.fit_transform(np.zeros((1,self._Nman)))
+        _r = np.matmul(_tmp, _C)
+        return _r.squeeze()
 
-    def _estimate_normal(self, base, x):
+    def _poly_eval(self, f, B):
+        # PolynomialFeatures only supports 2D input
+        # so we reshape input to 2D and then reshape back
+        _s = B.shape[:-1]
+        _P = f.fit_transform(B.reshape(-1, self._Nman)).reshape(*_s, -1)
+        return _P
+
+    def _estimate_normal(self, base, dx):
         _T, _V = self._estimate_tangent(base, ret_V=True)
-        _B = _V.dot(_T.T)
-        _P = self._fphi.fit_transform(_B)
-        _b = np.atleast_2d((x - base).dot(_T.T))
-        _p = self._fphi.fit_transform(_b)
-        _n = _p.dot(np.linalg.pinv(_P)).dot(_V - _B.dot(_T))
+        _B = np.matmul(_V, np.swapaxes(_T, -2, -1))
+        _P = self._poly_eval(self._fphi, _B)
+        _b = np.atleast_2d(np.matmul(dx, np.swapaxes(_T, -2, -1)))
+        _p = self._poly_eval(self._fphi, _b)
+        _tmp = np.matmul(_p, np.linalg.pinv(_P))
+        _n = np.matmul(_tmp, _V - np.matmul(_B, _T))
         return _n.squeeze()
 
     def _estimate_tangent_1(self, x, ret_V=False):
-        _d, _i = self._tree.query(x, k=self._Nknn)
-        _V = self._data[_i] - x
+        _, _i = self._tree.query(x, k=self._Nknn)
+        _V = self._data[_i] - x[..., None, :]
         _, _, _Vh = np.linalg.svd(_V, full_matrices=False)
-        _T = _Vh.conj()[:self._Nman]
+        _T = _Vh.conj()[..., :self._Nman, :]
         if ret_V:
             return _T, _V
         return _T
 
     def _estimate_tangent_ho(self, x, ret_V=False):
         _T, _V = self._estimate_tangent_1(x, ret_V=True)
-        _B = _V.dot(_T.T)
-        _P = self._ftau.fit_transform(_B)
-        _C = np.linalg.pinv(_P).dot(_V - _B.dot(_T))
-        _T += _C[:self._Nman]
-        _T = np.linalg.qr(_T.T, mode='reduced')[0].T
+        _B = np.matmul(_V, np.swapaxes(_T, -2, -1))
+        _P = self._poly_eval(self._ftau, _B)
+        _C = np.matmul(np.linalg.pinv(_P), _V - np.matmul(_B, _T))
+        _T += _C[..., :self._Nman, :]
+        _tmp = np.linalg.qr(np.swapaxes(_T, -2, -1), mode='reduced')[0]
+        _T = np.swapaxes(_tmp, -2, -1)
         if ret_V:
             return _T, _V
         return _T
@@ -320,9 +328,7 @@ class ManifoldAnalytical(Manifold):
 
     def precompute(self):
         logger.info("  Precomputing")
-        self._T = []
-        for _d in self._data:
-            self._T.append(self._estimate_tangent(_d))
+        self._T = self._estimate_tangent(self._data)
         self._ifprecomp = True
         logger.info("  Done")
 
@@ -330,6 +336,6 @@ class ManifoldAnalytical(Manifold):
         _T = self._tangent_func(x)
         if ret_V:
             _, _i = self._tree.query(x, k=self._Nknn)
-            _V = self._data[_i] - x
+            _V = self._data[_i] - x[..., None, :]
             return _T, _V
         return _T

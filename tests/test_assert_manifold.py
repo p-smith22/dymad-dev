@@ -13,25 +13,24 @@ def torus_sample(Nsmp):
     return tar
 dat_t2 = torus_sample(2000)
 
-def fit_curve_s1(man):
-    base = man._data[0]
-    T = man._T[0]
+def fit_curve_s1(man, idx):
+    base = man._data[idx]
+    T = man._T[idx]
     s = np.linspace(0, 1, 11).reshape(-1,1)
-    x1 = base + s.dot(T)
-    dn = man._estimate_normal(base, x1)
-    xs = x1 + dn
-    return x1, xs
+    dx = np.matmul(s, T)
+    dn = man._estimate_normal(base, dx)
+    xs = base[...,None,:] + dx + dn
+    return base[...,None,:] + dx, xs
 
-def fit_curve_t2(man):
-    base = man._data[0]
-    T = man._T[0]
+def fit_curve_t2(man, idx):
+    base = man._data[idx]
+    T = man._T[idx]
     s = np.linspace(0, 1, 11)
     s = np.vstack([s,s]).T
-    dx = s.dot(T)
-    x1 = man._data[0] + dx
-    dn = man._estimate_normal(base, x1)
-    xs = x1 + dn
-    return x1, xs
+    dx = np.matmul(s, T)
+    dn = man._estimate_normal(base, dx)
+    xs = base[...,None,:] + dx + dn
+    return base[...,None,:] + dx, xs
 
 def run_dim_est():
     est = DimensionEstimator(dat_t2, bracket=[-20, 5], tol=0.2)
@@ -48,7 +47,7 @@ def run_tan_s1():
     tan = np.vstack([-np.sin(t), np.cos(t)]).T
     nrm = dat
 
-    cmpNrm = lambda tru, man: np.abs(np.sum(tru*np.array(man._T).squeeze(), axis=1))
+    cmpNrm = lambda tru, man: np.abs(np.sum(tru*man._T.squeeze(), axis=1))
 
     m1 = Manifold(dat, d=1, T=0)
     m1.precompute()
@@ -59,7 +58,7 @@ def run_tan_s1():
     m4 = ManifoldAnalytical(dat, d=1, g=4, fT=tangent_1circle)
     m4.precompute()
 
-    res = np.sum(np.vstack(m3._T)*tan, axis=1)
+    res = np.sum(m3._T.squeeze()*tan, axis=1)
 
     e1 = cmpNrm(nrm, m1)
     e2 = cmpNrm(nrm, m2)
@@ -90,7 +89,7 @@ def run_tan_t2():
     m2 = ManifoldAnalytical(dat_t2, d=2, fT=fT)
     m2.precompute()
 
-    tmp = [np.linalg.det(_t.dot(_s.T)) for _t, _s in zip(m1._T, m2._T)]
+    tmp = np.linalg.det(np.matmul(m1._T, np.swapaxes(m2._T, -2, -1)))
 
     return (m1, m2), np.array(tmp)
 
@@ -106,7 +105,7 @@ def run_fit_t2():
     Ytst = np.linalg.norm(np.sin(tar), axis=1)
     man = Manifold(dat, d=2, g=4)
     man.precompute()
-    Yprd = np.array([man.gmls(_t, Ytrn) for _t in tar]).squeeze()
+    Yprd = man.gmls(tar, Ytrn)
 
     return Ytst, Yprd
 
@@ -135,11 +134,12 @@ if __name__ == "__main__":
             f, ax = _m.plot2d(8, scl=0.5)
             ax.set_aspect('equal', adjustable='box')
 
-        x1, xs = fit_curve_s1(ms[2])
-        ax.plot(xs[:,0], xs[:,1], 'r-')
-        ax.plot(x1[:,0], x1[:,1], 'b-')
+        x1, xs = fit_curve_s1(ms[2], [0, 1])
+        for _i in range(2):
+            ax.plot(xs[_i, :, 0], xs[_i, :, 1], 'r-')
+            ax.plot(x1[_i, :, 0], x1[_i, :, 1], 'b-')
 
-        x1, xs = fit_curve_s1(ms[3])
+        x1, xs = fit_curve_s1(ms[3], 0)
         ax.plot(xs[:,0], xs[:,1], 'r--')
         ax.plot(x1[:,0], x1[:,1], 'b--')
 
@@ -159,9 +159,10 @@ if __name__ == "__main__":
             f, ax = _m.plot3d(30, scl=0.5)
             ax.plot([-2,2], [-2,2], [-2,2], 'w.')
 
-        x1, xs = fit_curve_t2(ms[-1])
-        ax.plot(xs[:,0], xs[:,1], xs[:,2], 'r-')
-        ax.plot(x1[:,0], x1[:,1], x1[:,2], 'b-')
+        x1, xs = fit_curve_t2(ms[-1], [0, 1, 2])
+        for _i in range(3):
+            ax.plot(xs[_i, :, 0], xs[_i, :, 1], xs[_i, :, 2], 'r-')
+            ax.plot(x1[_i, :, 0], x1[_i, :, 1], x1[_i, :, 2], 'b-')
 
         f = plt.figure()
         plt.semilogy(dif, 'b.')
