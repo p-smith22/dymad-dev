@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -259,3 +260,54 @@ class KernelOpSeparable(KernelOperatorValuedScalars):
         # Output: (..., Dy, M, Dy) = sum_i k_i(x,z) * B_i
         out = torch.einsum('i ... m, i a b -> ... a m b', k, B)
         return out
+
+class KernelOpTangent(KernelOperatorValued):
+    """
+    Operator-valued kernel for vector fields on a manifold
+
+    For manifold of intrinsic dimension d and ambient dimension Dy:
+
+        K(x,z) = k(x,z; ell) * T(x) O(x,z) T(z)^T
+
+    where O(x,z) = T(x)^T T(z) and T, of (Dy,d), are tangent basis vectors at x and z.
+
+    Returns a factored representation of the kernel to stay in intrinsic dimension
+
+        k(x,z; ell) O(x,z), T(x), T(z)
+
+    of shapes: (..., d, M, d), (..., d, Dy), (M, d, Dy)
+    """
+    def __init__(self, kernel: KernelScalarValued, out_dim: int, dtype=None):
+        assert isinstance(kernel, KernelScalarValued)
+        self.in_dim = kernel.in_dim
+
+        super().__init__(self.in_dim, out_dim, dtype=dtype)
+        self.scalar_kernel = kernel
+
+    def set_reference_data(self, Xref: torch.Tensor) -> None:
+        self.scalar_kernel.set_reference_data(Xref)
+
+    def set_manifold(self, manifold) -> None:
+        # Only requires manifold to provide an _estimate_tangent method
+        # which can operate in batch, and give tangent bases of shape (...,d,Dy)
+        self._manifold = manifold
+
+    def __repr__(self) -> str:
+        return f"KernelOpTangent(in_dim={self.in_dim}, out_dim={self.out_dim}, dtype={self.dtype})\n" \
+               f"\t\twith:\n\t\t{self.scalar_kernel.__repr__()}"
+
+    def _tangent(self, X: np.ndarray) -> torch.Tensor:
+        _T = self._manifold._estimate_tangent(X.detach().cpu().numpy())
+        return torch.as_tensor(_T, dtype=self.dtype, device=X.device)
+
+    def forward(self, X, Z = None):
+        k = self.scalar_kernel(X, Z)  # (..., M)
+
+        if Z is None:
+            Z = X
+
+        _Tx = self._tangent(X)        # (..., d, Dy)
+        _Tz = self._tangent(Z)        # (M, d, Dy)
+        out = torch.einsum('... a i, m b i, ... m -> ... a m b', _Tx, _Tz, k)  # (..., d, M, d)
+
+        return out, _Tx, _Tz
