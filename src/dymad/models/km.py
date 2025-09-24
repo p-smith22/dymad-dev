@@ -5,7 +5,8 @@ from typing import Dict, Union, Tuple
 from dymad.data import DynData, DynGeoData
 from dymad.models import ModelTempUCat, ModelTempUCatGraph
 from dymad.modules import make_krr
-from dymad.utils import predict_continuous, predict_discrete, \
+from dymad.numerics import Manifold
+from dymad.utils import predict_continuous, predict_continuous_fenc, predict_discrete, \
     predict_graph_continuous, predict_graph_discrete
 
 class KM(ModelTempUCat):
@@ -65,6 +66,95 @@ class KM(ModelTempUCat):
         # Then do standard loading and checks
         return super().load_state_dict(state_dict, strict=strict)
 
+M_KEYS = ['data', 'd', 'K', 'g', 'T', 'iforit', 'extT']
+class KMM(KM):
+    """
+    KM with Manifold constraints.
+
+    The model is based on Geometrically constrained KRR,
+    The prediction uses the normal correction scheme.
+
+    See more in Huang, He, Harlim & Li ICLR2025.
+    """
+    GRAPH = False
+    CONT  = True
+
+    def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
+        super().__init__(model_config, data_meta, dtype=dtype, device=device)
+
+        self._man_opts = model_config.get('manifold', {})
+
+        # Register buffers for Manifold parameters
+        self.register_buffer(f"_m_data", torch.empty(0, dtype=torch.float64))
+        self.register_buffer(f"_m_d", torch.empty(0, dtype=torch.int64))
+        self.register_buffer(f"_m_K", torch.empty(0, dtype=torch.int64))
+        self.register_buffer(f"_m_g", torch.empty(0, dtype=torch.int64))
+        self.register_buffer(f"_m_T", torch.empty(0, dtype=torch.int64))
+        self.register_buffer(f"_m_iforit", torch.tensor(False, dtype=torch.bool))
+        self.register_buffer(f"_m_extT", torch.empty(0, dtype=torch.float64))
+
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        """
+        Compute latent dynamics.
+        """
+        return self.dynamics_net(self._zu_cat(z, w))
+
+    def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Fit the kernel dynamics using input-output pairs.
+        """
+        # Build manifold from input data
+        # This is a Numpy object, and we register buffers to reload it later
+        self._manifold = Manifold(inp, **self._man_opts)
+        self._manifold.precompute()
+        ts = self._manifold.to_tensors()
+        for _k, _v in ts.items():
+            setattr(self, f"_m_{_k}", _v)
+
+        # Fit KRR with the manifold constraint
+        self.dynamics_net.set_train_data(inp, out)
+        self.dynamics_net.set_manifold(self._manifold)
+        residual = self.dynamics_net.fit()
+        return self.dynamics_net._alphas, residual
+
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
+        """Predict trajectory using discrete-time iterations."""
+        return predict_continuous_fenc(self, x0, ts, us=w.u)
+
+    def fenc_step(self, z: torch.Tensor, w: DynData, dt: float) -> torch.Tensor:
+        """
+        First-order Euler step with Normal Correction.
+        """
+        dz = self.dynamics(z, w) * dt
+        dn = self._manifold._estimate_normal(z.detach().cpu().numpy(), dz.detach().cpu().numpy())
+        return z + dz + torch.as_tensor(dn, dtype=self.dtype, device=z.device)
+
+    def load_state_dict(self, state_dict, strict: bool = True):
+        """
+        KMM relies on the Numpy-based object Manifold, and
+        the defining parameters of the latter are registered as buffers in KMM.
+        When self is initialized these buffers are placeholders.
+        Here we first update the shapes of those buffers to match the checkpoint,
+        then call the standard load_state_dict to load values and do checks.
+        In the end we reconstruct the Manifold object from the loaded buffers,
+        and set this object in appropriate locations.
+        """
+        with torch.no_grad():
+            for name, p in self.named_buffers(recurse=True):
+                if name in state_dict:
+                    saved = state_dict[name]
+                    if p.shape != saved.shape:
+                        p.set_(torch.empty_like(saved))
+
+        res = super().load_state_dict(state_dict, strict=strict)
+
+        t = {_k : getattr(self, f"_m_{_k}") for _k in M_KEYS}
+        self._manifold = Manifold.from_tensors(t)
+        self.dynamics_net._manifold = self._manifold
+        self.dynamics_net.kernel._manifold = self._manifold
+
+        return res
+
 class DKM(KM):
     """
     Dynamics based on kernel machine, discrete-time version.
@@ -81,7 +171,7 @@ class DKM(KM):
     CONT  = False
 
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
-        super(DKM, self).__init__(model_config, data_meta, dtype=dtype, device=device)
+        super().__init__(model_config, data_meta, dtype=dtype, device=device)
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
@@ -95,11 +185,11 @@ class DKMSK(KM):
     CONT  = False
 
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
-        super(DKMSK, self).__init__(model_config, data_meta, dtype=dtype, device=device)
+        super().__init__(model_config, data_meta, dtype=dtype, device=device)
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """
-        Compute latent dynamics (derivative).
+        Compute latent dynamics.
         """
         return z + self.dynamics_net(self._zu_cat(z, w))
 

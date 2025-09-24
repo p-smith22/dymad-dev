@@ -303,7 +303,7 @@ class KRRTangent(KRRBase):
         X, Y = self.X_train, self.Y_train
 
         Kxx, Tx, _ = self.kernel(X, None)               # (N,N,d,d), (N,d,Dy)
-        _Y = torch.matmul(Tx, Y[...,None]).squeeze()    # (N,d), the effective targets
+        _Y = torch.matmul(Tx, Y[...,None]).squeeze(-1)  # (N,d), the effective targets
         _d = _Y.shape[-1]
 
         Kflat = Kxx.reshape(self._Ndat*_d, self._Ndat*_d)

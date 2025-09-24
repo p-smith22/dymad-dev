@@ -5,6 +5,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.optimize import minimize_scalar
 import scipy.spatial as sps
 from sklearn.preprocessing import PolynomialFeatures
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -296,6 +297,30 @@ class Manifold:
                 ax.plot(_c[0], _c[1], _c[2], 'k-')
         return f, ax
 
+    def to_tensors(self):
+        # To interface with PyTorch for saving state dicts
+        return {
+            "data": torch.from_numpy(self._data),
+            "d": torch.tensor(self._Nman, dtype=torch.int64),
+            "K": torch.tensor(self._Nknn, dtype=torch.int64),
+            "g": torch.tensor(self._Nlsq, dtype=torch.int64),
+            "T": torch.tensor(self._Ntan, dtype=torch.int64),
+            "iforit": torch.tensor(self._iforit, dtype=torch.bool),
+            "extT": torch.from_numpy(self._T) if self._ifprecomp else None
+        }
+
+    @classmethod
+    def from_tensors(cls, t):
+        # To interface with PyTorch to load a state dict
+        data = t["data"].detach().cpu().numpy()
+        d = t["d"].item()
+        K = t["K"].item()
+        g = t["g"].item()
+        T = t["T"].item()
+        iforit = t["iforit"].item()
+        extT = t["extT"].detach().cpu().numpy() if t["extT"] is not None else None
+        return cls(data, d, K, g, T, iforit, extT)
+
 class ManifoldAnalytical(Manifold):
     def __init__(self, data, d, K=None, g=None, fT=None):
         self._data = np.array(data)
@@ -317,7 +342,7 @@ class ManifoldAnalytical(Manifold):
         self._fphi = PolynomialFeatures(self._Nlsq, include_bias=False)
         self._fpsi = PolynomialFeatures(self._Nlsq, include_bias=True) # General GMLS
 
-        # Order of tangent space estimation
+        # Function giving tangent space basis
         self._tangent_func = fT
 
         # Possible data members

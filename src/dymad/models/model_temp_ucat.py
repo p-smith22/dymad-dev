@@ -24,6 +24,8 @@ class ModelTempUCat(ModelBase):
         self.n_total_state_features = data_meta.get('n_total_state_features')
         self.n_total_control_features = data_meta.get('n_total_control_features')
         self.latent_dimension = model_config.get('latent_dimension', 64)
+        self.dtype = dtype
+        self.device = device
 
         # Method for input handling
         self.input_order = model_config.get('input_order', 'cubic')
@@ -174,6 +176,8 @@ class ModelTempUCatGraph(ModelBase):
         self.n_total_state_features = data_meta.get('n_total_state_features')
         self.n_total_control_features = data_meta.get('n_total_control_features')
         self.latent_dimension = model_config.get('latent_dimension', 64)
+        self.dtype = dtype
+        self.device = device
 
         # Method for input handling
         self.input_order = model_config.get('input_order', 'cubic')
