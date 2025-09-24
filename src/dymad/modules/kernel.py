@@ -267,9 +267,11 @@ class KernelOpTangent(KernelOperatorValued):
 
     For manifold of intrinsic dimension d and ambient dimension Dy:
 
-        K(x,z) = k(x,z; ell) * T(x) O(x,z) T(z)^T
+        K(x,z) = k(x,z; ell) * T(x') O(x',z') T(z')^T
 
-    where O(x,z) = T(x)^T T(z) and T, of (Dy,d), are tangent basis vectors at x and z.
+    where O(x',z') = T(x')^T T(z') and T, of (Dy,d), are tangent basis vectors at x' and z',
+    and the ' denotes the state part of the input (the first out_dim dimensions).
+    k is a scalar kernel that includes both states and inputs.
 
     Returns a factored representation of the kernel to stay in intrinsic dimension
 
@@ -296,8 +298,8 @@ class KernelOpTangent(KernelOperatorValued):
         return f"KernelOpTangent(in_dim={self.in_dim}, out_dim={self.out_dim}, dtype={self.dtype})\n" \
                f"\t\twith:\n\t\t{self.scalar_kernel.__repr__()}"
 
-    def _tangent(self, X: np.ndarray) -> torch.Tensor:
-        _T = self._manifold._estimate_tangent(X.detach().cpu().numpy())
+    def _tangent(self, X: torch.Tensor) -> torch.Tensor:
+        _T = self._manifold._estimate_tangent(X[..., :self.out_dim].detach().cpu().numpy())
         return torch.as_tensor(_T, dtype=self.dtype, device=X.device)
 
     def forward(self, X, Z = None):

@@ -105,7 +105,7 @@ class KMM(KM):
         """
         # Build manifold from input data
         # This is a Numpy object, and we register buffers to reload it later
-        self._manifold = Manifold(inp, **self._man_opts)
+        self._manifold = Manifold(inp[:,:self.n_total_state_features], **self._man_opts)
         self._manifold.precompute()
         ts = self._manifold.to_tensors()
         for _k, _v in ts.items():

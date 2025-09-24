@@ -30,7 +30,7 @@ def chirp_control(*,
     See `scipy.signal.chirp` for technical details.
 
     Args:
-        t1 (float): End time of the chirp, which can be shorter than the duration of signal.
+        t1 (float): The time at which f1 is specified, which can be shorter than the duration of signal.
         dim (int): Dimension of the control signal.
         freq_range (Tuple[float, float]): Frequency range (f0, f1) in Hz.
         amp_range (Tuple[float, float]): Amplitude range (min, max).
