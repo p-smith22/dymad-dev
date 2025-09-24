@@ -236,12 +236,12 @@ The details are provided below.
      - |:building_construction:|
      - |:building_construction:|
    * - Kernel
+     - |:white_check_mark:|
+     - |:white_check_mark:|
      - |:notepad_spiral:|
-     - |:notepad_spiral:|
-     - |:notepad_spiral:|
-     - |:o:|
-     - |:o:|
-     - |:egg:|
+     - |:white_check_mark:|
+     - |:white_check_mark:|
+     - |:white_check_mark:|
 
 Model Analysis
 ^^^^^^^^^^^^^^
