@@ -40,7 +40,7 @@ opt_rbf = {
 opt_opk = {
     "type": "op_tan",
     "input_dim": 3,
-    "output_dim": 2,
+    "output_dim": 3,
     "kopts": opt_rbf
 }
 
