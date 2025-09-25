@@ -17,7 +17,7 @@ dependencies = [
   "torchdiffeq>=0.2.5",
   "torch-geometric>=2.6",
   "pyyaml>=6.0",
-  "sklearn>=1.5.2"
+  "scikit-learn>=1.5.2"
 ]
 
 [project.optional-dependencies]
