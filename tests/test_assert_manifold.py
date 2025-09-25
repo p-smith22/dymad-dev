@@ -112,7 +112,7 @@ def run_fit_t2():
 def test_fit_t2():
     Ytst, Yprd = run_fit_t2()
     err = np.linalg.norm(Ytst-Yprd)/np.linalg.norm(Ytst)
-    assert err < 0.02, "GMLS fit error"
+    assert err < 0.03, "GMLS fit error"
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt

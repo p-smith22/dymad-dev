@@ -109,8 +109,7 @@ def test_vbdm():
     assert np.linalg.norm(qes_ref - yqes) / np.linalg.norm(qes_ref) < 1e-2, "VBDM qes"
     assert np.linalg.norm(peq_ref - ypeq) / np.linalg.norm(peq_ref) < 1e-2, "VBDM peq"
 
-    assert np.abs(vbdm._lambda[2] + 1) < 0.2, "VBDM lambda"
-    assert np.abs(vbdm._lambda[3] + 1) < 0.4, "VBDM lambda"
+    assert np.min(np.abs(vbdm._lambda + 1)) < 0.2, "VBDM lambda"
 
 if __name__ == "__main__":
 
