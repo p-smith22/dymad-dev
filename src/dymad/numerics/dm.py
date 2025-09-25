@@ -5,8 +5,9 @@ from scipy.sparse import coo_matrix, spdiags
 from scipy.sparse.linalg import eigsh
 from scipy.spatial.distance import cdist
 import scipy.linalg as spl
-
 from sklearn.neighbors import KDTree
+
+from dymad.numerics.manifold import DimensionEstimator
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,11 @@ class DMF:
     def fit(self, x):
         self._x = np.atleast_2d(x)
         self._N = self._x.shape[0]
+
+        if self._epsilon is None:
+            est = DimensionEstimator(data=x, Knn=None, bracket=[-30, 10])
+            est()
+            self._epsilon = np.sqrt(est._ref_l2dist * est._ref_scalar) / 4
 
         # Compute pairwise distances
         d2 = cdist(x, x, metric='sqeuclidean')
@@ -111,6 +117,10 @@ class DMF:
 
         return eigvecs_normalized
 
+    def fit_transform(self, x):
+        self.fit(x)
+        return self.transform(x)
+
 class DM:
     """
     Diffusion map
@@ -143,15 +153,9 @@ class DM:
         distances, indices = self._tree.query(x, k=self._Knn)
 
         if self._epsilon is None:
-            # Estimate epsilon using heuristic
-            epsilons = 2.0 ** np.arange(-30, 10.1, 0.1)
-            dpreGlobal = [
-                np.sum(np.exp(-distances ** 2 / (4 * eps ** 2))) / (self._N * self._Knn)
-                for eps in epsilons
-            ]
-            halfdim = np.diff(np.log(dpreGlobal)) / np.diff(np.log(epsilons))
-            maxind = np.argmax(halfdim)
-            self._epsilon = epsilons[maxind]
+            est = DimensionEstimator(tree=self._tree, Knn=self._Knn, bracket=[-30, 10])
+            est()
+            self._epsilon = np.sqrt(est._ref_l2dist * est._ref_scalar) / 4
 
         # Step 2: Construct kernel matrix
         W = np.exp(-distances ** 2 / (4 * self._epsilon))
@@ -206,6 +210,10 @@ class DM:
             eigvecs_normalized[:, i] = eigvecs[:, i] / norm_factor
 
         return eigvecs_normalized
+
+    def fit_transform(self, x):
+        self.fit(x)
+        return self.transform(x)
 
 class VBDM:
     """
@@ -365,6 +373,10 @@ class VBDM:
             peq = qest * Ssquare / self._peq_fact
             return psi, (rho, qest, peq)
         return psi
+
+    def fit_transform(self, x):
+        self.fit(x)
+        return self.transform(x)
 
     def _estimate_rho(self, d, inds):
         """

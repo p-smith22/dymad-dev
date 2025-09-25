@@ -1,13 +1,16 @@
+import logging
 import numpy as np
 import scipy.spatial as sps
 import sklearn.manifold as skm
 from sklearn.preprocessing import PolynomialFeatures
-from typing import List
+from typing import Any, List
 
-from dymad.numerics import DM, DMF, VBDM
+from dymad.numerics import DM, DMF, Manifold, VBDM
 from dymad.transform.base import Transform
 
 Array = List[np.ndarray]
+
+logger = logging.getLogger(__name__)
 
 class TransformKernel(Transform):
     """
@@ -21,8 +24,9 @@ class TransformKernel(Transform):
         - (modified) Generalized Moving Least Squares (GMLS)
 
     Args:
+        edim: Embedding dimension.
         inverse: Type of inverse transform, pinv or gmls
-        Knn: Number of nearest neighbors in reconstruction
+        Knn: GMLS only - Number of nearest neighbors in reconstruction
              GMLS: Usually same as encoding algorithm
         Kphi: GMLS only - Order of polynomial
         order: Order of SVD truncation.
@@ -31,12 +35,14 @@ class TransformKernel(Transform):
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self._out_dim = kwargs.pop('edim', None)
         self._inv   = kwargs.pop('inverse', None)
         self._Knn   = kwargs.pop('Knn', None)
         self._Kphi  = kwargs.pop('Kphi', None)
         self._order = kwargs.pop('order', None)
         self._rcond = kwargs.pop('rcond', None)
 
+        self._ndr   = None
         self._tree  = None
 
     def _prepare_inverse(self):
@@ -45,155 +51,147 @@ class TransformKernel(Transform):
         """
         _inv = self._inv.lower()
         if _inv == "gmls":
-            assert self._tree is not None
-            self._fphi = PolynomialFeatures(self._Kphi, include_bias=True)
+            self._man = Manifold(self._Z, self._order, K=self._Knn, g=self._Kphi, T=self._Kphi)
             self.inverse_transform = self._gmls
         elif _inv == "pinv":
-            _Z = np.vstack(self._Zs)
-            self._C = np.linalg.pinv(_Z, rcond=self._rcond, hermitian=False).T.dot(self._X)
+            self._C = np.linalg.pinv(self._Z, rcond=self._rcond, hermitian=False).dot(self._X)
             self.inverse_transform = self._pinv
         else:
             raise ValueError(f"Unknown inverse transform {self._inv}")
 
     def _pinv(self, Z):
-        return Z.dot(self._C)
+        return [_Z.dot(self._C) for _Z in Z]
 
-    def _gmls(self, s):
-        _s = np.real(s)
-        _, _i = self._tree.query(_s, k=self._Knn)
-
-        # Arc lengths in intrinsic space
-        _U = self._Z[_i] - self._Z[_i[0]]
-        _, _, _Vh = np.linalg.svd(_U, full_matrices=False)
-        _V = _Vh[:self._order].conj().T
-        _t = _U.dot(_V)
-        _c = (_s-self._Z[_i[0]]).dot(_V).reshape(1,-1)
-        _mn, _mx = np.min(_t), np.max(_t)
-        _t = (_t-_mn) / (_mx-_mn)
-        _c = (_c-_mn) / (_mx-_mn)
-
-        # Fit in physical space
-        _P = self._fphi.fit_transform(_t)
-        _C = np.linalg.pinv(_P).dot(self._X[_i])
-        _p = self._fphi.fit_transform(_c)
-        _X = _p.dot(_C).T.squeeze()
-
-        return _X
-
-class Isomap(TransformKernel):
-    """
-    Manifold embedding by Isometric Mapping.
-
-    Args:
-        edim: Embedding dimension.
-        Kiso: Number of nearest neighbors.
-        offset: Whether to include constant.
-    """
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        Ncmp = kwargs.pop('edim', None)
-        self._Kiso = kwargs.pop('Kiso', None)
-        self._off  = kwargs.pop('offset', False)
-        self._Ncmp = Ncmp
-        if self._off:
-            self._out_dim = self._Ncmp + 1
-        else:
-            self._out_dim = self._Ncmp
-
-    def __str__(self):
-        return "isomap"
-
+    def _gmls(self, Z):
+        return [self._man.gmls(_Z, self._X) for _Z in Z]
+    
     def fit(self, X: Array) -> None:
         """"""
-        self._isom = skm.Isomap(n_neighbors=self._Kiso, n_components=self._Ncmp)
+        self._make_ndr()
 
-        _X = np.vstack([_ for _ in X])
-        self._inp_dim = _X.shape[-1]
-
-        _Z = self._isom.fit_transform(_X)
-        if self._off:
-            _one = np.ones((len(_Z),1))
-            _Z = np.hstack([_one, _Z])
-        self._tree = sps.KDTree(_Z, leafsize=self._Kiso)
+        self._X = np.vstack([_ for _ in X])
+        self._inp_dim = self._X.shape[-1]
+        self._Z = self._ndr.fit_transform(self._X)
 
         self._prepare_inverse()
 
     def transform(self, X: Array) -> Array:
         """"""
-        _res = self._isom.transform(X.reshape(-1,self._Ninp))
-        if self._off:
-            _one = np.ones((len(_res),1))
-            return np.hstack([_one, _res])
+        _res = [self._ndr.transform(_X) for _X in X]
         return _res
+
+    def state_dict(self) -> dict[str, Any]:
+        """"""
+        return {
+            "inv":   self._inv,
+            "Knn":   self._Knn,
+            "Kphi":  self._Kphi,
+            "order": self._order,
+            "rcond": self._rcond,
+            "inp":   self._inp_dim,
+            "out":   self._out_dim,
+            "X":     self._X,
+            "Z":     self._Z,
+            }
+
+    def load_state_dict(self, d) -> None:
+        """"""
+        logger.info(f"{self.__str__}: Loading parameters from checkpoint :{d}")
+        self._inv   = d["inv"]
+        self._Knn   = d["Knn"]
+        self._Kphi  = d["Kphi"]
+        self._order = d["order"]
+        self._rcond = d["rcond"]
+        self._out_dim = d["out"]
+        self.fit([d["X"]])
+
+        assert np.allclose(self._Z, d["Z"]), "Loaded Z does not match computed Z"
+
+class Isomap(TransformKernel):
+    """
+    Manifold embedding by Isometric Mapping.
+    """
+    def __str__(self):
+        return "isomap"
+
+    def _make_ndr(self) -> None:
+        """"""
+        self._ndr = skm.Isomap(n_neighbors=self._Knn, n_components=self._out_dim)
 
 class DiffMap(TransformKernel):
     """
     Manifold embedding by regular diffusion map.
 
     Args:
-        edim: Embedding dimension.
-        Kdm: Number of nearest neighbors.
-        Kb: Number of nearest neighbors for density estimation.
+        alpha: for DM.
+        epsilon: Kernel scale for DM. If None, it will be estimated.
+        mode: 'full' or 'knn'. 'full' uses dense matrix.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._out_dim = kwargs.pop('edim', None)
-        self._Kdm  = kwargs.pop('Kdm', None)
-        self._Kb   = kwargs.pop('Kb', None)
+        self._alpha   = kwargs.pop('alpha', 1)
+        self._epsilon = kwargs.pop('epsilon', None)
+        self._mode    = kwargs.pop('mode', 'full')
 
     def __str__(self):
         return "dm"
-    
-    def fit(self, X: Array) -> None:
+
+    def _make_ndr(self) -> None:
         """"""
-        if self._Kdm is None:
-            self._dm = DMF(
-                n_components=self._out_dim, Kb=self._Kb, operator='lb')
+        if self._mode == 'full':
+            self._ndr = DMF(
+                n_components=self._out_dim, alpha=self._alpha, epsilon=self._epsilon)
         else:
-            self._dm = DM(
-                n_neighbors=self._Kdm, n_components=self._out_dim,
-                Kb=self._Kb, operator='lb')
+            self._ndr = DM(
+                n_components=self._out_dim, n_neighbors=self._Knn,
+                alpha=self._alpha, epsilon=self._epsilon)
 
-        _X = np.vstack([_ for _ in X])
-        self._inp_dim = _X.shape[-1]
-
-        self._dm.fit(_X)
-        self._tree = sps.KDTree(self._dm._psi, leafsize=self._Kdm)
-
-        self._prepare_inverse()
-
-    def transform(self, X: Array) -> Array:
+    def state_dict(self) -> dict[str, Any]:
         """"""
-        return self._dm.transform(X.reshape(-1,self._inp_dim))
+        _d = super().state_dict()
+        _d.update({
+                "alpha":    self._alpha,
+                "epsilon":  self._epsilon,
+                "mode":     self._mode,
+            })
+        return _d
+
+    def load_state_dict(self, d) -> None:
+        """"""
+        self._alpha   = d["alpha"]
+        self._epsilon = d["epsilon"]
+        self._mode    = d["mode"]
+        super().load_state_dict(d)
 
 class DiffMapVB(DiffMap):
     """
     Manifold embedding by variable bandwidth diffusion map.
 
     Args:
-        edim: Embedding dimension.
-        Kdm: Number of nearest neighbors.
         Kb: Number of nearest neighbors for density estimation.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._out_dim = kwargs.pop('edim', None)
-        self._Kdm  = kwargs.pop('Kdm', None)
         self._Kb   = kwargs.pop('Kb', None)
 
     def __str__(self):
         return "vbdm"
-    
-    def fit(self, X: Array) -> None:
+
+    def _make_ndr(self) -> None:
         """"""
-        self._vbdm = VBDM(
-            n_neighbors=self._Kdm, n_components=self._out_dim,
+        self._ndr = VBDM(
+            n_neighbors=self._Knn, n_components=self._out_dim,
             Kb=self._Kb, operator='lb')
 
-        _X = np.vstack([_ for _ in X])
-        self._inp_dim = _X.shape[-1]
+    def state_dict(self) -> dict[str, Any]:
+        """"""
+        _d = super().state_dict()
+        _d.update({
+                "Kb":     self._Kb,
+            })
+        return _d
 
-        self._vbdm.fit(_X)
-        self._tree = sps.KDTree(self._vbdm._psi, leafsize=self._Kdm)
-
-        self._prepare_inverse()
+    def load_state_dict(self, d) -> None:
+        """"""
+        self._Kb = d["Kb"]
+        super().load_state_dict(d)

@@ -1,4 +1,5 @@
 import numpy as np
+from sklearn.neighbors import KDTree
 
 from dymad.numerics import DimensionEstimator, Manifold, ManifoldAnalytical, \
     tangent_1circle, tangent_2torus
@@ -33,13 +34,20 @@ def fit_curve_t2(man, idx):
     return base[...,None,:] + dx, xs
 
 def run_dim_est():
-    est = DimensionEstimator(dat_t2, bracket=[-20, 5], tol=0.2)
-    est()
-    return est
+    _tree = KDTree(dat_t2)
+    e1 = DimensionEstimator(data=dat_t2, Knn=None, tree=None, bracket=[-20, 5], tol=0.2)
+    e2 = DimensionEstimator(data=None, Knn=150, tree=_tree, bracket=[-20, 5], tol=0.2)
+    e3 = DimensionEstimator(data=dat_t2, Knn=150, tree=None, bracket=[-20, 5], tol=0.2)
+    es = [e1, e2, e3]
+    for _e in es:
+        _e()
+    return es
 
 def test_dim_est():
-    est = run_dim_est()
-    assert est._dim == 2
+    es = run_dim_est()
+    for _e in es:
+        assert _e._dim == 2
+    assert es[1]._est == es[2]._est
 
 def run_tan_s1():
     t = np.random.rand(200)*2*np.pi
@@ -123,9 +131,14 @@ if __name__ == "__main__":
     iffit = 1
 
     if ifest:
-        est = run_dim_est()
-        est.plot()
-        dim2 = est.sanity_check()
+        es = run_dim_est()
+        f, ax = es[0].plot(sty='b-')
+        f, ax = es[1].plot(fig=(f, ax), sty='r--')
+        f, ax = es[2].plot(fig=(f, ax), sty='g--')
+
+        for _e in es:
+            print(_e._dim, _e._est)
+            _e.sanity_check()
 
     if ifts1:
         ms, es, _ = run_tan_s1()

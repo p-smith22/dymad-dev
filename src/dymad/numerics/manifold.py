@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.optimize import minimize_scalar
 import scipy.spatial as sps
+from sklearn.neighbors import KDTree
 from sklearn.preprocessing import PolynomialFeatures
 import torch
 
@@ -43,9 +44,29 @@ class DimensionEstimator:
     In implementation, we analytically evaluate
 
         d(log(S(e)))/d(log(e))
+
+    There are three operation modes:
+
+        - Given `data` only, Knn=None: use all pairwise distances
+        - Given `data` and Knn=int: use kNN distances, a KDTree will be built
+        - Given `tree` and Knn=int: use kNN distances from the tree, `data` will not be used
+
+    Args:
+        data: Input data, shape (N, d).
+        Knn: Number of nearest neighbors to use. If None, use all pairwise distances.
+        tree: A precomputed KDTree instance. If given, `data` is not used.
+        bracket: Bracket for the scalar minimization
+        tol: Tolerance for biased rounding of fractional dimension
     """
-    def __init__(self, data, bracket=[-20, 5], tol=0.2):
-        self._data = np.array(data)
+    def __init__(self, data=None, Knn=None, tree=None, bracket=[-20, 5], tol=0.2):
+        if tree is not None:
+            self._tree = tree
+            self._data = np.asarray(tree.data)
+            self._Knn  = Knn
+        else:
+            self._data = np.array(data)
+            self._tree = KDTree(self._data)
+            self._Knn  = Knn
         self._Ndat, self._Ndim = self._data.shape
 
         self._bracket = bracket
@@ -54,11 +75,14 @@ class DimensionEstimator:
         # cache
         self._S   = None
         self._dS  = None
-        self._res = None
 
     def __call__(self):
         # Normalized squared distances
-        dst = sps.distance.pdist(self._data)**2
+        if self._Knn is None:
+            dst = sps.distance.pdist(self._data)**2
+        else:
+            dst, _ = self._tree.query(self._data, k=self._Knn)
+            dst = dst.reshape(-1)**2
         dmx = np.max(dst)
         dst /= dmx
         # Tuning functions
@@ -88,27 +112,29 @@ class DimensionEstimator:
         self._ref_l2dist = dmx
         self._ref_scalar = 2**res.x
 
-        logger.info(f"Dimension estimation of {self._Ndat} points in {self._Ndim}-dim")
-        logger.info(f"Estimated intrinsic dimension: {dim} (est={est:4.3f})")
-        logger.info(f"Reference bandwidth: {tmp:4.3e} (l2dist={dmx:4.3e}, scalar={2**res.x:4.3e})")
-
         # Update cache
         self._S   = S
         self._dS  = dS
-        self._res = res
+
+        logger.info(f"Dimension estimation of {self._Ndat} points in {self._Ndim}-dim")
+        logger.info(f"Estimated intrinsic dimension: {dim} (est={est:4.3f})")
+        logger.info(f"Reference bandwidth: {tmp:4.3e} (l2dist={dmx:4.3e}, scalar={self._ref_scalar:4.3e})")
 
         return dim
 
-    def plot(self, N=20):
+    def plot(self, N=20, fig=None, sty='b-'):
         eps = 2.**np.linspace(self._bracket[0], self._bracket[1], N)
 
         val = [self._S(_e) for _e in eps]
         slp = [2*self._dS(_e) for _e in eps]
 
-        f, ax = plt.subplots(nrows=2, sharex=True)
-        ax[0].loglog(eps, val)
-        ax[1].semilogx(eps, slp)
-        ax[1].semilogx(2**self._res.x, self._est, 'bo', markerfacecolor='none', \
+        if fig is None:
+            f, ax = plt.subplots(nrows=2, sharex=True)
+        else:
+            f, ax = fig
+        ax[0].loglog(eps, val, sty)
+        ax[1].semilogx(eps, slp, sty)
+        ax[1].semilogx(self._ref_scalar, self._est, sty[0]+'o', markerfacecolor='none', \
             label=f"Estimated dim: {self._est:4.3f}")
         ax[0].set_ylabel(r'$S(\epsilon)$')
         ax[1].set_xlabel(r'$\epsilon$')
@@ -121,17 +147,10 @@ class DimensionEstimator:
         tmp = int(np.sqrt(self._Ndat))
         Nknn = tmp if K is None else K
 
-        # KD tree for kNN
-        _leaf = max(20, Nknn)
-        self._tree = sps.KDTree(self._data, leafsize=_leaf)
-
         # Local PCA
-        svs = []
-        for _x in self._data:
-            _, _i = self._tree.query(_x, k=Nknn)
-            _V = self._data[_i] - _x
-            _, _s, _ = np.linalg.svd(_V, full_matrices=False)
-            svs.append(_s)
+        _, _i = self._tree.query(self._data, k=Nknn)
+        _V = self._data[_i] - self._data[:, None, :]
+        _, svs, _ = np.linalg.svd(_V, full_matrices=False)
         _avr = np.mean(svs, axis=0)
         _std = np.std(svs, axis=0)
         # Global PCA, as reference
@@ -228,7 +247,7 @@ class Manifold:
         _T, _V = self._estimate_tangent(x, ret_V=True)
         _B = np.matmul(_V, np.swapaxes(_T, -2, -1))
         _P = self._poly_eval(self._fpsi, _B)
-        _C = np.matmul(np.linalg.pinv(_P), Y[_i][..., None])
+        _C = np.matmul(np.linalg.pinv(_P), np.atleast_3d(Y[_i]))
         _tmp = self._fpsi.fit_transform(np.zeros((1,self._Nman)))
         _r = np.matmul(_tmp, _C)
         return _r.squeeze()
