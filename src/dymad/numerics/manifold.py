@@ -79,20 +79,22 @@ class DimensionEstimator:
     def __call__(self):
         # Normalized squared distances
         if self._Knn is None:
-            dst = sps.distance.pdist(self._data)**2
+            dst = sps.distance.pdist(self._data)**2  # Excludes self-distances
+            scl = 2                                  # These are only half of the distances
         else:
-            dst, _ = self._tree.query(self._data, k=self._Knn)
-            dst = dst.reshape(-1)**2
+            dst, _ = self._tree.query(self._data, k=self._Knn+1)
+            dst = dst[:,1:].reshape(-1)**2           # Remove self-distances
+            scl = 1                                  # Both sides of distances are included
         dmx = np.max(dst)
         dst /= dmx
         # Tuning functions
         def S(e):
-            tmp = np.sum(np.exp(- dst / e))*2 + self._Ndat
+            tmp = scl * np.sum(np.exp(- dst / e)) + self._Ndat
             return tmp / self._Ndat**2
         def dS(e):
             _k = np.exp(- dst / e)
-            _S = 2 * np.sum(_k) + self._Ndat
-            _d = 2 * dst.dot(_k)
+            _S = scl * np.sum(_k) + self._Ndat
+            _d = scl * dst.dot(_k)
             return _d/_S/e
         # Find the intrinsic dimension as the max of slope
         func = lambda e: -2*dS(2.**e)

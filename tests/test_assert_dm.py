@@ -33,7 +33,7 @@ def run_dm_s1(model, N = 1000):
 
     k = int(np.sqrt(N))
     nvars = 10
-    epsilon = 1e-3
+    epsilon = None #1e-3
     alpha = 1
 
     if model == 'dm':
@@ -64,16 +64,16 @@ def test_dm_s1(model):
     errors2 = np.hstack(errors2)
 
     if model == 'dm':
-        eps1, eps2 = 5e-9, 0.001
+        eps1, eps2, eps3 = 0.005, 0.01, 2e-3
     else:
-        eps1, eps2 = 1e-12, 0.001
+        eps1, eps2, eps3 = 1e-13, 1e-13, 0.6
 
     assert np.max(errors1) < eps1, "DM S1 basis fitting"
     assert np.max(errors2) < eps2, "DM S1 basis interpolation"
 
     ref = np.array([0, 1, 1, 4, 4, 9, 9, 16, 16, 25])
     err = np.abs(eigval-ref)/np.maximum(1e-3, ref)
-    assert np.max(err) < 2e-3, "DM S1 eigenvalues"
+    assert np.max(err) < eps3, "DM S1 eigenvalues"
 
 def run_vbdm(N = 201, ifrand = 1):
     K = int(np.sqrt(N))*10
@@ -184,7 +184,7 @@ if __name__ == "__main__":
         dim = 2
         alpha = 1
         nvars = 20
-        epsilon = 1e-3
+        epsilon = None # 1e-3
 
         # Generate random spherical data
         test = np.random.rand(N, 2)

@@ -62,7 +62,8 @@ class DMF:
         if self._epsilon is None:
             est = DimensionEstimator(data=x, Knn=None, bracket=[-30, 10])
             est()
-            self._epsilon = np.sqrt(est._ref_l2dist * est._ref_scalar) / 4
+            self._epsilon = est._ref_l2dist * est._ref_scalar / 4
+            logger.info(f"Estimated epsilon: {self._epsilon}")
 
         # Compute pairwise distances
         d2 = cdist(x, x, metric='sqeuclidean')
@@ -188,7 +189,8 @@ class DM:
         if self._epsilon is None:
             est = DimensionEstimator(tree=self._tree, Knn=self._Knn, bracket=[-30, 10])
             est()
-            self._epsilon = np.sqrt(est._ref_l2dist * est._ref_scalar) / 4
+            self._epsilon = est._ref_l2dist * est._ref_scalar / 4
+            logger.info(f"Estimated epsilon: {self._epsilon}")
 
         # Step 2: Construct kernel matrix
         W = np.exp(-distances ** 2 / (4 * self._epsilon))
