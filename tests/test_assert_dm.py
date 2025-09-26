@@ -37,7 +37,11 @@ def run_dm_s1(model, N = 1000):
     alpha = 1
 
     if model == 'dm':
-        dm = DM(nvars, k, alpha=alpha, epsilon=epsilon)
+        dm = DM(nvars, n_neighbors=k, alpha=alpha, epsilon=epsilon)
+    elif model == 'vbdm':
+        dm = VBDM(n_components=nvars, n_neighbors=k, Kb=k//2, operator="lb")
+    elif model == 'dmfk':
+        dm = DMF(nvars, n_neighbors=k, alpha=alpha, epsilon=epsilon)
     else:
         dm = DMF(nvars, alpha=alpha, epsilon=epsilon)
     dm.fit(x1)
@@ -50,7 +54,7 @@ def run_dm_s1(model, N = 1000):
 
     return (psi1, theta1), (psi2, theta2), eigval
 
-@pytest.mark.parametrize("model", ['dm', 'dmf'])
+@pytest.mark.parametrize("model", ['dm', 'dmf', 'dmfk'])
 def test_dm_s1(model):
     (psi1, theta1), (psi2, theta2), eigval = run_dm_s1(model, N=100)
 
@@ -63,7 +67,7 @@ def test_dm_s1(model):
     errors1 = np.hstack(errors1)
     errors2 = np.hstack(errors2)
 
-    if model == 'dm':
+    if model in ['dm', 'dmfk']:
         eps1, eps2, eps3 = 0.005, 0.01, 2e-3
     else:
         eps1, eps2, eps3 = 1e-13, 1e-13, 0.6
@@ -115,43 +119,50 @@ if __name__ == "__main__":
 
     ifrand = 1
 
-    ifdm = 1
+    ifdm = 1  # Includes VBDM too
     ifvb = 1
     ifs2 = 1  # Additional test for DM
     ifou = 1  # Additional test for VBDM
 
     if ifdm:
-        (psi1, theta1), (psi2, theta2), eigval = run_dm_s1('dmf', N=100)
+        models = ['dm', 'dmf', 'dmfk', 'vbdm']
+        for _mdl in models:
+            print(_mdl)
+            (psi1, theta1), (psi2, theta2), eigval = run_dm_s1(_mdl, N=1000)
 
-        ref = np.array([0, 1, 1, 4, 4, 9, 9, 16, 16, 25])
-        print((eigval-ref)/np.maximum(1e-3, ref))
+            ref = np.array([0, 1, 1, 4, 4, 9, 9, 16, 16, 25])
+            if _mdl == 'vbdm':
+                eigval = -eigval
 
-        # Compute and plot results
-        _, axes = plt.subplots(nrows=2, ncols=2, sharex=True, sharey=True)
-        errors1, errors2 = [], []
-        titles = [r"$e^{ix}$", r"$e^{i2x}$", r"$e^{i3x}$", r"$e^{i4x}$"]
+            print(eigval)
+            print((eigval-ref)/np.maximum(1e-3, ref))
 
-        for i, ax in enumerate(axes.flatten()):
-            indices = [2 * i + 1, 2 * (i + 1)]
-            basis1, error1 = compute_basis_and_errors(psi1, theta1, indices)
-            errors1.append(error1)
-            basis2, error2 = compute_basis_and_errors(psi2, theta2, indices)
-            errors2.append(error2)
+            # Compute and plot results
+            _, axes = plt.subplots(nrows=2, ncols=2, sharex=True, sharey=True)
+            errors1, errors2 = [], []
+            titles = [r"$e^{ix}$", r"$e^{i2x}$", r"$e^{i3x}$", r"$e^{i4x}$"]
 
-            ax.plot(theta1, np.cos((i+1) * theta1), 'r', label='Cosine')
-            ax.plot(theta1, basis1[:, 0], 'k--', label='Basis Cosine')
-            ax.plot(theta2, basis2[:, 0], 'g:', linewidth=2, label='Basis Cosine, Interp')
-            ax.plot(theta1, np.sin((i+1) * theta1), 'r', label='Sine')
-            ax.plot(theta1, basis1[:, 1], 'k--', label='Basis Sine')
-            ax.plot(theta2, basis2[:, 1], 'g:', linewidth=2, label='Basis Sine, Interp')
-            ax.set_xlim([0, 2 * np.pi])
-            ax.set_ylim([-1, 1])
-            ax.set_title(titles[i], fontsize=14)
-        axes[0][0].legend()
+            for i, ax in enumerate(axes.flatten()):
+                indices = [2 * i + 1, 2 * (i + 1)]
+                basis1, error1 = compute_basis_and_errors(psi1, theta1, indices)
+                errors1.append(error1)
+                basis2, error2 = compute_basis_and_errors(psi2, theta2, indices)
+                errors2.append(error2)
 
-        # Print errors
-        print("Errors for theta1:", np.hstack(errors1))
-        print("Errors for theta2:", np.hstack(errors2))
+                ax.plot(theta1, np.cos((i+1) * theta1), 'r', label='Cosine')
+                ax.plot(theta1, basis1[:, 0], 'k--', label='Basis Cosine')
+                ax.plot(theta2, basis2[:, 0], 'g:', linewidth=2, label='Basis Cosine, Interp')
+                ax.plot(theta1, np.sin((i+1) * theta1), 'r', label='Sine')
+                ax.plot(theta1, basis1[:, 1], 'k--', label='Basis Sine')
+                ax.plot(theta2, basis2[:, 1], 'g:', linewidth=2, label='Basis Sine, Interp')
+                ax.set_xlim([0, 2 * np.pi])
+                ax.set_ylim([-1, 1])
+                ax.set_title(titles[i], fontsize=14)
+            axes[0][0].legend()
+
+            # Print errors
+            print("Errors for theta1:", np.hstack(errors1))
+            print("Errors for theta2:", np.hstack(errors2))
 
     if ifvb:
         vbdm, (t, s), (ytmp, ypsi), (yrho, yqes, ypeq), (rho_ref, qes_ref, peq_ref) = run_vbdm(N=201, ifrand=ifrand)

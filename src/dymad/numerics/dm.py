@@ -29,6 +29,16 @@ def epsOpt(D, F, ret_val=False):
         return _eps, _dim
     return _eps
 
+def compDist(a, b, K):
+    d2 = cdist(a, b, metric='sqeuclidean')
+    if K is None:
+        return d2
+    idx = np.argsort(d2, axis=1)[:, :K]
+    mask = np.ones_like(d2, dtype=bool)
+    np.put_along_axis(mask, idx, False, axis=1)
+    d2[mask] = np.inf
+    return d2
+
 def genMat(data, inds, N=None, ifsym=False):
     # Generate a MxN sparse matrix
     # data and inds are Mxk
@@ -50,34 +60,51 @@ class DMF:
     """
     Diffusion map with dense matrix implementation
     """
-    def __init__(self, n_components, alpha=1, epsilon=None):
+    def __init__(self, n_components, n_neighbors=None, alpha=1, epsilon=None):
         self._Npsi  = n_components
+        self._Knn   = n_neighbors
         self._alpha = alpha
         self._epsilon = epsilon
+
+    def _kernel(self, x, y = None):
+        if y is None:
+            d2 = compDist(x, x, self._Knn)
+            W = np.exp(-d2 / (4 * self._epsilon))
+            if self._Knn is not None:
+                W = (W + W.T)/2
+
+            _qest = np.sum(W, axis=1).flatten()
+            _D = _qest**(-self._alpha)
+            W = _D.reshape(-1,1) * W * _D
+            D = np.sum(W, axis=1).flatten()
+            _Dinv1 = D**(-0.5)
+            W = _Dinv1.reshape(-1,1) * W * _Dinv1
+
+            return W, _qest, _D, _Dinv1
+
+        d2 = compDist(y, x, self._Knn)
+        W = np.exp(-d2 / (4 * self._epsilon))
+
+        qest = np.sum(W, axis=1).flatten()
+        D = qest**(-self._alpha)
+        W = D.reshape(-1,1) * W * self._D
+        D = np.sum(W, axis=1).flatten()
+        Dinv1 = D**(-0.5)
+        W = Dinv1.reshape(-1,1) * W * self._Dinv1
+
+        return W, qest, D, Dinv1
 
     def fit(self, x):
         self._x = np.atleast_2d(x)
         self._N = self._x.shape[0]
 
         if self._epsilon is None:
-            est = DimensionEstimator(data=x, Knn=None, bracket=[-30, 10])
+            est = DimensionEstimator(data=x, Knn=self._Knn, bracket=[-30, 10])
             est()
             self._epsilon = est._ref_l2dist * est._ref_scalar / 4
             logger.info(f"Estimated epsilon: {self._epsilon}")
 
-        # Compute pairwise distances
-        d2 = cdist(x, x, metric='sqeuclidean')
-
-        # Compute weight matrix
-        W = np.exp(-d2 / (4 * self._epsilon))
-
-        # Normalize W
-        self._qest = np.sum(W, axis=1).flatten()
-        self._D = self._qest**(-self._alpha)
-        W = self._D.reshape(-1,1) * W * self._D
-        D = np.sum(W, axis=1).flatten()
-        self._Dinv1 = D**(-0.5)
-        W = self._Dinv1.reshape(-1,1) * W * self._Dinv1
+        W, self._qest, self._D, self._Dinv1 = self._kernel(self._x)
 
         # Compute eigenvalues and eigenvectors
         eigvals, eigvecs = spl.eigh(W, subset_by_index=[self._N-self._Npsi, self._N-1])
@@ -87,7 +114,7 @@ class DMF:
         self._lambda = -np.log(self._lmbd_raw) / self._epsilon
 
         # Normalize eigenvectors
-        peq = self._qest * D
+        peq = self._qest / self._Dinv1**2
         self._peq = peq / np.mean(peq / self._qest)
         self._psi = np.zeros_like(psi)
         for i in range(self._Npsi):
@@ -98,20 +125,11 @@ class DMF:
         """
         Nystrom extension for diffusion maps.
         """
-        M = len(x)
-        d2 = cdist(x, self._x, metric='sqeuclidean')
-        W = np.exp(-d2 / (4 * self._epsilon))
-
-        qest = np.sum(W, axis=1).flatten()
-        D = qest**(-self._alpha)
-        W = D.reshape(-1,1) * W * self._D
-        D = np.sum(W, axis=1).flatten()
-        Dinv1 = D**(-0.5)
-        W = Dinv1.reshape(-1,1) * W * self._Dinv1
+        W, qest, _, Dinv1 = self._kernel(self._x, x)
 
         eigvecs = Dinv1.reshape(-1,1) * (W @ self._psi_raw) / self._lmbd_raw
         eigvecs_normalized = np.zeros_like(eigvecs)
-        peq = qest * D
+        peq = qest / Dinv1**2
         peq = peq / np.mean(peq / qest)
         for i in range(self._Npsi):
             norm_factor = np.sqrt(np.mean(eigvecs[:, i] ** 2 * (peq / qest)))
