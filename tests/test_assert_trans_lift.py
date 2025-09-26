@@ -1,6 +1,7 @@
 import numpy as np
 
-from dymad.transform import Lift, mixed_cross, mixed_inverse, poly_cross, poly_inverse
+from dymad.transform import Lift
+from dymad.transform.lift import mixed_cross, mixed_inverse, poly_cross, poly_inverse
 
 def check_data(out, ref, label=''):
     for _s, _t in zip(out, ref):
