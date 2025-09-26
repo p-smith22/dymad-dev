@@ -102,10 +102,10 @@ class TransformKernel(Transform):
         self._Kphi  = d["Kphi"]
         self._order = d["order"]
         self._rcond = d["rcond"]
+        self._inp_dim = d["inp"]
         self._out_dim = d["out"]
-        self.fit([d["X"]])
-
-        assert np.allclose(self._Z, d["Z"]), "Loaded Z does not match computed Z"
+        self._X     = d["X"]
+        self._Z     = d["Z"]
 
 class Isomap(TransformKernel):
     """
@@ -117,6 +117,12 @@ class Isomap(TransformKernel):
     def _make_ndr(self) -> None:
         """"""
         self._ndr = skm.Isomap(n_neighbors=self._Knn, n_components=self._out_dim)
+
+    def load_state_dict(self, d) -> None:
+        """"""
+        super().load_state_dict(d)
+        self.fit([d["X"]])
+        assert np.allclose(self._Z, d["Z"]), "Loaded Z does not match computed Z"
 
 class DiffMap(TransformKernel):
     """
@@ -153,6 +159,7 @@ class DiffMap(TransformKernel):
                 "alpha":    self._alpha,
                 "epsilon":  self._epsilon,
                 "mode":     self._mode,
+                "DM":       self._ndr.state_dict()
             })
         return _d
 
@@ -162,6 +169,9 @@ class DiffMap(TransformKernel):
         self._epsilon = d["epsilon"]
         self._mode    = d["mode"]
         super().load_state_dict(d)
+        self._make_ndr()
+        self._ndr.load_state_dict(d["DM"])
+        self._prepare_inverse()
 
 class DiffMapVB(DiffMap):
     """

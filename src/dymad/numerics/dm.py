@@ -6,6 +6,7 @@ from scipy.sparse.linalg import eigsh
 from scipy.spatial.distance import cdist
 import scipy.linalg as spl
 from sklearn.neighbors import KDTree
+from typing import Dict
 
 from dymad.numerics.manifold import DimensionEstimator
 
@@ -121,6 +122,38 @@ class DMF:
         self.fit(x)
         return self.transform(x)
 
+    def state_dict(self) -> Dict[str, any]:
+        return {
+            "x": self._x,
+            "Npsi": self._Npsi,
+            "alpha": self._alpha,
+            "epsilon": self._epsilon,
+            "N": self._N,
+            "qest": self._qest,
+            "D": self._D,
+            "Dinv1": self._Dinv1,
+            "lmbd_raw": self._lmbd_raw,
+            "lambda": self._lambda,
+            "peq": self._peq,
+            "psi_raw": self._psi_raw,
+            "psi": self._psi
+        }
+
+    def load_state_dict(self, d: Dict[str, any]) -> None:
+        self._x = d["x"]
+        self._Npsi = d["Npsi"]
+        self._alpha = d["alpha"]
+        self._epsilon = d["epsilon"]
+        self._N = d["N"]
+        self._qest = d["qest"]
+        self._D = d["D"]
+        self._Dinv1 = d["Dinv1"]
+        self._lmbd_raw = d["lmbd_raw"]
+        self._lambda = d["lambda"]
+        self._peq = d["peq"]
+        self._psi_raw = d["psi_raw"]
+        self._psi = d["psi"]
+
 class DM:
     """
     Diffusion map
@@ -214,6 +247,40 @@ class DM:
     def fit_transform(self, x):
         self.fit(x)
         return self.transform(x)
+
+    def state_dict(self) -> Dict[str, any]:
+        return {
+            "Npsi": self._Npsi,
+            "Knn": self._Knn,
+            "alpha": self._alpha,
+            "epsilon": self._epsilon,
+            "N": self._N,
+            "qest": self._qest,
+            "D": self._D.diagonal(),
+            "Dinv1": self._Dinv1.diagonal(),
+            "lmbd_raw": self._lmbd_raw,
+            "lambda": self._lambda,
+            "peq": self._peq,
+            "psi_raw": self._psi_raw,
+            "psi": self._psi,
+            "tree": self._tree
+        }
+
+    def load_state_dict(self, d: Dict[str, any]) -> None:
+        self._Npsi = d["Npsi"]
+        self._Knn = d["Knn"]
+        self._alpha = d["alpha"]
+        self._epsilon = d["epsilon"]
+        self._N = d["N"]
+        self._qest = d["qest"]
+        self._D = spdiags(d["D"], 0, self._N, self._N)
+        self._Dinv1 = spdiags(d["Dinv1"], 0, self._N, self._N)
+        self._lmbd_raw = d["lmbd_raw"]
+        self._lambda = d["lambda"]
+        self._peq = d["peq"]
+        self._psi_raw = d["psi_raw"]
+        self._psi = d["psi"]
+        self._tree = d["tree"]
 
 class VBDM:
     """
@@ -437,3 +504,49 @@ class VBDM:
         rho = qest**self._beta
         rho = rho.reshape(-1) / self._rho_fact
         return rho
+
+    def state_dict(self) -> Dict[str, any]:
+        return {
+            "Knn": self._Knn,  # Transform
+            "tree": self._tree,
+            "rho": self._rho,
+            "epsilon": self._epsilon,
+            "dim": self._dim,
+            "alpha": self._alpha,
+            "qest_raw": self._qest_raw,
+            "Npsi": self._Npsi,
+            "proj": self._proj,
+            "lmbd_raw": self._lmbd_raw,
+            "psi_fact": self._psi_fact,
+            "qest_fact": self._qest_fact,
+            "peq_fact": self._peq_fact,
+
+            "Kb": self._Kb,    # compute rho
+            "rho0": self._rho0,
+            "rhoeps": self._rhoeps,
+            "N": self._N,
+            "beta": self._beta,
+            "rho_fact": self._rho_fact,
+        }
+
+    def load_state_dict(self, d: Dict[str, any]) -> None:
+        self._Knn = d["Knn"]
+        self._tree = d["tree"]
+        self._rho = d["rho"]
+        self._epsilon = d["epsilon"]
+        self._dim = d["dim"]
+        self._alpha = d["alpha"]
+        self._qest_raw = d["qest_raw"]
+        self._Npsi = d["Npsi"]
+        self._proj = d["proj"]
+        self._lmbd_raw = d["lmbd_raw"]
+        self._psi_fact = d["psi_fact"]
+        self._qest_fact = d["qest_fact"]
+        self._peq_fact = d["peq_fact"]
+
+        self._Kb = d["Kb"]
+        self._rho0 = d["rho0"]
+        self._rhoeps = d["rhoeps"]
+        self._N = d["N"]
+        self._beta = d["beta"]
+        self._rho_fact = d["rho_fact"]
