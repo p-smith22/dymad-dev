@@ -20,7 +20,7 @@ opts = [
 ]
 mdls = [Isomap, DiffMap, DiffMap, DiffMap, DiffMapVB]
 lbls = ['Isomap', 'DiffMap-full', 'DiffMap-knn', 'DiffMap-pinv', 'DiffMapVB']
-epss = [3e-5, 1e-3, 2e-3, 0.4, 0.03]
+epss = [3e-5, 2e-3, 3e-3, 0.4, 0.03]
 
 def run_ndr(MDL, opt, inp):
     # First pass

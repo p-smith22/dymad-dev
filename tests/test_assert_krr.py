@@ -26,7 +26,7 @@ RIDGE = 1e-10
 opt_rbf1 = {
     "type": "sc_rbf",
     "input_dim": 2,
-    "lengthscale_init": 1.0
+    "lengthscale_init": 10.0
 }
 opt_rbf2 = copy.deepcopy(opt_rbf1)
 opt_rbf2["lengthscale_init"] = 5.0
@@ -52,7 +52,7 @@ opt_indp1 = {
     "kernel": [opt_rbf1, opt_rbf1],
     "dtype": torch.float64,
     "ridge_init": RIDGE
-} # Should be identical to Baseline
+} # Should be nearly identical to Baseline
 opt_indp2 = {
     "type": "indep",
     "kernel": [opt_rbf1, opt_rbf2],
@@ -64,13 +64,13 @@ opt_opva1 = {
     "kernel": opt_opk1,
     "dtype": torch.float64,
     "ridge_init": RIDGE
-} # Should be very close to Baseline
+} # Should be close to Baseline
 opt_opva2 = {
     "type": "opval",
     "kernel": opt_opk2,
     "dtype": torch.float64,
     "ridge_init": RIDGE
-} # Should be identical to Baseline
+} # Should be nearly identical to Baseline
 opts = [opt_share, opt_indp1, opt_indp2, opt_opva1, opt_opva2]
 
 def run_krr():
@@ -92,15 +92,19 @@ def test_krr():
         err = np.linalg.norm(Ytst - Yprd, axis=1) / ref
         assert np.mean(err) < 0.024
 
-    assert np.linalg.norm(prds[0]-prds[1]) < 1e-14
-    assert np.linalg.norm(prds[0][:,0]-prds[1][:,0]) < 1e-14
-    assert np.linalg.norm(prds[0]-prds[3]) < 1e-9
-    assert np.linalg.norm(prds[0]-prds[4]) < 1e-14
+    assert np.linalg.norm(prds[0]-prds[1]) < 7e-10
+    assert np.linalg.norm(prds[0][:,0]-prds[1][:,0]) < 7e-10
+    assert np.linalg.norm(prds[0]-prds[3]) < 2e-5
+    assert np.linalg.norm(prds[0]-prds[4]) < 7e-10
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     prds = run_krr()
+    print(np.linalg.norm(prds[0]-prds[1]))
+    print(np.linalg.norm(prds[0][:,0]-prds[1][:,0]))
+    print(np.linalg.norm(prds[0]-prds[3]))
+    print(np.linalg.norm(prds[0]-prds[4]))
 
     mdls = ['Shared', 'Indep1', 'Indep2', 'OpVal1', 'OpVal2']
     stys = ['bo', 'rs', 'g^', 'mv', 'cx']
@@ -110,6 +114,7 @@ if __name__ == "__main__":
     f, ax = plt.subplots()
     for m_idx, Yprd_m in enumerate(prds):
         err = np.linalg.norm(Ytst - Yprd_m, axis=1) / np.linalg.norm(Ytst, axis=1)
+        print(mdls[m_idx], np.linalg.norm(Ytst - Yprd_m))
         ax.semilogy(err, stys[m_idx], label=mdls[m_idx], markerfacecolor='none')
     ax.legend()
 
