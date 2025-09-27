@@ -1,3 +1,4 @@
+import copy
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,11 +10,12 @@ from dymad.utils import load_model, plot_trajectory, setup_logging, TrajectorySa
 
 B = 1
 N = 201
+K = 16
 t_grid = np.linspace(0, 8, N)
-t_pred = np.linspace(0, 80, N*10)
+t_pred = np.linspace(0, 8*K, N*K)
 
 s5 = np.sqrt(5)
-K, D = 3, 0.3
+K, D = 3, 0.5
 # \dot{\theta} = 3/2 - \cos(\theta)
 def dyn(tt, K=K, D=D):
     vv = 2 * np.arctan(np.tan(s5*tt/4)/s5)
@@ -37,35 +39,47 @@ def f(t, x):
     return _T.squeeze()
 
 # Training options
-RIDGE = 1e-10
+RIDGE = 1e-6
 
-## Multi-output shared scalar kernel
+## Multi-output shared scalar kernels
 opt_rbf = {
     "type": "sc_rbf",
     "input_dim": 2,
+    "lengthscale_init": None
+}
+opt_exp = {
+    "type": "sc_exp",
+    "input_dim": 2,
     "lengthscale_init": 1.0
 }
-opt_share = {
+opt_dm = {
+    "type": "sc_dm",
+    "input_dim": 2,
+    "eps_init": None,
+}
+mdl_rbf = {
+    "name" : 'ker_model',
+    "encoder_layers" : 0,
+    "decoder_layers" : 0,
+    "kernel_dimension" : 2,
     "type": "share",
     "kernel": opt_rbf,
     "dtype": torch.float64,
     "ridge_init": RIDGE
 }
-mdl_kl = {
-    "name" : 'ker_model',
-    "encoder_layers" : 0,
-    "decoder_layers" : 0,
-    "kernel_dimension" : 2
-    }
-mdl_kl.update(**opt_share)
+mdl_exp = copy.deepcopy(mdl_rbf)
+mdl_exp["kernel"] = opt_exp
+mdl_dm = copy.deepcopy(mdl_rbf)
+mdl_dm["kernel"] = opt_dm
 
 ## Tangent kernel
 opt_opk = {
     "type": "op_tan",
     "input_dim": 2,
     "output_dim": 2,
-    "kopts": opt_rbf
+    "kopts": copy.deepcopy(opt_rbf)
 }
+opt_opk["kopts"]["lengthscale_init"] = 1.0
 opt_tange = {
     "type": "tangent",
     "kernel": opt_opk,
@@ -79,9 +93,14 @@ mdl_mn = {
     "kernel_dimension" : 2,
     "manifold" : {
         "d" : 1,
-        "T" : 5,
-        "g" : 6
     }}
+GT = {
+    0.0 : (6,3),
+    0.1 : (7,5),
+    0.3 : (6,5),
+    0.5 : (5,4)
+}
+mdl_mn["manifold"].update({"T": GT[D][1], "g": GT[D][0]})
 mdl_mn.update(**opt_tange)
 
 trn_ln = {
@@ -93,23 +112,30 @@ trn_ln = {
         "interval": 500,
         "times": 1}
         }
+trn_l1 = copy.deepcopy(trn_ln)
+trn_l1["ls_update"].update({"kwargs": {"order": 1}})
 
 smpl = {'x0': {
     'kind': 'perturb',
     'params': {'bounds': [0, 0], 'ref': _ref}}
+    # 'params': {'bounds': [0, 0], 'ref': np.array([[1+D, 0.0]])}}
     }
 config_path = 'ker_model.yaml'
 
 cfgs = [
-    ('km_ln',  KM,     LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
-    ('kmm_ln', KMM,    LinearTrainer,     {"model": mdl_mn, "training" : trn_ln}),
-    ('dks_ln', DKMSK,  LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
+    # ('km_rbf',  KM,     LinearTrainer,     {"model": mdl_rbf, "training" : trn_ln}),  # Does not work in general
+    ('km_exp',  KM,     LinearTrainer,     {"model": mdl_exp, "training" : trn_ln}),
+    ('kmm_tn',  KMM,    LinearTrainer,     {"model": mdl_mn,  "training" : trn_l1}),
+    ('dks_rbf', DKMSK,  LinearTrainer,     {"model": mdl_rbf, "training" : trn_ln}),
+    ('dks_exp', DKMSK,  LinearTrainer,     {"model": mdl_exp, "training" : trn_ln}),
+    ('ddm_dm',  DKMSK,  LinearTrainer,     {"model": mdl_dm,  "training" : trn_ln}),
     ]
 
-IDX = [0, 1, 2]
+# IDX = range(len(cfgs))
+IDX = [1, 2, 3, 4]
 labels = [cfgs[i][0] for i in IDX]
 
-ifdat = 1
+ifdat = 0
 iftrn = 1
 ifprd = 1
 

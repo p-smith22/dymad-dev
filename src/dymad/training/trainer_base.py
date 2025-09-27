@@ -114,7 +114,8 @@ class TrainerBase:
                 method=self.config['training']['ls_update'].get('method', 'full'),
                 model=self.model,
                 dt=self.metadata["dt_and_n_steps"][0][0],
-                params=self.config['training']['ls_update'].get('params', None)
+                params=self.config['training']['ls_update'].get('params', None),
+                **self.config['training']['ls_update'].get('kwargs', {})
             )
             self._ls_update_interval = self.config['training']['ls_update'].get('interval', 10)
             self._ls_update_times    = self.config['training']['ls_update'].get('times', 10)

@@ -27,6 +27,10 @@ def scaled_cdist(X: torch.Tensor, Z: torch.Tensor, scale: Union[float, torch.Ten
     dists = torch.cdist(Xn, Zn, p=p)  # (N,M)
     return dists
 
+def inv_softplus(y: float, dtype) -> torch.Tensor:
+    """Inverse of softplus, for initialization."""
+    return torch.log(torch.exp(torch.tensor(float(y), dtype=dtype)) - 1)
+
 # --------------------
 # Kernels
 #
@@ -123,12 +127,50 @@ class KernelScRBF(KernelScalarValued):
     Scalar RBF: k(x,z) = exp(-0.5 * ||x - z||^2 / ell^2)
     Learnable positive lengthscale.
     """
-    def __init__(self, in_dim: int, lengthscale_init: float = 1.0, dtype=None):
+    def __init__(self, in_dim: int, lengthscale_init: Union[float, None] = None, dtype=None):
+        super().__init__(in_dim, dtype=dtype)
+        if lengthscale_init is None:
+            self._log_ell = nn.Parameter(torch.empty(0, dtype=self.dtype))
+        else:
+            self._log_ell = nn.Parameter(torch.tensor(float(lengthscale_init), dtype=self.dtype).log())
+
+    def __repr__(self) -> str:
+        return f"KernelScRBF(in_dim={self.in_dim}, ell={self.ell}, dtype={self.dtype})"
+
+    @property
+    def ell(self):
+        # positive via softplus
+        return F.softplus(self._log_ell)
+
+    def set_reference_data(self, Xref: torch.Tensor) -> None:
+        with torch.no_grad():
+            if self._log_ell.numel() == 0:
+                est = DimensionEstimator(data=Xref.detach().cpu().numpy(), Knn=None, bracket=[-30, 10])
+                est()
+                _tmp = np.sqrt(est._ref_l2dist * est._ref_scalar / 2)
+                _tmp = inv_softplus(_tmp, self.dtype)
+                self._log_ell.requires_grad = False
+                self._log_ell.set_(_tmp)
+                self._log_ell.requires_grad = True
+                logger.info(f"Estimated lengthscale: {self.ell}")
+
+    def forward(self, X, Z = None):
+        if Z is None:
+            Z = X
+        sq = scaled_cdist(X, Z, self.ell, 2)**2
+        return torch.exp(-0.5 * sq)
+
+class KernelScExp(KernelScalarValued):
+    """
+    Scalar Exponential: k(x,z) = exp(-||x - z|| / ell)
+    Learnable positive lengthscale.
+    """
+    def __init__(self, in_dim: int, lengthscale_init: Union[float, None] = None, dtype=None):
         super().__init__(in_dim, dtype=dtype)
         self._log_ell = nn.Parameter(torch.tensor(float(lengthscale_init), dtype=self.dtype).log())
 
     def __repr__(self) -> str:
-        return f"KernelScRBF(in_dim={self.in_dim}, ell={self.ell.item():.4f}, dtype={self.dtype})"
+        return f"KernelScExp(in_dim={self.in_dim}, ell={self.ell}, dtype={self.dtype})"
 
     @property
     def ell(self):
@@ -138,8 +180,8 @@ class KernelScRBF(KernelScalarValued):
     def forward(self, X, Z = None):
         if Z is None:
             Z = X
-        sq = scaled_cdist(X, Z, self.ell, 2)**2
-        return torch.exp(-0.5 * sq)
+        sq = scaled_cdist(X, Z, self.ell, 2)
+        return torch.exp(-sq)
 
 class KernelScDM(KernelScalarValued):
     """
@@ -153,7 +195,7 @@ class KernelScDM(KernelScalarValued):
             self._log_eps = nn.Parameter(torch.empty(0, dtype=self.dtype))
         else:
             self._log_eps = nn.Parameter(torch.tensor(float(eps_init), dtype=self.dtype).log())
-        _tmp = torch.log(torch.exp(torch.tensor(float(t_init), dtype=self.dtype))-1)
+        _tmp = inv_softplus(t_init, self.dtype)
         self._log_t = nn.Parameter(_tmp)
 
         # caches
@@ -162,7 +204,7 @@ class KernelScDM(KernelScalarValued):
         self.register_parameter("_Dinv1", nn.Parameter(torch.empty(0, dtype=self.dtype)))
 
     def __repr__(self) -> str:
-        return f"KernelScDM(in_dim={self.in_dim}, eps={self.eps.item():.4f}, t={self.t.item():.4f}, dtype={self.dtype})"
+        return f"KernelScDM(in_dim={self.in_dim}, eps={self.eps}, t={self.t}, dtype={self.dtype})"
 
     @property
     def eps(self):  # eps > 0
@@ -184,11 +226,10 @@ class KernelScDM(KernelScalarValued):
         self._Xref.requires_grad = False
 
         with torch.no_grad():
-            if len(self._log_eps) == 0:
+            if self._log_eps.numel() == 0:
                 est = DimensionEstimator(data=Xref.detach().cpu().numpy(), Knn=None, bracket=[-30, 10])
                 est()
-                _tmp = est._ref_l2dist * est._ref_scalar / 4
-                _tmp = torch.log(torch.exp(torch.tensor(_tmp, dtype=self.dtype))-1)
+                _tmp = inv_softplus(est._ref_l2dist * est._ref_scalar / 4, self.dtype)
                 self._log_eps.requires_grad = False
                 self._log_eps.set_(_tmp)
                 self._log_eps.requires_grad = True

@@ -3,7 +3,7 @@ import torch.nn as nn
 from typing import Dict, List, Tuple, Union
 
 from dymad.modules.gnn import GNN, ResBlockGNN, IdenCatGNN
-from dymad.modules.kernel import KernelScDM, KernelScRBF, KernelOpSeparable, KernelOpTangent
+from dymad.modules.kernel import KernelScDM, KernelScExp, KernelScRBF, KernelOpSeparable, KernelOpTangent
 from dymad.modules.krr import KRRMultiOutputShared, KRRMultiOutputIndep, KRROperatorValued, KRRTangent
 from dymad.modules.misc import TakeFirst, TakeFirstGraph
 from dymad.modules.mlp import MLP, ResBlockMLP, IdenCatMLP
@@ -89,6 +89,8 @@ def _make_scalar_kernel(type: str, input_dim: int, dtype=None, **kwargs) -> nn.M
         return KernelScRBF(in_dim=input_dim, dtype=dtype, **kwargs)
     elif type == "dm":
         return KernelScDM(in_dim=input_dim, dtype=dtype, **kwargs)
+    elif type == "exp":
+        return KernelScExp(in_dim=input_dim, dtype=dtype, **kwargs)
     else:
         raise ValueError(f"Unknown kernel type '{type}'.")
 
