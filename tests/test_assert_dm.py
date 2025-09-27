@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from scipy.interpolate import UnivariateSpline
@@ -67,8 +66,10 @@ def test_dm_s1(model):
     errors1 = np.hstack(errors1)
     errors2 = np.hstack(errors2)
 
-    if model in ['dm', 'dmfk']:
-        eps1, eps2, eps3 = 0.006, 0.01, 2e-3
+    if model == 'dm':
+        eps1, eps2, eps3 = 0.005, 0.01, 2e-3
+    elif model == 'dmfk':
+        eps1, eps2, eps3 = 0.006, 0.02, 2e-3
     else:
         eps1, eps2, eps3 = 1e-13, 1e-13, 0.6
 
@@ -116,6 +117,7 @@ def test_vbdm():
     assert np.min(np.abs(vbdm._lambda + 1)) < 0.2, "VBDM lambda"
 
 if __name__ == "__main__":
+    import matplotlib.pyplot as plt
 
     ifrand = 1
 

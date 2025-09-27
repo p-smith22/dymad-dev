@@ -301,13 +301,13 @@ Lastly, to ease the construction of modeling and analysis pipelines, we provide 
      - SVD/PCA
      - Polynomial
      - Fourier
-     - NL Dim. reduction
+     - NL dim. reduction
    * - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
-     - |:o:|
+     - |:white_check_mark:|
 
 .. list-table:: Sampling
    :widths: 25 25 25 25 25
