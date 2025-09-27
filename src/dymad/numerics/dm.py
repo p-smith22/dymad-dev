@@ -103,7 +103,7 @@ class DMF:
         W = Dinv1.reshape(-1,1) * W * self._Dinv1
 
         return W, qest, D, Dinv1
-    
+
     def _set_data(self, x):
         self._x = np.atleast_2d(x)
         self._N = self._x.shape[0]

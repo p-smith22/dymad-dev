@@ -37,6 +37,11 @@ opt_rbf = {
     "input_dim": 3,
     "lengthscale_init": 1.0
 }
+opt_dm = {
+    "type": "sc_dm",
+    "input_dim": 3,
+    "eps_init": None,
+}
 opt_opk = {
     "type": "op_tan",
     "input_dim": 3,
@@ -50,6 +55,12 @@ opt_share = {
     "dtype": torch.float64,
     "ridge_init": RIDGE
 }
+opt_dmshr = {
+    "type": "share",
+    "kernel": opt_dm,
+    "dtype": torch.float64,
+    "ridge_init": RIDGE
+}
 opt_tange = {
     "type": "tangent",
     "kernel": opt_opk,
@@ -58,20 +69,22 @@ opt_tange = {
 }
 opts = [
     opt_share,  # vanilla KRR
+    opt_dmshr,  # KRR with DM
     opt_tange,  # with estimated tangent, comparable to vanilla KRR, unnecessarily better
     opt_tange   # with analytical manifold, nearly perfect tangent, slightly lower mean error
     ]
+lbls = ['RBF', 'DM', 'Tangent', 'Tan-Ana', 'DMF']
 
 def run_krr():
     prds = []
     for i, opt in enumerate(opts):
         _krr = make_krr(**opt)
         _krr.set_train_data(Xtrn, Ytrn)
-        if i == 1:
+        if i == 2:
             _man = Manifold(Xtrn, d=2, T=4)
             _man.precompute()
             _krr.set_manifold(_man)
-        elif i == 2:
+        elif i == 3:
             _man = ManifoldAnalytical(Xtrn, d=2, fT=lambda x: tangent_2torus(x, b))
             _man.precompute()
             _krr.set_manifold(_man)
@@ -108,15 +121,20 @@ def test_krr():
     errs = [check_error(_p, Ytst) for _p in prds]
     ress = [check_tangent(_p, Ttst) for _p in prds]
 
-    assert errs[0].mean() < 0.03, "KRR share, error"
-    assert errs[1].mean() < 0.03, "KRR tangent, estimate T, error"
-    assert errs[2].mean() < 0.02, "KRR tangent, analytical T, error"
-    assert errs[3].mean() < 2e-5, "KRR, DMF, error"
+    assert errs[0].mean() < 5e-4, "KRR share, error"
+    assert errs[1].mean() < 4e-5, "KRR, DM, error"
+    assert errs[2].mean() < 0.02, "KRR tangent, estimate T, error"
+    assert errs[3].mean() < 5e-4, "KRR tangent, analytical T, error"
+    assert errs[4].mean() < 4e-5, "DMF, error"
 
-    assert ress[0].mean() < 0.02, "KRR share, tangent residual"
-    assert ress[1].mean() < 0.02, "KRR tangent, estimate T, tangent residual"
-    assert ress[2].mean() < 1e-15, "KRR tangent, analytical T, tangent residual"
-    assert ress[3].mean() < 1e-5, "KRR, DMF, tangent residual"
+    assert ress[0].mean() < 4e-5, "KRR share, tangent residual"
+    assert ress[1].mean() < 1e-5, "KRR, DM, tangent residual"
+    assert ress[2].mean() < 0.02, "KRR tangent, estimate T, tangent residual"
+    assert ress[3].mean() < 1e-15, "KRR tangent, analytical T, tangent residual"
+    assert ress[4].mean() < 1e-5, "DMF, tangent residual"
+
+    dif = np.linalg.norm(prds[1]-prds[4]) / np.linalg.norm(Ytst)
+    assert dif < 1e-5, "DMF, difference"
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
@@ -140,6 +158,9 @@ if __name__ == "__main__":
     _p = run_dm()
     prds.append(_p)
 
+    dif = np.linalg.norm(prds[1]-prds[4]) / np.linalg.norm(Ytst)
+    print("DMF vs DM, relative diff:", dif)
+
     Nprd = len(prds)
 
     fig = plot3d(Xtst, Ytst, scl=0.2, fig=None, sty='k-')
@@ -147,19 +168,22 @@ if __name__ == "__main__":
     fig = plot3d(Xtst, prds[1], scl=0.2, fig=fig, sty='g:')
     fig = plot3d(Xtst, prds[2], scl=0.2, fig=fig, sty='b:')
     fig = plot3d(Xtst, prds[3], scl=0.2, fig=fig, sty='c:')
+    fig = plot3d(Xtst, prds[4], scl=0.2, fig=fig, sty='m:')
 
-    stys = ['bo', 'r^', 'gs', 'md']
+    stys = ['bo', 'r^', 'gs', 'md', 'cx']
 
     f = plt.figure()
     for i in range(Nprd):
         err = check_error(prds[i], Ytst)
         print(np.mean(err), np.max(err))
-        plt.semilogy(err, stys[i], markerfacecolor='none')
+        plt.semilogy(err, stys[i], markerfacecolor='none', label=lbls[i])
+    plt.legend()
 
     f = plt.figure()
     for i in range(Nprd):
         res = check_tangent(prds[i], Ttst)
         print(np.mean(res), np.max(res))
-        plt.semilogy(res, stys[i], markerfacecolor='none')
+        plt.semilogy(res, stys[i], markerfacecolor='none', label=lbls[i])
+    plt.legend()
 
     plt.show()

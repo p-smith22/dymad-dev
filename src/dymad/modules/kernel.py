@@ -1,9 +1,14 @@
 from abc import ABC, abstractmethod
+import logging
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List, Union
+
+from dymad.numerics import DimensionEstimator
+
+logger = logging.getLogger(__name__)
 
 # --------------------
 # Utils
@@ -133,97 +138,87 @@ class KernelScRBF(KernelScalarValued):
     def forward(self, X, Z = None):
         if Z is None:
             Z = X
-        sq = scaled_cdist(X, Z, self.ell, 2)
+        sq = scaled_cdist(X, Z, self.ell, 2)**2
         return torch.exp(-0.5 * sq)
 
 class KernelScDM(KernelScalarValued):
     """
     Symmetric-normalized diffusion kernel via diffusion maps.
 
-    Steps:
-      - Build K_eps on Xref with Gaussian affinity using ε (learnable).
-      - Symmetric normalize: A = D^{-1/2} K D^{-1/2}
-      - Eigendecompose: A = U Λ U^T (take top-m)
-      - Features Φ_t = D^{-1/2} U Λ^{t/2}, where t>0 (learnable)
-      - Kernel: k_t(x,z) = Φ_t(x) · Φ_t(z); out-of-sample via Nyström.
-
-    Everything keeps autograd for ε and t.
+    Everything keeps autograd for eps and t.
     """
-    def __init__(self, in_dim: int, n_eigs: int = 64, eps_init: float = 1.0, t_init: float = 1.0, jitter: float = 1e-9, dtype=None):
-        super().__init__(in_dim)
-        self.n_eigs = int(n_eigs)
-        self.jitter = float(jitter)
-        self._log_eps = nn.Parameter(torch.tensor(float(eps_init), dtype=self.dtype).log())
-        self._log_t   = nn.Parameter(torch.tensor(float(t_init), dtype=self.dtype).log())
+    def __init__(self, in_dim: int, eps_init: Union[float, None] = None, t_init: float = 1.0, dtype=None):
+        super().__init__(in_dim, dtype=dtype)
+        if eps_init is None:
+            self._log_eps = nn.Parameter(torch.empty(0, dtype=self.dtype))
+        else:
+            self._log_eps = nn.Parameter(torch.tensor(float(eps_init), dtype=self.dtype).log())
+        _tmp = torch.log(torch.exp(torch.tensor(float(t_init), dtype=self.dtype))-1)
+        self._log_t = nn.Parameter(_tmp)
 
         # caches
-        self._Xref = None
-        self._d_ref = None      # (N,)
-        self._U = None          # (N,m)
-        self._lam = None        # (m,)
-        self._Phi_ref_t = None  # (N,m)
+        self.register_parameter("_Xref", nn.Parameter(torch.empty(0, dtype=self.dtype)))
+        self.register_parameter("_D", nn.Parameter(torch.empty(0, dtype=self.dtype)))
+        self.register_parameter("_Dinv1", nn.Parameter(torch.empty(0, dtype=self.dtype)))
 
     def __repr__(self) -> str:
-        return f"KernelScDM(in_dim={self.in_dim}, n_eigs={self.n_eigs}, eps={self.eps.item():.4f}, t={self.t.item():.4f}, dtype={self.dtype})"
+        return f"KernelScDM(in_dim={self.in_dim}, eps={self.eps.item():.4f}, t={self.t.item():.4f}, dtype={self.dtype})"
 
     @property
-    def eps(self):  # ε > 0
+    def eps(self):  # eps > 0
         return F.softplus(self._log_eps)
 
     @property
     def t(self):    # t > 0
         return F.softplus(self._log_t)
 
-    def _gauss_affinity(self, X, Z):
-        # K_eps = exp(-||x-z||^2 / (4 ε))  (scaled so that bandwidth uses eps directly)
-        scale = (2.0 * self.eps).sqrt()
-        sq = scaled_cdist(X, Z, scale, 2)
+    def _rbf(self, X, Z):
+        # K_eps = exp(-||x-z||^2 / (4 eps))  (scaled so that bandwidth uses eps directly)
+        scale = (4.0 * self.eps).sqrt()
+        sq = scaled_cdist(X, Z, scale, 2)**2
         return torch.exp(-sq)
 
     def set_reference_data(self, Xref: torch.Tensor) -> None:
-        self._Xref = Xref
-        N = Xref.shape[0]
+        self._Xref.requires_grad = False
+        self._Xref.set_(Xref)
+        self._Xref.requires_grad = False
 
-        K = self._gauss_affinity(Xref, Xref)      # (N,N), symmetric
-        d = K.sum(dim=1).clamp_min(self.jitter)   # (N,)
-        Dinvs = d.pow(-0.5)
-        A = Dinvs[:, None] * K * Dinvs[None, :]   # symmetric normalization
-        A = 0.5 * (A + A.T)
+        with torch.no_grad():
+            if len(self._log_eps) == 0:
+                est = DimensionEstimator(data=Xref.detach().cpu().numpy(), Knn=None, bracket=[-30, 10])
+                est()
+                _tmp = est._ref_l2dist * est._ref_scalar / 4
+                _tmp = torch.log(torch.exp(torch.tensor(_tmp, dtype=self.dtype))-1)
+                self._log_eps.requires_grad = False
+                self._log_eps.set_(_tmp)
+                self._log_eps.requires_grad = True
+                logger.info(f"Estimated epsilon: {self.eps}")
 
-        lam, U = torch.linalg.eigh(A)             # ascending
-        m = min(self.n_eigs, N)
-        lam_m = lam[-m:].clamp_min(self.jitter)   # (m,)
-        U_m   = U[:, -m:]                         # (N,m)
+        self._D.requires_grad = False
+        self._Dinv1.requires_grad = False
 
-        lt = lam_m.pow(self.t / 2.0)              # (m,)
-        Phi_ref_t = (Dinvs[:, None] * U_m) * lt[None, :]  # (N,m)
-
-        self._d_ref = d
-        self._U = U_m
-        self._lam = lam_m
-        self._Phi_ref_t = Phi_ref_t
-
-    def _features(self, X: torch.Tensor) -> torch.Tensor:
-        assert self._Xref is not None, "Call set_reference_data(X_train) before using the kernel."
-        if X.data_ptr() == self._Xref.data_ptr():
-            return self._Phi_ref_t
-
-        R = self._gauss_affinity(X, self._Xref)            # (M,N)
-        d_new = R.sum(dim=1).clamp_min(self.jitter)        # (M,)
-        A_new_ref = R / (d_new[:, None].sqrt() * self._d_ref[None, :].sqrt())
-
-        U_new = (A_new_ref @ self._U) / self._lam          # (M,m)
-        lt = self._lam.pow(self.t / 2.0)                   # (m,)
-        Phi_new_t = (d_new.pow(-0.5)[:, None] * U_new) * lt[None, :]
-        return Phi_new_t
+        W = self._rbf(Xref, Xref)
+        self._D.set_(W.sum(axis=-1)**(-self.t))
+        W = self._D[..., None] * W * self._D[..., None, :]
+        self._Dinv1.set_(W.sum(axis=-1)**(-0.5))
 
     def forward(self, X, Z = None):
         if Z is None:
-            Z = X
-        PhiX = self._features(X)   # (N,m)
-        PhiZ = self._features(Z)   # (M,m)
-        return PhiX @ PhiZ.T       # (N,M)
+            Z = self._Xref
 
+        if X.data_ptr() == Z.data_ptr() and X.data_ptr() == self._Xref.data_ptr():
+            # K(X,X) with reference data, use cached
+            W = self._rbf(X, X)
+            W = self._D[..., None] * W * self._D[..., None, :]
+            W = self._Dinv1[..., None] * W * self._Dinv1[..., None, :]
+            return W
+
+        W = self._rbf(X, Z)
+        D = W.sum(axis=-1)**(-self.t)
+        W = D[..., None] * W * self._D[..., None, :]
+        Dinv1 = W.sum(axis=-1)**(-0.5)
+        W = Dinv1[..., None] * W * self._Dinv1[..., None, :]
+        return W
 
 ## Operator kernels
 class KernelOpSeparable(KernelOperatorValuedScalars):
