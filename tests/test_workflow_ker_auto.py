@@ -20,6 +20,11 @@ opt_rbf1 = {
     "input_dim": 2,
     "lengthscale_init": 1.0
 }
+opt_rbf2 = {
+    "type": "sc_rbf",
+    "input_dim": 2,
+    "lengthscale_init": None
+}
 opt_opk1 = {
     "type": "op_sep",
     "input_dim": 2,
@@ -66,7 +71,7 @@ opt_opk = {
     "type": "op_tan",
     "input_dim": 2,
     "output_dim": 2,
-    "kopts": opt_rbf1
+    "kopts": opt_rbf2
 }
 opt_tange = {
     "type": "tangent",
@@ -100,6 +105,8 @@ trn_ln = {
         "interval": 500,
         "times": 1}
         }
+trn_l1 = copy.deepcopy(trn_ln)
+trn_l1["ls_update"].update({"kwargs": {"order": 1}})
 trn_dt = {
     "n_epochs": 5,
     "save_interval": 50,
@@ -120,7 +127,7 @@ cfgs = [
     ('dkm_ln', DKM,    LinearTrainer,     {"model": mdl_opval, "training" : trn_ln}),
     ('dks_ln', DKMSK,  LinearTrainer,     {"model": mdl_share, "training" : trn_ln}),
     ('dks_nd', DKMSK,  NODETrainer,       {"model": mdl_share, "training" : trn_dt}),
-    ('kmm_ln', KMM,    LinearTrainer,     {"model": mdl_mn,    "training" : trn_ln}),
+    ('kmm_ln', KMM,    LinearTrainer,     {"model": mdl_mn,    "training" : trn_l1}),
     ]
 
 def train_case(idx, data, path):

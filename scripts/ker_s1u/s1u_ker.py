@@ -1,3 +1,4 @@
+import copy
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
@@ -51,29 +52,38 @@ config_chr = {
     }
 
 # Training options
-RIDGE = 1e-10
+RIDGE = 1e-6
 
 ## Multi-output shared scalar kernel
-opt_rbf = {
-    "type": "sc_rbf",
-    "input_dim": 3,
+opt_exp = {
+    "type": "sc_exp",
+    "input_dim": 2,
     "lengthscale_init": 1.0
 }
-opt_share = {
-    "type": "share",
-    "kernel": opt_rbf,
-    "dtype": torch.float64,
-    "ridge_init": RIDGE
+opt_dm = {
+    "type": "sc_dm",
+    "input_dim": 2,
+    "eps_init": None,
 }
-mdl_kl = {
+mdl_exp = {
     "name" : 'ker_model',
     "encoder_layers" : 0,
     "decoder_layers" : 0,
-    "kernel_dimension" : 2
-    }
-mdl_kl.update(**opt_share)
+    "kernel_dimension" : 2,
+    "type": "share",
+    "kernel": opt_exp,
+    "dtype": torch.float64,
+    "ridge_init": RIDGE
+}
+mdl_dm = copy.deepcopy(mdl_exp)
+mdl_dm["kernel"] = opt_dm
 
 ## Tangent kernel
+opt_rbf = {
+    "type": "sc_rbf",
+    "input_dim": 2,
+    "lengthscale_init": None
+}
 opt_opk = {
     "type": "op_tan",
     "input_dim": 3,
@@ -93,8 +103,8 @@ mdl_mn = {
     "kernel_dimension" : 2,
     "manifold" : {
         "d" : 1,
-        "T" : 4,
-        "g" : 4
+        "T" : 3,
+        "g" : 3
     }}
 mdl_mn.update(**opt_tange)
 
@@ -107,19 +117,23 @@ trn_ln = {
         "interval": 500,
         "times": 1}
         }
+trn_l1 = copy.deepcopy(trn_ln)
+trn_l1["ls_update"].update({"kwargs": {"order": 1}})
 
 config_path = 'ker_model.yaml'
 
 cfgs = [
-    ('km_ln',  KM,     LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
-    ('kmm_ln', KMM,    LinearTrainer,     {"model": mdl_mn, "training" : trn_ln}),
-    ('dks_ln', DKMSK,  LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
+    ('km_ln',  KM,     LinearTrainer,     {"model": mdl_exp, "training" : trn_ln}),
+    ('kmm_ln', KMM,    LinearTrainer,     {"model": mdl_mn,  "training" : trn_l1}),
+    ('dks_ln', DKMSK,  LinearTrainer,     {"model": mdl_exp, "training" : trn_ln}),
+    ('ddm_ln', DKMSK,  LinearTrainer,     {"model": mdl_dm,  "training" : trn_ln}),
     ]
 
-IDX = [0, 1, 2]
+# IDX = [0, 2, 3]
+IDX = [1]
 labels = [cfgs[i][0] for i in IDX]
 
-ifdat = 1
+ifdat = 0
 iftrn = 1
 ifprd = 1
 
