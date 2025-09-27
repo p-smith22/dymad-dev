@@ -5,7 +5,7 @@ Organization of the test cases:
 - `test_assert_*`: Exact tests that compare test outputs with reference outputs to numerical accuracy.
   - `dm`: Diffusion map
   - `krr`: Kernel ridge regression
-  - `krr_tan`: Kernel ridge regression for the manifold case
+  - `krr_tan`: Kernel ridge regression for the manifold case, also includes DMF besides the KRR classes.
   - `linalg`: Linear algebra
   - `manifold`: Manifold-related calculations
   - `resolvent`: Resolvent analysis of linear systems

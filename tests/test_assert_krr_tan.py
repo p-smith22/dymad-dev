@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from dymad.modules import make_krr
-from dymad.numerics import Manifold, ManifoldAnalytical, tangent_2torus
+from dymad.numerics import DMF, Manifold, ManifoldAnalytical, tangent_2torus
 
 # Data
 a, b = 1.0, 2.0
@@ -81,6 +81,12 @@ def run_krr():
             prds.append(Yprd)
     return prds
 
+def run_dm():
+    dm = DMF(None, n_neighbors=None, alpha=1)
+    dm.fit_krr(Xtrn, Ytrn, ridge=RIDGE)
+    Yprd = dm.predict_krr(Xtst)
+    return Yprd
+
 def check_tangent(Y, T):
     _Y = Y[..., None]
     _R = _Y - np.matmul(np.swapaxes(T, -1, -2), np.matmul(T, _Y))
@@ -96,6 +102,8 @@ def check_error(prd, tru):
 
 def test_krr():
     prds = run_krr()
+    _p = run_dm()
+    prds.append(_p)
 
     errs = [check_error(_p, Ytst) for _p in prds]
     ress = [check_tangent(_p, Ttst) for _p in prds]
@@ -103,10 +111,12 @@ def test_krr():
     assert errs[0].mean() < 0.03, "KRR share, error"
     assert errs[1].mean() < 0.03, "KRR tangent, estimate T, error"
     assert errs[2].mean() < 0.02, "KRR tangent, analytical T, error"
+    assert errs[3].mean() < 2e-5, "KRR, DMF, error"
 
     assert ress[0].mean() < 0.02, "KRR share, tangent residual"
     assert ress[1].mean() < 0.02, "KRR tangent, estimate T, tangent residual"
     assert ress[2].mean() < 1e-15, "KRR tangent, analytical T, tangent residual"
+    assert ress[3].mean() < 1e-5, "KRR, DMF, tangent residual"
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
@@ -127,22 +137,27 @@ if __name__ == "__main__":
         return f, ax
 
     prds = run_krr()
+    _p = run_dm()
+    prds.append(_p)
+
+    Nprd = len(prds)
 
     fig = plot3d(Xtst, Ytst, scl=0.2, fig=None, sty='k-')
     fig = plot3d(Xtst, prds[0], scl=0.2, fig=fig, sty='r--')
     fig = plot3d(Xtst, prds[1], scl=0.2, fig=fig, sty='g:')
     fig = plot3d(Xtst, prds[2], scl=0.2, fig=fig, sty='b:')
+    fig = plot3d(Xtst, prds[3], scl=0.2, fig=fig, sty='c:')
 
-    stys = ['bo', 'r^', 'gs']
+    stys = ['bo', 'r^', 'gs', 'md']
 
     f = plt.figure()
-    for i in range(3):
+    for i in range(Nprd):
         err = check_error(prds[i], Ytst)
         print(np.mean(err), np.max(err))
         plt.semilogy(err, stys[i], markerfacecolor='none')
 
     f = plt.figure()
-    for i in range(3):
+    for i in range(Nprd):
         res = check_tangent(prds[i], Ttst)
         print(np.mean(res), np.max(res))
         plt.semilogy(res, stys[i], markerfacecolor='none')

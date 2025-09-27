@@ -59,6 +59,16 @@ def genMat(data, inds, N=None, ifsym=False):
 class DMF:
     """
     Diffusion map with dense matrix implementation
+
+    A Knn option is added to emulate the DM class, that is a sparsified version of DM.
+
+    Also includes a KRR implementation for sanity check of other classes.
+
+    Rule of thumb comparing DM and DMF:
+
+        - For eigenpairs, full DM gives accurate eigenvectors, but less accurate eigenvalues.
+        - For KRR, full DM, i.e., without Knn, performs the best.
+        - Whenever memory allows, use full DM.
     """
     def __init__(self, n_components, n_neighbors=None, alpha=1, epsilon=None):
         self._Npsi  = n_components
@@ -93,8 +103,8 @@ class DMF:
         W = Dinv1.reshape(-1,1) * W * self._Dinv1
 
         return W, qest, D, Dinv1
-
-    def fit(self, x):
+    
+    def _set_data(self, x):
         self._x = np.atleast_2d(x)
         self._N = self._x.shape[0]
 
@@ -103,6 +113,9 @@ class DMF:
             est()
             self._epsilon = est._ref_l2dist * est._ref_scalar / 4
             logger.info(f"Estimated epsilon: {self._epsilon}")
+
+    def fit(self, x):
+        self._set_data(x)
 
         W, self._qest, self._D, self._Dinv1 = self._kernel(self._x)
 
@@ -140,6 +153,16 @@ class DMF:
     def fit_transform(self, x):
         self.fit(x)
         return self.transform(x)
+
+    def fit_krr(self, X, y, ridge):
+        self._set_data(X)
+        W, self._qest, self._D, self._Dinv1 = self._kernel(self._x)
+        I = ridge * np.eye(W.shape[0])
+        self._beta = spl.solve(W + I, y, assume_a='sym')
+
+    def predict_krr(self, X):
+        K = self._kernel(self._x, X)[0]
+        return K @ self._beta
 
     def state_dict(self) -> Dict[str, any]:
         return {
