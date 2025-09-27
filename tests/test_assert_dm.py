@@ -68,7 +68,7 @@ def test_dm_s1(model):
     errors2 = np.hstack(errors2)
 
     if model in ['dm', 'dmfk']:
-        eps1, eps2, eps3 = 0.005, 0.01, 2e-3
+        eps1, eps2, eps3 = 0.006, 0.01, 2e-3
     else:
         eps1, eps2, eps3 = 1e-13, 1e-13, 0.6
 

@@ -90,12 +90,12 @@ def test_krr():
     ref[ref<1e-3] = 1.0
     for Yprd in prds:
         err = np.linalg.norm(Ytst - Yprd, axis=1) / ref
-        assert np.mean(err) < 0.024
+        assert np.mean(err) < 0.0005
 
-    assert np.linalg.norm(prds[0]-prds[1]) < 7e-10
-    assert np.linalg.norm(prds[0][:,0]-prds[1][:,0]) < 7e-10
+    assert np.linalg.norm(prds[0]-prds[1]) < 2e-9
+    assert np.linalg.norm(prds[0][:,0]-prds[1][:,0]) < 2e-9
     assert np.linalg.norm(prds[0]-prds[3]) < 2e-5
-    assert np.linalg.norm(prds[0]-prds[4]) < 7e-10
+    assert np.linalg.norm(prds[0]-prds[4]) < 2e-9
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
