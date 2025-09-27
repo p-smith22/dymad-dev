@@ -1,0 +1,17 @@
+data:
+  path: './data/ker.npz'
+  n_samples: 1
+  n_steps: 201
+  double_precision: true
+
+transform_x:
+  type: "identity"
+
+transform_u:
+  type: "identity"
+
+split:
+  train_frac: 1.0
+
+dataloader:
+  batch_size: 1

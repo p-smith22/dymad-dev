@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from dymad.modules.kernel import KernelOpTangent
+
 class KRRBase(nn.Module):
     """
     Base class for Kernel Ridge Regression, in particular:
@@ -118,7 +120,7 @@ class KRRMultiOutputShared(KRRBase):
         assert self.X_train is not None and self.Y_train is not None, "Call set_train_data first."
 
         X, Y = self.X_train, self.Y_train
-        Kxx = self.kernel(X, X)  # (N,N)
+        Kxx = self.kernel(X, None)  # (N,N)
         I = torch.eye(self._Ndat, dtype=self.dtype, device=self.device)
         L = torch.linalg.cholesky(Kxx + (self.ridge + self.jitter) * I)
         A = torch.cholesky_solve(Y, L)  # (N,Dy)
@@ -182,7 +184,7 @@ class KRRMultiOutputIndep(KRRBase):
         A = torch.empty_like(Y)
         I = torch.eye(self._Ndat, dtype=self.dtype, device=self.device)
         for d in range(self._Dy):
-            Kxx = self.kernel[d](X, X)  # (N,N)
+            Kxx = self.kernel[d](X, None)  # (N,N)
             L = torch.linalg.cholesky(Kxx + (self.ridge[d] + self.jitter) * I)
             A[:, d] = torch.cholesky_solve(Y[:, d:d+1], L).squeeze(-1)
         self._alphas.data.copy_(A)
@@ -234,7 +236,7 @@ class KRROperatorValued(KRRBase):
 
         X, Y = self.X_train, self.Y_train
 
-        Kxx = self.kernel(X, X)               # (N,N,Dy,Dy)
+        Kxx = self.kernel(X, None)            # (N,N,Dy,Dy)
         Kflat = Kxx.reshape(self._Ndat*self._Dy, self._Ndat*self._Dy)
         A = Kflat + self.ridge * torch.eye(self._Ndat * self._Dy, dtype=self.dtype, device=self.device)
         L = torch.linalg.cholesky(A + self.jitter * torch.eye(A.size(0), dtype=self.dtype, device=self.device))
@@ -251,3 +253,73 @@ class KRROperatorValued(KRRBase):
         Kflat = Kxz.reshape(*dim, M*D, N*D)   # (..., M*Dy, N*Dy)
         ynew_vec = Kflat @ self._alphas       # (..., M*Dy)
         return ynew_vec.reshape(*dim, M, D)   # (..., M, Dy)
+
+class KRRTangent(KRRBase):
+    """
+    KRR for vector fields on a manifold, using a specialized tangent kernel.
+
+    The formulation is based on Geometrically constraint Multivariate KRR (GMKRR) from
+
+        Huang, He, Harlim, Li, ICLR2025
+
+    Solves (Kxx + lambda I) vec(alpha) = vec(Y), but Kxx is given in a factorized form,
+    so effectively we solve a smaller system in intrinsic dimension d << Dy.
+
+        (kxx + lambda I) vec(alpha) = vec(T^T * Y)
+    """
+    def __init__(self, kernel, ridge_init=0, jitter=1e-10, device=None):
+        assert isinstance(kernel, KernelOpTangent), "kernel must be KernelOpTangent."
+
+        super().__init__(kernel, ridge_init=ridge_init, jitter=jitter, device=device)
+
+        self._ridge_unconstrained = nn.Parameter(
+            torch.tensor(ridge_init, dtype=self.dtype, device=self.device).log())
+
+    def __repr__(self) -> str:
+        _s = self.kernel.__repr__()
+        return f"KRRTangent(\n\tridge={self.ridge},\n\tjitter={self.jitter},\n\tdtype={self.dtype})\n\twith:\n\tkernel={_s}"
+
+    def _on_set_train_data(self):
+        self._Xref.requires_grad = False
+        self._Xref.set_(self.X_train)
+        self._Xref.requires_grad = False
+
+    def set_manifold(self, manifold) -> None:
+        # Only requires manifold to provide an estimate_tangent method
+        # which can operate in batch, and give tangent bases of shape (...,d,Dy)
+        self.kernel.set_manifold(manifold)
+
+        self._alphas.requires_grad = False
+        self._alphas.set_(
+            torch.empty(self._Ndat * manifold._Nman, dtype=self.dtype, device=self.device))
+        self._alphas.requires_grad = True
+
+    def _ensure_solved(self):
+        if self._residual is not None:
+            return self._residual
+
+        assert self.X_train is not None and self.Y_train is not None, "Call set_train_data first."
+
+        X, Y = self.X_train, self.Y_train
+
+        Kxx, Tx, _ = self.kernel(X, None)               # (N,N,d,d), (N,d,Dy)
+        _Y = torch.matmul(Tx, Y[...,None]).squeeze(-1)  # (N,d), the effective targets
+        _d = _Y.shape[-1]
+
+        Kflat = Kxx.reshape(self._Ndat*_d, self._Ndat*_d)
+        A = Kflat + self.ridge * torch.eye(self._Ndat * _d, dtype=self.dtype, device=self.device)
+        L = torch.linalg.cholesky(A + self.jitter * torch.eye(A.size(0), dtype=self.dtype, device=self.device))
+        _tmp = torch.cholesky_solve(_Y.reshape(-1, 1), L).squeeze(-1)  # (N*d,)
+        self._alphas.data.copy_(_tmp)
+
+        self._residual = self._comp_residual()
+        return self._residual
+
+    def _predict_from_solution(self, Xnew: torch.Tensor):
+        dim = Xnew.shape[:-2]
+        Kxz, Tx, _ = self.kernel(Xnew, self._Xref)   # (...,M,d,N,d), (...,M,d,Dy), (N,d,Dy)
+        M, D, N, _ = Kxz.shape[-4:]
+        Kflat = Kxz.reshape(*dim, M*D, N*D)   # (..., M*d, N*d)
+        ynew_vec = Kflat @ self._alphas       # (..., M*d)
+        _ynew = ynew_vec.reshape(*dim, M, D)   # (..., M, d)
+        return torch.matmul(_ynew[...,None,:], Tx).squeeze(-2)  # (..., M, Dy)

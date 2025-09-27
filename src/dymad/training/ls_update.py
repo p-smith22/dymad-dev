@@ -33,21 +33,28 @@ def _comp_linear_eval_dt(model, batch: DynData | DynGeoData, **kwargs) -> torch.
     z_dot, z = model.linear_eval(batch)
     return z_dot[..., :-1, :], _dt_target(z)
 
-def _ct_target(z: torch.Tensor, dt) -> torch.Tensor:
+def _ct_target(z: torch.Tensor, dt, order=2) -> torch.Tensor:
     """Compute linear targets for continuous-time models."""
-    dz = np.gradient(z.cpu().numpy(), dt, axis=-2, edge_order=2)
-    return torch.tensor(dz, dtype=z.dtype, device=z.device)
+    if order == 1:
+        dz = (z[..., 1:, :] - z[..., :-1, :]) / dt
+        dz = torch.concatenate((dz, dz[..., -1:, :]), dim=-2)
+        return dz
+    elif order == 2:
+        dz = np.gradient(z.cpu().numpy(), dt, axis=-2, edge_order=2)
+        return torch.tensor(dz, dtype=z.dtype, device=z.device)
+    else:
+        raise ValueError(f"Unsupported FD order: {order}. Only 1 and 2 are supported.")
 
 def _comp_linear_features_ct(model, batch: DynData | DynGeoData, **kwargs) -> torch.Tensor:
     """Compute linear features for continuous-time models."""
     A, z = model.linear_features(batch)
-    _z = _ct_target(z, kwargs['dt'])
+    _z = _ct_target(z, kwargs['dt'], kwargs.get('order', 2))
     return A.reshape(-1, A.shape[-1]), _z.reshape(-1, _z.shape[-1])
 
 def _comp_linear_eval_ct(model, batch: DynData | DynGeoData, **kwargs) -> torch.Tensor:
     """Compute predicted targets for continuous-time models."""
     z_dot, z = model.linear_eval(batch)
-    return z_dot, _ct_target(z, kwargs['dt'])
+    return z_dot, _ct_target(z, kwargs['dt'], kwargs.get('order', 2))
 
 def check_linear_impl(model) -> bool:
     """
@@ -82,20 +89,20 @@ def check_linear_solve(model) -> bool:
 # ----------------
 # Helper functions
 # ----------------
-def get_batch_dt(dataloader, model, dt) -> Tuple[np.ndarray, np.ndarray]:
+def get_batch_dt(dataloader, model, dt, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
     A, b = [], []
     for batch in dataloader:
-        _A, _b = _comp_linear_features_dt(model, batch, dt=dt)
+        _A, _b = _comp_linear_features_dt(model, batch, dt=dt, **kwargs)
         A.append(_A)
         b.append(_b)
     A = torch.cat(A, dim=0).cpu().numpy()
     b = torch.cat(b, dim=0).cpu().numpy()
     return A, b
 
-def get_batch_ct(dataloader, model, dt) -> Tuple[np.ndarray, np.ndarray]:
+def get_batch_ct(dataloader, model, dt, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
     A, b = [], []
     for batch in dataloader:
-        _A, _b = _comp_linear_features_ct(model, batch, dt=dt)
+        _A, _b = _comp_linear_features_ct(model, batch, dt=dt, **kwargs)
         A.append(_A)
         b.append(_b)
     A = torch.cat(A, dim=0).cpu().numpy()
@@ -141,60 +148,60 @@ def _ls_sako(A: np.ndarray, b: np.ndarray, params=None) -> Tuple[np.ndarray, np.
 # ----------------
 # Combinations
 # ----------------
-def _dt_full(dataloader, model, dt, params=None):
-    A, b = get_batch_dt(dataloader, model, dt)
+def _dt_full(dataloader, model, dt, params=None, **kwargs):
+    A, b = get_batch_dt(dataloader, model, dt, **kwargs)
     W = _ls_full(A, b, params)
     return (A, b), (W,)
 
-def _dt_truncated(dataloader, model, dt, params=None):
-    A, b = get_batch_dt(dataloader, model, dt)
+def _dt_truncated(dataloader, model, dt, params=None, **kwargs):
+    A, b = get_batch_dt(dataloader, model, dt, **kwargs)
     V, U = _ls_truncated(A, b, params)
     return (A, b), (V, U)
 
-def _dt_sako(dataloader, model, dt, params=None):
-    A, b = get_batch_dt(dataloader, model, dt)
+def _dt_sako(dataloader, model, dt, params=None, **kwargs):
+    A, b = get_batch_dt(dataloader, model, dt, **kwargs)
     V, U = _ls_sako(A, b, params)
     return (A, b), (V, U)
 
-def _ct_full_der(dataloader, model, dt, params=None):
-    A, b = get_batch_ct(dataloader, model, dt)
+def _ct_full_der(dataloader, model, dt, params=None, **kwargs):
+    A, b = get_batch_ct(dataloader, model, dt, **kwargs)
     W = _ls_full(A, b, params)
     return (A, b), (W,)
 
-def _ct_truncated_der(dataloader, model, dt, params=None):
-    A, b = get_batch_ct(dataloader, model, dt)
+def _ct_truncated_der(dataloader, model, dt, params=None, **kwargs):
+    A, b = get_batch_ct(dataloader, model, dt, **kwargs)
     V, U = _ls_truncated(A, b, params)
     return (A, b), (V, U)
 
-def _ct_full_log(dataloader, model, dt, params=None):
-    A, b = get_batch_dt(dataloader, model, dt)
+def _ct_full_log(dataloader, model, dt, params=None, **kwargs):
+    A, b = get_batch_dt(dataloader, model, dt, **kwargs)
     W = _ls_full(A, b, params)
     W = spl.logm(W) / dt
     return (A, b), (W,)
 
-def _ct_truncated_log(dataloader, model, dt, params=None):
-    A, b = get_batch_dt(dataloader, model, dt)
+def _ct_truncated_log(dataloader, model, dt, params=None, **kwargs):
+    A, b = get_batch_dt(dataloader, model, dt, **kwargs)
     V, U = _ls_truncated(A, b, params)
     V, U = logm_low_rank(V, U, dt=dt)
     return (A, b), (V, U)
 
-def _ct_sako_log(dataloader, model, dt, params=None):
-    A, b = get_batch_dt(dataloader, model, dt)
+def _ct_sako_log(dataloader, model, dt, params=None, **kwargs):
+    A, b = get_batch_dt(dataloader, model, dt, **kwargs)
     V, U = _ls_sako(A, b, params)
     V, U = logm_low_rank(V, U, dt=dt)
     return (A, b), (V, U)
 
 # The two below behave differently from the above,
 # as they use the model's own linear_solve method
-def _dt_raw(dataloader, model, dt, params=None):
+def _dt_raw(dataloader, model, dt, params=None, **kwargs):
     _p = {} if params is None else params
-    A, b = get_batch_dt(dataloader, model, dt)
+    A, b = get_batch_dt(dataloader, model, dt, **kwargs)
     W, r = model.linear_solve(A, b, **_p)
     return (W,), r
 
-def _ct_raw(dataloader, model, dt, params=None):
+def _ct_raw(dataloader, model, dt, params=None, **kwargs):
     _p = {} if params is None else params
-    A, b = get_batch_ct(dataloader, model, dt)
+    A, b = get_batch_ct(dataloader, model, dt, **kwargs)
     W, r = model.linear_solve(A, b, **_p)
     return (W,), r
 
@@ -216,9 +223,10 @@ class LSUpdater:
     Update linear weights by least squares.
     """
 
-    def __init__(self, method, model, dt=None, params=None):
+    def __init__(self, method, model, dt=None, params=None, **kwargs):
         self.params = params
         self.dt     = dt
+        self.kwargs = kwargs
 
         if not check_linear_impl(model):
             raise ValueError(f"{model} does not implement linear_features and linear_eval methods required for LS updates.")
@@ -250,7 +258,7 @@ class LSUpdater:
 
         Only used in `evaluation` in this Trainer.
         """
-        _p, _b = self._comp_linear_eval(model, batch, dt=self.dt)
+        _p, _b = self._comp_linear_eval(model, batch, dt=self.dt, **self.kwargs)
         linear_loss = criterion(_p, _b)
         return linear_loss
 
@@ -263,12 +271,12 @@ class LSUpdater:
         if self.method.endswith('raw'):
             # Use model's own linear_solve method
             with torch.no_grad():
-                params, residual = self.solver(dataloader, model, self.dt, self.params)
+                params, residual = self.solver(dataloader, model, self.dt, self.params, **self.kwargs)
                 avg_epoch_loss = residual.mean().item()
             return avg_epoch_loss, params
 
         with torch.no_grad():
-            (A, b), weights = self.solver(dataloader, model, self.dt, self.params)
+            (A, b), weights = self.solver(dataloader, model, self.dt, self.params, **self.kwargs)
 
             if len(weights) == 1:
                 W = weights[0]

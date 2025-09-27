@@ -3,8 +3,8 @@ import torch.nn as nn
 from typing import Dict, List, Tuple, Union
 
 from dymad.modules.gnn import GNN, ResBlockGNN, IdenCatGNN
-from dymad.modules.kernel import KernelScDM, KernelScRBF, KernelOpSeparable
-from dymad.modules.krr import KRRMultiOutputShared, KRRMultiOutputIndep, KRROperatorValued
+from dymad.modules.kernel import KernelScDM, KernelScExp, KernelScRBF, KernelOpSeparable, KernelOpTangent
+from dymad.modules.krr import KRRMultiOutputShared, KRRMultiOutputIndep, KRROperatorValued, KRRTangent
 from dymad.modules.misc import TakeFirst, TakeFirstGraph
 from dymad.modules.mlp import MLP, ResBlockMLP, IdenCatMLP
 
@@ -89,6 +89,8 @@ def _make_scalar_kernel(type: str, input_dim: int, dtype=None, **kwargs) -> nn.M
         return KernelScRBF(in_dim=input_dim, dtype=dtype, **kwargs)
     elif type == "dm":
         return KernelScDM(in_dim=input_dim, dtype=dtype, **kwargs)
+    elif type == "exp":
+        return KernelScExp(in_dim=input_dim, dtype=dtype, **kwargs)
     else:
         raise ValueError(f"Unknown kernel type '{type}'.")
 
@@ -136,6 +138,16 @@ def make_kernel(type: str, input_dim: int, output_dim: int = None, kopts: List=N
                 kernels.append(_make_scalar_kernel(_k_type, _k_input_dim, dtype=dtype, **_opt))
             return KernelOpSeparable(kernels, out_dim=output_dim, dtype=dtype, **kwargs)
 
+        if _type[1] == "tan":
+            if not isinstance(kopts, dict):
+                raise ValueError(f"Operator-valued kernel of type 'tan' must have one and only one scalar kernel, got {kopts}.")
+
+            _opt = copy.deepcopy(kopts)
+            _k_type = _opt.pop("type").split('_')[-1]
+            _k_input_dim = _opt.pop("input_dim")
+            kernel = _make_scalar_kernel(_k_type, _k_input_dim, dtype=dtype, **_opt)
+            return KernelOpTangent(kernel, out_dim=output_dim, dtype=dtype, **kwargs)
+
         else:
             raise ValueError(f"Unknown operator-valued kernel type '{_type[1]}'.")
     else:
@@ -150,10 +162,11 @@ def make_krr(
     - [share] Multi-output KRR with shared scalar kernel
     - [indep] Multi-output KRR with independent scalar kernels
     - [opval] Multi-output KRR with operator-valued kernel
+    - [tangent] KRR for vector fields on manifolds
 
     Args:
         type (str): Type of KRR model to create.
-            One of {'krr_shared', 'krr_indep', 'krr_opval'}.
+            One of {'krr_shared', 'krr_indep', 'krr_opval', 'krr_tangent'}.
         kernel (Union[Dict, List[Dict]]): Kernel configuration(s).
         ridge_init (float, optional): Initial value for the ridge regularization parameter.
         jitter (float, optional): Jitter added to the diagonal for numerical stability.
@@ -164,7 +177,7 @@ def make_krr(
         _ker = kernel
     else:
         raise ValueError(f"Kernel must be a dictionary or a list of dictionaries, got {type(kernel)}.")
-    
+
     k_module = []
     for _k in _ker:
         k_type   = _k["type"]
@@ -184,5 +197,7 @@ def make_krr(
         return KRRMultiOutputIndep(kernel=k_module, ridge_init=ridge_init, jitter=jitter, device=device)
     elif _type == "opval":
         return KRROperatorValued(kernel=k_module, ridge_init=ridge_init, jitter=jitter, device=device)
+    elif _type == "tangent":
+        return KRRTangent(kernel=k_module, ridge_init=ridge_init, jitter=jitter, device=device)
     else:
         raise ValueError(f"Unknown KRR type '{type}'.")

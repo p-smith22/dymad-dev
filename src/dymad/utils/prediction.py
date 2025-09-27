@@ -189,6 +189,50 @@ def predict_continuous_exp(
     logger.debug(f"predict_continuous_exp: Final trajectory shape {x_traj.shape}")
     return x_traj
 
+def predict_continuous_fenc(
+    model,
+    x0: torch.Tensor,
+    ts: Union[np.ndarray, torch.Tensor],
+    us: torch.Tensor = None,
+    **kwargs
+) -> torch.Tensor:
+    device = x0.device
+    _x0, ts, _us, n_steps, is_batch, _ = _prepare_data(x0, ts, us, device)
+
+    logger.debug(f"predict_continuous_fenc: {'Batch' if is_batch else 'Single'} mode")
+
+    if _us is not None:
+        # Initial state preparation
+        u0 = _us[:, 0, :]
+        z0 = model.encoder(DynData(_x0, u0))
+
+        # Discrete-time forward pass
+        logger.debug(f"predict_continuous_fenc: Starting forward iterations with shape {z0.shape}")
+        z_traj = [z0]
+        for k in range(n_steps - 1):
+            u_k = _us[:, k, :]
+            z_next = model.fenc_step(z_traj[-1], DynData(None, u_k), ts[k+1]-ts[k])
+            z_traj.append(z_next)
+    else:
+        # Initial state preparation
+        z0 = model.encoder(DynData(_x0, None))
+
+        # Discrete-time forward pass
+        logger.debug(f"predict_continuous_fenc: Starting forward iterations with shape {z0.shape}")
+        z_traj = [z0]
+        for k in range(n_steps - 1):
+            z_next = model.fenc_step(z_traj[-1], DynData(None, None), ts[k+1]-ts[k])
+            z_traj.append(z_next)
+    z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, z_dim)
+    logger.debug(f"predict_continuous_fenc: Completed integration, trajectory shape: {z_traj.shape}")
+
+    x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None).view(n_steps, z_traj.shape[1], -1)
+    if not is_batch:
+        x_traj = x_traj.squeeze(1)
+
+    logger.debug(f"predict_continuous_fenc: Final trajectory shape {x_traj.shape}")
+    return x_traj
+
 def predict_graph_continuous(
     model,
     x0: torch.Tensor,

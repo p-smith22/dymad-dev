@@ -236,12 +236,12 @@ The details are provided below.
      - |:building_construction:|
      - |:building_construction:|
    * - Kernel
+     - |:white_check_mark:|
+     - |:white_check_mark:|
      - |:notepad_spiral:|
-     - |:notepad_spiral:|
-     - |:notepad_spiral:|
-     - |:o:|
-     - |:o:|
-     - |:egg:|
+     - |:white_check_mark:|
+     - |:white_check_mark:|
+     - |:white_check_mark:|
 
 Model Analysis
 ^^^^^^^^^^^^^^
@@ -301,13 +301,13 @@ Lastly, to ease the construction of modeling and analysis pipelines, we provide 
      - SVD/PCA
      - Polynomial
      - Fourier
-     - NL Dim. reduction
+     - NL dim. reduction
    * - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
-     - |:o:|
+     - |:white_check_mark:|
 
 .. list-table:: Sampling
    :widths: 25 25 25 25 25

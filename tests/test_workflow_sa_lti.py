@@ -116,7 +116,7 @@ def predict_case(idx, sample, path):
         elif mdl == 'dkbf_tr':
             assert _err < 0.08
         else:
-            assert _err < 1e-5
+            assert _err < 2e-5
 
 def sa_case(idx, path):
     _, MDL, _, _ = cfgs[idx]

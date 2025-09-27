@@ -8,10 +8,12 @@ import os
 import pytest
 import torch
 
-from dymad.models import DKM, DKMSK, KM
+from dymad.models import DKM, DKMSK, KM, KMM
 from dymad.training import NODETrainer, LinearTrainer
 from dymad.utils import load_model
 
+# Options
+## Regular kernels
 RIDGE = 1e-10
 opt_rbf1 = {
     "type": "sc_rbf",
@@ -59,6 +61,32 @@ mdl_indep.update(**opt_indep)
 mdl_opval = copy.deepcopy(mdl_ref)
 mdl_opval.update(**opt_opval)
 
+## Manifold case
+opt_opk = {
+    "type": "op_tan",
+    "input_dim": 3,
+    "output_dim": 2,
+    "kopts": opt_rbf1
+}
+opt_tange = {
+    "type": "tangent",
+    "kernel": opt_opk,
+    "dtype": torch.float64,
+    "ridge_init": RIDGE
+}
+mdl_mn = {
+    "name" : 'ker_model',
+    "encoder_layers" : 0,
+    "decoder_layers" : 0,
+    "kernel_dimension" : 2,
+    "manifold" : {
+        "d" : 2,
+        "T" : 3,
+        "g" : 3
+    }}
+mdl_mn.update(**opt_tange)
+
+# Training options
 trn_ln = {
     "n_epochs": 1,
     "save_interval": 100,
@@ -92,6 +120,7 @@ cfgs = [
     ('dkm_ln', DKM,    LinearTrainer,     {"model": mdl_opval, "training" : trn_ln}),
     ('dks_ln', DKMSK,  LinearTrainer,     {"model": mdl_share, "training" : trn_ln}),
     ('dks_nd', DKMSK,  NODETrainer,       {"model": mdl_share, "training" : trn_dt}),
+    ('kmm_ln', KMM,    LinearTrainer,     {"model": mdl_mn,    "training" : trn_ln}),
     ]
 
 def train_case(idx, data, path):

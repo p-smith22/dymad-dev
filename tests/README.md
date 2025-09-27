@@ -3,13 +3,17 @@ Organization of the test cases:
 - YAML files: Contains the definitions of data and model.
 - `conftest.py`: The pytest fixtures that serve as inputs to test cases and make clean-ups when necessary.
 - `test_assert_*`: Exact tests that compare test outputs with reference outputs to numerical accuracy.
+  - `dm`: Diffusion map
   - `krr`: Kernel ridge regression
+  - `krr_tan`: Kernel ridge regression for the manifold case, also includes DMF besides the KRR classes.
   - `linalg`: Linear algebra
+  - `manifold`: Manifold-related calculations
   - `resolvent`: Resolvent analysis of linear systems
   - `spectrum`: Kernels used in spectral calculation
   - `trajmgr`: Trajectory manager
   - `trajmgr_graph`: Trajectory manager for graph data
   - `trans_lift`: Data transformations by the Lift class
+  - `trans_ndr`: Data transformations by the NDR classes
   - `transform`: Data transformations
   - `weak`: Weak form parameters
 - `test_workflow_*`: Tests that check the flow of execution, esp. the training process.  Does not check numerical accuracy.

@@ -1,0 +1,9 @@
+dims:
+  states: 2
+  inputs: 1
+  observations: 2
+
+solver:
+  method: RK45
+  rtol: 1.0e-6
+  atol: 1.0e-6

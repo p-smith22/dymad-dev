@@ -1,9 +1,12 @@
+import logging
 import numpy as np
 import scipy.linalg as spl
 import torch
 from typing import Tuple
 
 from dymad.numerics.complex import disc2cont
+
+logger = logging.getLogger(__name__)
 
 def truncated_svd(X, order):
     """
@@ -39,6 +42,102 @@ def truncated_svd(X, order):
     else:
         raise NotImplementedError(f"Undefined threshold for order={order}")
     return _Ur, _Sr, _Vr
+
+def randomized_svd(
+    loader, N,
+    k,
+    oversample = 10,
+    n_iter = 0,
+    return_u = False,
+    dtype = np.float64,
+    seed = 0):
+    """
+    Two-pass randomized SVD for a matrix stored as row-blocks:
+    
+    A^T = [A_0^T, A_1^T, ..., A_{N-1}^T]
+
+    where A_i shape (n_i, d), A shape (N=sum_i n_i, d)
+
+    Two passes estimate k singular values and right singular vectors.
+    A third pass is needed if left singular vectors are requested.
+
+    Args:
+        loader (callable): A function that takes a block index and returns the corresponding block.
+        N (int): Number of blocks
+        k (int): Target rank (k > 0).
+        oversample (int, default 10): Extra dimensions to improve spectral accuracy (total sketch dim l = k + oversample).
+        n_iter (int, default 0): Number of power iterations (each adds two more passes).
+        return_u (bool, default False): Whether to return left singular vectors.
+        dtype (numpy dtype, default np.float64): Internal precision for computation.
+        seed (int or None, default 0): RNG seed for the Gaussian sketch.
+
+    Returns:
+        U : (N, k) ndarray, Left singular vectors (columns).
+        S : (k,) ndarray, Singular values in descending order.
+        Vt : (d, k) ndarray, Right singular vectors (columns).
+    """
+    if k <= 0:
+        raise ValueError("k must be positive")
+    logger.info("Row-block randomized SVD starts...")
+
+    # Determine feature dimension d
+    d = loader(0).shape[1]
+    l = k + oversample  # total sketch dimension
+
+    rng   = np.random.default_rng(seed)
+    Omega = rng.standard_normal((d, l)).astype(dtype)
+
+    # First pass: Y = Σ_i X_i^T (X_i @ Omega)
+    logger.info("First pass:")
+    Y = np.zeros((d, l), dtype=dtype)
+    for _i in range(N):
+        X = loader(_i).astype(dtype)
+        Y += X.T.dot(X.dot(Omega))
+
+    # Optional power iterations
+    logger.info(f"{n_iter} power iteration(s):")
+    for _ in range(n_iter):
+        Z = np.zeros_like(Y)
+        for _i in range(N):
+            X = loader(_i).astype(dtype)
+            Z += X.T.dot(X.dot(Y))
+        Y = Z
+
+    # Orthonormal basis Q for range(Y)
+    Q, _ = np.linalg.qr(Y)
+
+    # Second pass: B = (X Q)^T (X Q)
+    logger.info("Second pass:")
+    B = np.zeros((l, l), dtype=dtype)
+    for _i in range(N):
+        X = loader(_i).astype(dtype)
+        T = X.dot(Q)
+        B += T.T.dot(T)
+
+    # Eigendecomposition of small matrix B
+    logger.info("Eigendecomposition:")
+    S2, W = np.linalg.eigh(B)      # ascending order
+    idx   = np.argsort(S2)[::-1][:k]
+    S     = np.sqrt(S2[idx]).astype(dtype)
+    V     = Q.dot(W[:, idx])
+
+    # Optionally compute left singular vectors U
+    if return_u:
+        logger.info("Computing left singular vectors:")
+        S_inv = np.zeros((k,), dtype=dtype)
+        msk = S > 1e-15 * S[0]
+        S_inv[msk] = 1.0 / S[msk]
+        U = []
+        for _i in range(N):
+            X = loader(_i).astype(dtype)
+            U.append(X.dot(V).dot(np.diag(S_inv)))
+        U = np.vstack(U)
+
+    logger.info("Done")
+
+    if return_u:
+        return U, S, V
+    return S, V
 
 def truncated_lstsq(A, B, tsvd=None):
     """
