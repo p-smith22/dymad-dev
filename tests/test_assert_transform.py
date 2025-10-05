@@ -109,3 +109,32 @@ def test_compose():
 
     Xi = reld.inverse_transform([Xt])[0]
     check_data(Xi, Xn, label='Inverse Compose reload')
+
+def test_compose_rng():
+    mktr = make_transform([
+        {'type': 'scaler', 'mode': '01'},
+        {'type': 'delay', 'delay': 2}
+    ])
+    mktr.fit(Xs)
+
+    # Range 0-1
+    Xt = mktr.transform([Xn], rng=[0, 1])[0]
+
+    tmp = np.vstack(Xs)
+    mx, mn = np.max(tmp, axis=0), np.min(tmp, axis=0)
+    Xr = (Xn - mn) / (mx - mn)
+    check_data(Xt, Xr, label='Compose rng 0-1')
+
+    Xi = mktr.inverse_transform([Xt], rng=[0, 1])[0]
+    check_data(Xi, Xn, label='Inverse Compose rng 0-1')
+
+    # Range 1-2
+    Xt = mktr.transform([Xn], rng=[1, 2])[0]
+
+    Xr = np.vstack([
+        Xn[:3].reshape(1, -1),
+        Xn[1:4].reshape(1, -1)])
+    check_data(Xt, Xr, label='Compose rng 1-2')
+
+    Xi = mktr.inverse_transform([Xt], rng=[1, 2])[0]
+    check_data(Xi, Xn, label='Inverse Compose rng 1-2')

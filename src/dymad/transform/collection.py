@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 from dymad.transform.base import DelayEmbedder, Identity, Lift, Scaler, SVD, Transform
 from dymad.transform.ndr import DiffMap, DiffMapVB, Isomap
@@ -18,6 +18,7 @@ class Compose(Transform):
 
         self.T = transforms
         self._T_names = [str(t) for t in transforms]
+        self.NT = len(transforms)
 
         _n = self._T_names.count("delay")
         if _n > 1:
@@ -48,16 +49,28 @@ class Compose(Transform):
                 f"Compose: Output dimension of transform {_i} ({self.T[_i]._out_dim}) " \
                 f"does not match input dimension of transform {_i+1} ({self.T[_i+1]._inp_dim})."
 
-    def transform(self, data: Array) -> Array:
+    def transform(self, data: Array, rng: Union[List, None] = None) -> Array:
         """"""
-        for t in self.T:
-            data = t.transform(data)
+        if rng is not None:
+            assert len(rng) == 2, "Range should be a list of two integers [start, end]."
+            assert 0 <= rng[0] < rng[1] <= self.NT, f"Range should be within [0, {self.NT}]."
+            _rng = rng
+        else:
+            _rng = [0, self.NT]
+        for _i in range(_rng[0], _rng[1]):
+            data = self.T[_i].transform(data)
         return data
 
-    def inverse_transform(self, data: Array) -> Array:
+    def inverse_transform(self, data: Array, rng: Union[List, None] = None) -> Array:
         """"""
-        for t in reversed(self.T):
-            data = t.inverse_transform(data)
+        if rng is not None:
+            assert len(rng) == 2, "Range should be a list of two integers [start, end]."
+            assert 0 <= rng[0] < rng[1] <= self.NT, f"Range should be within [0, {self.NT}]."
+            _rng = rng
+        else:
+            _rng = [0, self.NT]
+        for _i in range(_rng[1]-1, _rng[0]-1, -1):
+            data = self.T[_i].inverse_transform(data)
         return data
 
     def state_dict(self) -> dict[str, Any]:
@@ -81,6 +94,7 @@ class Compose(Transform):
                 raise ValueError(f"Unknown transform type in Compose: {name}")
             self.T.append(_TRN_MAP[name]())
             self.T[-1].load_state_dict(sd)
+        self.NT = len(self.T)
         self.delay = d["delay"]
         self._inp_dim = d["inp"]
         self._out_dim = d["out"]

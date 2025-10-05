@@ -1,8 +1,6 @@
 import logging
 import numpy as np
-import scipy.spatial as sps
 import sklearn.manifold as skm
-from sklearn.preprocessing import PolynomialFeatures
 from typing import Any, List
 
 from dymad.numerics import DM, DMF, Manifold, VBDM
