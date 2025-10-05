@@ -4,6 +4,7 @@ Organization of the test cases:
 - `conftest.py`: The pytest fixtures that serve as inputs to test cases and make clean-ups when necessary.
 - `test_assert_*`: Exact tests that compare test outputs with reference outputs to numerical accuracy.
   - `dm`: Diffusion map
+  - `grad`: Gradients
   - `krr`: Kernel ridge regression
   - `krr_tan`: Kernel ridge regression for the manifold case, also includes DMF besides the KRR classes.
   - `linalg`: Linear algebra
