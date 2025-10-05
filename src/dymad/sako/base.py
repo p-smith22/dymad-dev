@@ -2,12 +2,14 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from typing import Type
+from typing import Optional, Tuple, Type
 
+from dymad.data import DynData
+from dymad.models import KBF, DKBF
 from dymad.numerics import check_orthogonality, complex_grid, complex_map, disc2cont, eig_low_rank, scaled_eig, truncate_sequence
-from dymad.sako.interface import SAInterface
 from dymad.sako.rals import estimate_pseudospectrum, RALowRank
 from dymad.sako.sako import SAKO
+from dymad.utils import DataInterface
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,48 @@ def per_state_err(prd, ref):
     norm_ref  = np.sqrt(prd.shape[1]) * (np.max(ref, axis=1) - np.min(ref, axis=1))
     e0 = np.mean(norm_diff / norm_ref, axis=0)
     return e0
+
+class SAInterface(DataInterface):
+    """
+    Interface for spectral analysis of KBF and DKBF models.
+    """
+    def __init__(self, model_class: Type[torch.nn.Module], checkpoint_path: str, device: Optional[torch.device] = None):
+        assert model_class in [KBF, DKBF], "Spectral Analysis is currently only implemented for KBF and DKBF."
+
+        super().__init__(model_class=model_class, checkpoint_path=checkpoint_path, device=device)
+
+        self._setup_sa_terms()
+
+        logger.info("SAInterface Initialized:")
+        logger.info(self.model)
+        logger.info(self.model.diagnostic_info())
+        logger.info(f"Using device: {self.device}")
+
+    def _setup_sa_terms(self):
+        P0, P1 = [], []
+        for batch in self.train_loader:
+            _P = self.model.encoder(DynData(batch.x, None)).cpu().detach().numpy()
+            _P0, _P1 = _P[..., :-1, :], _P[..., 1:, :]
+            _P0 = _P0.reshape(-1, _P0.shape[-1])
+            _P1 = _P1.reshape(-1, _P1.shape[-1])
+            P0.append(_P0)
+            P1.append(_P1)
+        self._P0 = np.concatenate(P0, axis=0)
+        self._P1 = np.concatenate(P1, axis=0)
+
+        self._Ninp = self._trans_x._inp_dim
+        self._Nout = self.model.koopman_dimension
+
+    def get_weights(self) -> Tuple[np.ndarray]:
+        """
+        Get the linear weights of the dynamics model.
+        """
+        if self.model.dynamics_net.mode == "full":
+            return (self.model.dynamics_net.weight.data.cpu().numpy(), )
+        else:
+            U = self.model.dynamics_net.U.data.cpu().numpy()
+            V = self.model.dynamics_net.V.data.cpu().numpy()
+            return (U, V)
 
 class SpectralAnalysis:
     """

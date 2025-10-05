@@ -1,4 +1,4 @@
-from dymad.utils.checkpoint import load_checkpoint, load_model, save_checkpoint
+from dymad.utils.checkpoint import DataInterface, load_checkpoint, load_model, save_checkpoint
 from dymad.utils.control import ControlInterpolator
 from dymad.utils.misc import load_config, setup_logging
 from dymad.utils.plot import plot_summary, plot_trajectory, plot_hist
@@ -10,6 +10,7 @@ from dymad.utils.scheduler import make_scheduler
 
 __all__ = [
     "ControlInterpolator",
+    "DataInterface",
     "load_checkpoint",
     "load_config",
     "load_model",

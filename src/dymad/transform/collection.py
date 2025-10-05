@@ -33,6 +33,14 @@ class Compose(Transform):
 
     def __str__(self):
         return "compose"
+    
+    def _proc_rng(self, rng: Union[List, None]) -> List:
+        if rng is not None:
+            assert len(rng) == 2, "Range should be a list of two integers [start, end]."
+            assert 0 <= rng[0] < rng[1] <= self.NT, f"Range should be within [0, {self.NT}]."
+            return rng
+        else:
+            return [0, self.NT]
 
     def fit(self, data: Array) -> None:
         """"""
@@ -51,24 +59,14 @@ class Compose(Transform):
 
     def transform(self, data: Array, rng: Union[List, None] = None) -> Array:
         """"""
-        if rng is not None:
-            assert len(rng) == 2, "Range should be a list of two integers [start, end]."
-            assert 0 <= rng[0] < rng[1] <= self.NT, f"Range should be within [0, {self.NT}]."
-            _rng = rng
-        else:
-            _rng = [0, self.NT]
+        _rng = self._proc_rng(rng)
         for _i in range(_rng[0], _rng[1]):
             data = self.T[_i].transform(data)
         return data
 
     def inverse_transform(self, data: Array, rng: Union[List, None] = None) -> Array:
         """"""
-        if rng is not None:
-            assert len(rng) == 2, "Range should be a list of two integers [start, end]."
-            assert 0 <= rng[0] < rng[1] <= self.NT, f"Range should be within [0, {self.NT}]."
-            _rng = rng
-        else:
-            _rng = [0, self.NT]
+        _rng = self._proc_rng(rng)
         for _i in range(_rng[1]-1, _rng[0]-1, -1):
             data = self.T[_i].inverse_transform(data)
         return data
