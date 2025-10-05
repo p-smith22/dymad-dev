@@ -404,10 +404,9 @@ class SVD(Transform):
         else:
             self._off = np.zeros(self._inp_dim,)
         _, _, _V = truncated_svd(X_combined, self._order)
-        self._C = _V.T
         self._P = _V.conj()
 
-        self._out_dim = len(self._C)
+        self._out_dim = self._P.shape[1]
         logger.info(f"SVD: Fitted SVD with {self._out_dim} components.")
 
     def transform(self, X: Array) -> Array:
@@ -421,10 +420,10 @@ class SVD(Transform):
     def inverse_transform(self, X: Array) -> Array:
         """"""
         logger.info(f"SVD: Applying projection with order={self._order}, center={self._ifcen}.")
-        if self._C is None:
+        if self._P is None:
             raise ValueError("SVD parameters are not initialized. Call `fit` first.")
 
-        return [trajectory.dot(self._C) + self._off for trajectory in X]
+        return [trajectory.dot(self._P.conj().T) + self._off for trajectory in X]
 
     def state_dict(self) -> dict[str, Any]:
         """"""
@@ -433,7 +432,6 @@ class SVD(Transform):
             "ifcen":  self._ifcen,
             "inp":    self._inp_dim,
             "out":    self._out_dim,
-            "C":      self._C,
             "P":      self._P,
             "off":    self._off
             }
@@ -445,6 +443,5 @@ class SVD(Transform):
         self._ifcen = d["ifcen"]
         self._inp_dim = d["inp"]
         self._out_dim = d["out"]
-        self._C     = d["C"]
         self._P     = d["P"]
         self._off   = d["off"]

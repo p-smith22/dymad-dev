@@ -1,6 +1,6 @@
 import numpy as np
 
-from dymad.transform import Compose, DelayEmbedder, Identity, make_transform, Scaler
+from dymad.transform import Compose, DelayEmbedder, Identity, make_transform, Scaler, SVD
 
 def check_data(out, ref, label=''):
     for _s, _t in zip(out, ref):
@@ -64,6 +64,34 @@ def test_delay():
 
     Xi = dely.inverse_transform([Xt])[0]
     check_data(Xi, Xn, label='Inverse Delay')
+
+def test_svd():
+    svd = SVD(order=2, ifcen=True)
+    svd.fit(Xs)
+    Xt = svd.transform([Xn])[0]
+
+    tmp = np.vstack(Xs)
+    avr = np.mean(tmp, axis=0)
+    tmp = tmp - avr
+    _, _, Vh = np.linalg.svd(tmp, full_matrices=False)
+    Xr = (Xn - avr).dot(Vh.T)
+    check_data(Xt, Xr, label='SVD')
+
+    Xi = svd.inverse_transform([Xt])[0]
+    check_data(Xi, Xn, label='Inverse SVD')
+
+    # ----------
+    # Loading and reloading
+    dct = svd.state_dict()
+
+    reld = SVD()
+    reld.load_state_dict(dct)
+
+    Xt = reld.transform([Xn])[0]
+    check_data(Xt, Xr, label='SVD reload')
+
+    Xi = reld.inverse_transform([Xt])[0]
+    check_data(Xi, Xn, label='Inverse SVD reload')
 
 def test_compose():
     # ----------
