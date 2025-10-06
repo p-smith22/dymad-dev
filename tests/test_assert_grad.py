@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from dymad.numerics import complex_step, torch_jacobian
+from dymad.numerics import central_diff, complex_step, torch_jacobian
 
 def f_scalar(x):
     return x**2 + 3*x + 2
@@ -24,26 +24,32 @@ def df_vector_torch(x):
         torch.tensor([torch.cos(x[0]), -torch.sin(x[1])], dtype=x.dtype)
     ])
 
-def test_complex_step():
+def test_finite_diff():
     eps = 1e-10
 
     # Test 1: Scalar function, scalar input
     x = 1.0
     df_an = df_scalar(x)
     df_cs = complex_step(f_scalar, x)
-    assert np.abs(df_cs - df_an) < eps, "Scalar func"
+    df_fd = central_diff(f_scalar, x)
+    assert np.abs(df_cs - df_an) < eps, "Scalar func, cs"
+    assert np.abs(df_fd - df_an) < eps*2, "Scalar func, fd"
 
     # Test 2: Vector function, vector input
     x = np.array([1.0, 0.5])
     df_an = df_vector_np(x)
     df_cs = complex_step(f_vector_np, x)
-    assert np.all(np.abs(df_cs - df_an) < eps), "Vector func, full"
+    df_fd = central_diff(f_vector_np, x)
+    assert np.all(np.abs(df_cs - df_an) < eps), "Vector func, full, cs"
+    assert np.all(np.abs(df_fd - df_an) < eps*2), "Vector func, full, fd"
 
     # Test 3: Directional derivative
     v = np.array([0.5, 0.5])
     df_an = df_vector_np(x) @ v.reshape(-1,1)
     df_cs = complex_step(f_vector_np, x, v=v)
-    assert np.all(np.abs(df_cs - df_an) < eps), "Vector func, directional"
+    df_fd = central_diff(f_vector_np, x, v=v)
+    assert np.all(np.abs(df_cs - df_an) < eps), "Vector func, directional, cs"
+    assert np.all(np.abs(df_fd - df_an) < eps), "Vector func, directional, fd"
 
 def test_torch_jacobian():
     eps = 1e-14

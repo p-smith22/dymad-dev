@@ -244,15 +244,24 @@ class Manifold:
         self._ifprecomp = True
         logger.info("  Done")
 
-    def gmls(self, x, Y):
+    def gmls(self, x, Y, ret_der=False):
+        # y = g(T^T (X-x))
+        #
+        # The derivative is approximate, as x impacts the tangent space estimation,
+        # but only the gradients on polynomial are included
+        #
+        # dy = dg/dd * T^T
         _, _i = self._tree.query(x, k=self._Nknn)
         _T, _V = self._estimate_tangent(x, ret_V=True)
         _B = np.matmul(_V, np.swapaxes(_T, -2, -1))
         _P = self._poly_eval(self._fpsi, _B)
         _C = np.matmul(np.linalg.pinv(_P), np.atleast_3d(Y[_i]))
-        _tmp = self._fpsi.fit_transform(np.zeros((1,self._Nman)))
-        _r = np.matmul(_tmp, _C)
-        return _r.squeeze()
+        _r = _C[..., 0, :].squeeze()
+        if ret_der:
+            _tmp = _C[..., 1:self._Nman+1, :]
+            _rder = np.matmul(np.swapaxes(_tmp, -2, -1), _T)
+            return _r, _rder
+        return _r
 
     def _poly_eval(self, f, B):
         # PolynomialFeatures only supports 2D input
