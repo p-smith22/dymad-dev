@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 import logging
 import numpy as np
-from typing import Any, Callable, Dict, List, Optional, Union
+import torch
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+from dymad.data.data import DynDataImpl as DynData
 from dymad.numerics.linalg import truncated_svd
 from dymad.transform.lift import poly_cross, poly_inverse, mixed_cross, mixed_inverse
 
@@ -59,6 +61,42 @@ class Transform(ABC):
         """
         raise NotImplementedError("Transform must implement the inverse_transform method.")
 
+    def get_forward_modes(self, ref: Union[np.ndarray, None] = None, **kwargs) -> Array:
+        """
+        Get the forward modes of the transform.
+
+        For x in the data space, and its transform z = f(x) in the feature space,
+        this function computes the jacobian df/dx.
+
+        For nested transforms, the modes are computed by chain rule.
+
+        Args:
+            refs (np.ndarray | None): Reference points to compute the modes.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            np.ndarray: Forward modes of the transform at references.
+        """
+        raise NotImplementedError("Transform must implement the get_forward_modes method.")
+
+    def get_backward_modes(self, ref: Union[np.ndarray, None] = None, **kwargs) -> Array:
+        """
+        Get the backward modes of the transform.
+
+        For z in the feature space, and its inverse transform x = g(z),
+        this function computes the jacobian dg/dz (transposed for convenience).
+
+        For nested transforms, the modes are computed by chain rule.
+
+        Args:
+            refs (np.ndarray | None): Reference points to compute the modes.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            np.ndarray: Backward modes of the transform at references, (dg/dz)^T.
+        """
+        raise NotImplementedError("Transform must implement the get_backward_modes method.")
+
     def state_dict(self) -> dict[str, Any]:
         """Return a dictionary containing the state of the transform.
         This is used for saving the transform parameters and reloading later.
@@ -68,6 +106,60 @@ class Transform(ABC):
     def load_state_dict(self, d: dict[str, Any]) -> None:
         """Load the state of the transform from a dictionary."""
         pass
+
+class Autoencoder(Transform):
+    """
+    A class for data reduction by autoencoder.
+
+    Not meant for fitting; only used in post-processing to load a pre-trained model.
+
+    Args:
+        model (torch.nn.Module): The autoencoder model.
+        order (int): Truncation order.
+        device (str): Device to run the model on.
+    """
+
+    def __init__(self, model: Any):
+        self.model    = model
+        self._inp_dim = model.n_total_state_features
+        self._out_dim = model.latent_dimension
+        self.dtype    = model.dtype
+        self.device   = model.device
+
+    def __str__(self):
+        return "autoencoder"
+
+    def fit(self, X: Array) -> None:
+        """"""
+        raise NotImplementedError("Autoencoder does not implement fit. Load a pre-trained model instead.")
+
+    def transform(self, X: Array) -> Array:
+        """"""
+        _X = torch.tensor(X, dtype=self.dtype).to(self.device)
+        _Z = self.model.encoder(DynData(_X, None)).cpu().detach().numpy()
+        return _Z
+
+    def inverse_transform(self, X: Array) -> Array:
+        """"""
+        _X = torch.tensor(X, dtype=self.dtype).to(self.device)
+        _Z = self.model.decoder(_X, None).cpu().detach().numpy()
+        return _Z
+
+    def get_forward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        raise NotImplementedError("Autoencoder does not implement get_forward_modes.")
+
+    def get_backward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        raise NotImplementedError("Autoencoder does not implement get_backward_modes.")
+
+    def state_dict(self) -> dict[str, Any]:
+        """"""
+        raise NotImplementedError("Autoencoder does not implement state_dict.")
+
+    def load_state_dict(self, d: dict[str, Any]) -> None:
+        """"""
+        raise NotImplementedError("Autoencoder does not implement load_state_dict.")
 
 class Identity(Transform):
     """A class that performs no transformation on the data."""
@@ -86,6 +178,14 @@ class Identity(Transform):
     def inverse_transform(self, X: Array) -> Array:
         """"""
         return X
+
+    def get_forward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        return np.eye(self._out_dim, self._inp_dim)
+
+    def get_backward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        return np.eye(self._out_dim, self._inp_dim)
 
     def state_dict(self) -> dict[str, Any]:
         """"""
@@ -164,6 +264,14 @@ class Scaler(Transform):
 
         return [trajectory * self._scl + self._off for trajectory in X]
 
+    def get_forward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        return np.diag(1.0 / self._scl)
+
+    def get_backward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        return np.diag(self._scl)
+
     def state_dict(self) -> dict[str, Any]:
         """"""
         return {
@@ -229,6 +337,14 @@ class Lift(Transform):
 
     def _pseudo_inv(self, Z):
         return Z.dot(self._C)
+
+    def get_forward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        raise NotImplementedError("Lift does not implement get_forward_modes.")
+
+    def get_backward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        raise NotImplementedError("Lift does not implement get_backward_modes.")
 
     def state_dict(self) -> Dict[str, Any]:
         """"""
@@ -362,6 +478,14 @@ class DelayEmbedder(Transform):
             unrolled_sequences.append(self._unroll(sequence))
         return unrolled_sequences
 
+    def get_forward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        return np.eye(self._out_dim, self._inp_dim)
+
+    def get_backward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        return np.eye(self._out_dim, self._inp_dim)
+
     def state_dict(self) -> dict[str, Any]:
         """"""
         return {
@@ -424,6 +548,18 @@ class SVD(Transform):
             raise ValueError("SVD parameters are not initialized. Call `fit` first.")
 
         return [trajectory.dot(self._P.conj().T) + self._off for trajectory in X]
+
+    def get_forward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        if self._P is None:
+            raise ValueError("SVD parameters are not initialized. Call `fit` first.")
+        return self._P.T
+
+    def get_backward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        if self._P is None:
+            raise ValueError("SVD parameters are not initialized. Call `fit` first.")
+        return self._P.conj().T
 
     def state_dict(self) -> dict[str, Any]:
         """"""

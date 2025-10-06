@@ -1,4 +1,5 @@
 import logging
+from pyexpat import model
 import numpy as np
 import os
 import torch
@@ -8,7 +9,7 @@ from typing import Callable, Dict, List, Optional, Union, Tuple, Type
 from dymad.data.data import DynDataImpl as DynData
 from dymad.data.data import DynGeoDataImpl as DynGeoData
 from dymad.data.trajectory_manager import TrajectoryManager
-from dymad.transform import make_transform
+from dymad.transform import Autoencoder, make_transform
 from dymad.utils.misc import load_config
 
 logger = logging.getLogger(__name__)
@@ -218,16 +219,13 @@ class DataInterface:
                  device: Optional[torch.device] = None):
         self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        metadata, has_model = self._init_metadata(checkpoint_path, config_path, config_mod)
+        metadata, self.has_model = self._init_metadata(checkpoint_path, config_path, config_mod)
         self._setup_data(metadata)
 
-        if has_model:
+        if self.has_model:
             self.model, _ = load_model(model_class, checkpoint_path)
-            self._encode_add = self._encode_model
-            self._decode_add = self._decode_model
-        else:
-            self._encode_add = self._encode_none
-            self._decode_add = self._decode_none
+            enc = Autoencoder(self.model)
+            self._trans_x.append(enc)
 
         self.NT = self._trans_x.NT
 
@@ -261,59 +259,18 @@ class DataInterface:
         self._trans_x = tm._data_transform_x
         self._trans_u = tm._data_transform_u
 
-    def _encode_none(self, X: np.ndarray) -> np.ndarray:
-        return X
-
-    def _encode_model(self, X: np.ndarray) -> np.ndarray:
-        """Encode new trajectory data to the observer space using the learned encoder."""
-        _X = torch.tensor(X, dtype=self.dtype).to(self.device)
-        _Z = self.model.encoder(DynData(_X, None)).cpu().detach().numpy()
-        return _Z
-
-    def _decode_none(self, X: np.ndarray) -> np.ndarray:
-        return X
-
-    def _decode_model(self, X: np.ndarray) -> np.ndarray:
-        """Decode new trajectory data from the observer space using the learned decoder."""
-        _X = torch.tensor(X, dtype=self.dtype).to(self.device)
-        _Z = self.model.decoder(_X, None).cpu().detach().numpy()
-        return _Z
-    
-    def _proc_rng(self, rng: Union[List, None]) -> List:
-        """When compared to Transform, there is an extra +1 in the upper bound to include the autoencoder."""
-        if rng is not None:
-            assert len(rng) == 2, "Range should be a list of two integers [start, end]."
-            assert 0 <= rng[0] < rng[1] <= self.NT+1, f"Range should be within [0, {self.NT+1}]."
-            return rng
-        else:
-            return [0, self.NT+1]
-
     def encode(self, X: np.ndarray, rng: Optional[List | None] = None) -> np.ndarray:
         """
         Encode new trajectory data to the observer space.
         """
-        _rng = self._proc_rng(rng)
-        if _rng[1] > self.NT:
-            # Need to apply autoencoder
-            _X = self._trans_x.transform(np.atleast_2d(X), [_rng[0], self.NT])
-            _Z = self._encode_add(_X)
-        else:
-            # Transform only
-            _Z = self._encode_add(np.atleast_2d(X), _rng)
-        return _Z.squeeze()
+        _Z = self._trans_x.transform(X, rng)
+        return np.array(_Z).squeeze()
 
     def decode(self, X: np.ndarray, rng: Optional[List | None] = None) -> np.ndarray:
         """
         Decode trajectory data from the observer space.
         """
-        _rng = self._proc_rng(rng)
-        if _rng[1] > self.NT:
-            # Need to apply autoencoder
-            _Z = self._decode_add(np.atleast_2d(X))
-            _Z = self._trans_x.inverse_transform(np.atleast_2d(_Z), [_rng[0], self.NT])
-        else:
-            # Transform only
-            _Z = self._trans_x.inverse_transform(np.atleast_2d(_Z), _rng)
+        _Z = self._trans_x.inverse_transform(X, rng)
         return np.array(_Z).squeeze()
 
     def apply_obs(self, fobs: Callable) -> np.ndarray:
@@ -328,6 +285,13 @@ class DataInterface:
         for batch in self.train_loader:
             B = batch.x.cpu().numpy()[..., :-1, :]        # This is already transformed
             B = B.reshape(-1, B.shape[-1])
-            B = self._trans_x.inverse_transform([B])[0]   # A hack to get back to the original space
+            end = self.NT-1 if self.has_model else self.NT
+            B = self._trans_x.inverse_transform([B], [0, end])[0]   # A hack to get back to the original space
             F.append(fobs(B))
         return np.hstack(F)
+
+    def get_forward_modes(self, ref=None, rng: Union[List, None] = None, **kwargs) -> np.ndarray:
+        return self._trans_x.get_forward_modes(ref, rng, **kwargs)
+
+    def get_backward_modes(self, ref=None, rng: Union[List, None] = None, **kwargs) -> np.ndarray:
+        return self._trans_x.get_backward_modes(ref, rng, **kwargs)

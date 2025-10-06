@@ -57,6 +57,36 @@ class Compose(Transform):
                 f"Compose: Output dimension of transform {_i} ({self.T[_i]._out_dim}) " \
                 f"does not match input dimension of transform {_i+1} ({self.T[_i+1]._inp_dim})."
 
+    def append(self, t: Transform) -> None:
+        """Append a transform to the composition."""
+        if not isinstance(t, Transform):
+            raise ValueError("Can only append Transform objects.")
+        if self.NT > 0:
+            if self.T[-1]._out_dim != t._inp_dim:
+                raise ValueError(f"Compose: Output dimension of last transform ({self.T[-1]._out_dim}) "
+                                 f"does not match input dimension of new transform ({t._inp_dim}).")
+        self.T.append(t)
+        self._T_names.append(str(t))
+        self.NT += 1
+        if str(t) == "delay":
+            if self.delay > 0:
+                raise ValueError("Compose: Multiple delay transforms are not allowed. "
+                                 "Please use only one delay transform in the composition.")
+            self.delay = t.delay
+        self._out_dim = self.T[-1]._out_dim
+
+    def pop(self) -> Transform:
+        """Pop the last transform from the composition."""
+        if self.NT <= 1:
+            raise ValueError(f"Compose: {self.NT} transforms; no point to pop.")
+        t = self.T.pop()
+        self._T_names.pop()
+        self.NT -= 1
+        if str(t) == "delay":
+            self.delay = 0
+        self._out_dim = self.T[-1]._out_dim
+        return t
+
     def transform(self, data: Array, rng: Union[List, None] = None) -> Array:
         """"""
         _rng = self._proc_rng(rng)
@@ -70,6 +100,28 @@ class Compose(Transform):
         for _i in range(_rng[1]-1, _rng[0]-1, -1):
             data = self.T[_i].inverse_transform(data)
         return data
+
+    def get_forward_modes(self, ref=None, rng: Union[List, None] = None, **kwargs) -> np.ndarray:
+        """"""
+        _rng = self._proc_rng(rng)
+        modes = self.T[_rng[0]].get_forward_modes(ref, **kwargs)
+        for _i in range(_rng[0]+1, _rng[1]):
+            if ref is not None:
+                ref = self.T[_i-1].transform(ref)
+            tmp = self.T[_i].get_forward_modes(ref, **kwargs)
+            modes = tmp.dot(modes)
+        return modes
+
+    def get_backward_modes(self, ref=None, rng: Union[List, None] = None, **kwargs) -> np.ndarray:
+        """"""
+        _rng = self._proc_rng(rng)
+        modes = self.T[_rng[1]-1].get_backward_modes(ref, **kwargs)
+        for _i in range(_rng[1]-2, _rng[0]-1, -1):
+            if ref is not None:
+                ref = self.T[_i+1].transform(ref)
+            tmp = self.T[_i].get_backward_modes(ref, **kwargs)
+            modes = tmp.dot(modes)
+        return modes
 
     def state_dict(self) -> dict[str, Any]:
         """"""

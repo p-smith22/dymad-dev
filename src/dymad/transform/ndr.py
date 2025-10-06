@@ -42,6 +42,8 @@ class TransformKernel(Transform):
 
         self._ndr   = None
         self._tree  = None
+        self._man   = None
+        self._C     = None
 
     def _prepare_inverse(self):
         """
@@ -62,7 +64,7 @@ class TransformKernel(Transform):
 
     def _gmls(self, Z):
         return [self._man.gmls(_Z, self._X) for _Z in Z]
-    
+
     def fit(self, X: Array) -> None:
         """"""
         self._make_ndr()
@@ -77,6 +79,14 @@ class TransformKernel(Transform):
         """"""
         _res = [self._ndr.transform(_X) for _X in X]
         return _res
+
+    def get_forward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        raise NotImplementedError("TransformKernel does not implement get_forward_modes.")
+
+    def get_backward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        raise NotImplementedError("TransformKernel does not implement get_backward_modes.")
 
     def state_dict(self) -> dict[str, Any]:
         """"""
