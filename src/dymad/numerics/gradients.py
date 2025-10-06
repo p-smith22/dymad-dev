@@ -1,4 +1,6 @@
 import numpy as np
+import torch
+import torch.func as func
 
 def complex_step(f, x, h=1e-20, v=None):
     """Complex step differentiation.
@@ -30,3 +32,35 @@ def complex_step(f, x, h=1e-20, v=None):
     for _v in v:
         J.append(np.imag(f(x + 1j*h*_v)) / h)
     return np.array(J).T
+
+def torch_jacobian(f, x, v=None, dtype=torch.float64):
+    """Jacobian using torch.func.jacobian.
+
+    Args:
+        f: function handle that accepts and returns torch tensors.
+        x: input array.
+        v: directions for directional derivative. If None, return full Jacobian.
+
+    Returns:
+        df: derivative of f at x, possibly directional.
+    """
+    x = torch.tensor(x, dtype=dtype)
+    n = x.numel()
+
+    if v is None:
+        # Full Jacobian
+        jac = func.jacrev(f)(x)
+        jac = jac.reshape(-1, n)  # shape (output_dim, input_dim)
+    else:
+        # Directional derivative
+        v = torch.tensor(v, dtype=dtype)
+        if v.ndim == 1:
+            v = v.reshape(1, -1)
+        assert v.shape[1] == n, "v should have shape (m,n) where n is the size of x."
+        jac = []
+        for direction in v:
+            _, jvp = func.jvp(f, (x,), (direction,))
+            jac.append(jvp)
+        jac = torch.stack(jac, dim=1)  # shape (output_dim, num_directions)
+
+    return jac.numpy()
