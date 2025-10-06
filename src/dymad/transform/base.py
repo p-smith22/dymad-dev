@@ -2,10 +2,9 @@ from abc import ABC, abstractmethod
 import logging
 import numpy as np
 import torch
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
-from dymad.data.data import DynDataImpl as DynData
-from dymad.numerics.linalg import truncated_svd
+from dymad.numerics import complex_step, torch_jacobian, truncated_svd
 from dymad.transform.lift import poly_cross, poly_inverse, mixed_cross, mixed_inverse
 
 Array = List[np.ndarray]
@@ -119,8 +118,9 @@ class Autoencoder(Transform):
         device (str): Device to run the model on.
     """
 
-    def __init__(self, model: Any):
-        self.model    = model
+    def __init__(self, model, encoder, decoder):
+        self.encoder  = encoder
+        self.decoder  = decoder
         self._inp_dim = model.n_total_state_features
         self._out_dim = model.latent_dimension
         self.dtype    = model.dtype
@@ -135,23 +135,27 @@ class Autoencoder(Transform):
 
     def transform(self, X: Array) -> Array:
         """"""
-        _X = torch.tensor(X, dtype=self.dtype).to(self.device)
-        _Z = self.model.encoder(DynData(_X, None)).cpu().detach().numpy()
+        with torch.no_grad():
+            _X = torch.tensor(X, dtype=self.dtype).to(self.device)
+            _Z = self.encoder(_X).cpu().detach().numpy()
         return _Z
 
     def inverse_transform(self, X: Array) -> Array:
         """"""
-        _X = torch.tensor(X, dtype=self.dtype).to(self.device)
-        _Z = self.model.decoder(_X, None).cpu().detach().numpy()
+        with torch.no_grad():
+            _X = torch.tensor(X, dtype=self.dtype).to(self.device)
+            _Z = self.decoder(_X).cpu().detach().numpy()
         return _Z
 
     def get_forward_modes(self, ref=None, **kwargs) -> np.ndarray:
         """"""
-        raise NotImplementedError("Autoencoder does not implement get_forward_modes.")
+        assert ref is not None, "Autoencoder requires a reference point to compute modes."
+        return torch_jacobian(lambda x: self.encoder(x), ref, dtype=self.dtype)
 
     def get_backward_modes(self, ref=None, **kwargs) -> np.ndarray:
         """"""
-        raise NotImplementedError("Autoencoder does not implement get_backward_modes.")
+        assert ref is not None, "Autoencoder requires a reference point to compute modes."
+        return torch_jacobian(lambda x: self.decoder(x), ref, dtype=self.dtype).T
 
     def state_dict(self) -> dict[str, Any]:
         """"""
@@ -340,11 +344,18 @@ class Lift(Transform):
 
     def get_forward_modes(self, ref=None, **kwargs) -> np.ndarray:
         """"""
-        raise NotImplementedError("Lift does not implement get_forward_modes.")
+        assert ref is not None, "Lift requires a reference point to compute modes."
+        func = lambda x: self._fobs(x.reshape(1,-1), **self._fargs).reshape(-1)
+        return complex_step(func, ref)
 
     def get_backward_modes(self, ref=None, **kwargs) -> np.ndarray:
         """"""
-        raise NotImplementedError("Lift does not implement get_backward_modes.")
+        if self._C is None:
+            assert ref is not None, "Lift with finv requires a reference point to compute modes."
+            func = lambda x: self._finv(x.reshape(1,-1), **self._fargs).reshape(-1)
+            return complex_step(func, ref).T
+        else:
+            return self._C
 
     def state_dict(self) -> Dict[str, Any]:
         """"""

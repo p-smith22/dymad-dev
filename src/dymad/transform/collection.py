@@ -107,7 +107,7 @@ class Compose(Transform):
         modes = self.T[_rng[0]].get_forward_modes(ref, **kwargs)
         for _i in range(_rng[0]+1, _rng[1]):
             if ref is not None:
-                ref = self.T[_i-1].transform(ref)
+                ref = self.T[_i-1].transform([ref])[0]
             tmp = self.T[_i].get_forward_modes(ref, **kwargs)
             modes = tmp.dot(modes)
         return modes
@@ -118,9 +118,9 @@ class Compose(Transform):
         modes = self.T[_rng[1]-1].get_backward_modes(ref, **kwargs)
         for _i in range(_rng[1]-2, _rng[0]-1, -1):
             if ref is not None:
-                ref = self.T[_i+1].transform(ref)
+                ref = self.T[_i+1].inverse_transform([ref])[0]
             tmp = self.T[_i].get_backward_modes(ref, **kwargs)
-            modes = tmp.dot(modes)
+            modes = modes.dot(tmp)
         return modes
 
     def state_dict(self) -> dict[str, Any]:

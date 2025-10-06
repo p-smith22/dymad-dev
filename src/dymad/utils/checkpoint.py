@@ -224,7 +224,9 @@ class DataInterface:
 
         if self.has_model:
             self.model, _ = load_model(model_class, checkpoint_path)
-            enc = Autoencoder(self.model)
+            encoder = lambda x: self.model.encoder(DynData(x, None))
+            decoder = lambda z: self.model.decoder(z, None)
+            enc = Autoencoder(self.model, encoder, decoder)
             self._trans_x.append(enc)
 
         self.NT = self._trans_x.NT

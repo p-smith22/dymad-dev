@@ -14,6 +14,7 @@ Organization of the test cases:
   - `trajmgr`: Trajectory manager
   - `trajmgr_graph`: Trajectory manager for graph data
   - `trans_lift`: Data transformations by the Lift class
+  - `trans_mode`: Forward and backward modes in data transformations
   - `trans_ndr`: Data transformations by the NDR classes
   - `transform`: Data transformations
   - `weak`: Weak form parameters
