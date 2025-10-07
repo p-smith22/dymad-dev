@@ -3,7 +3,7 @@ import numpy as np
 import sklearn.manifold as skm
 from typing import Any, List
 
-from dymad.numerics import DM, DMF, Manifold, VBDM
+from dymad.numerics import DM, DMF, Manifold, ManifoldAltTree, VBDM
 from dymad.transform.base import Transform
 
 Array = List[np.ndarray]
@@ -18,8 +18,11 @@ class TransformKernel(Transform):
     Rigorously, the decoding would require solving the pre-image problem.
     Here we implement some approximate methods to bypass the pre-image solver:
 
-        - Pseudo-inverse
+        - Pseudo-inverse (NOT recommended)
         - (modified) Generalized Moving Least Squares (GMLS)
+
+    When using GMLS, the forward and backward modes are computed with manifold constraints,
+    as a result, the modes are tangent to the manifold in data and latent spaces.
 
     Args:
         edim: Embedding dimension.
@@ -42,7 +45,6 @@ class TransformKernel(Transform):
 
         self._ndr   = None
         self._tree  = None
-        self._man   = None
         self._C     = None
 
     def _prepare_inverse(self):
@@ -51,8 +53,13 @@ class TransformKernel(Transform):
         """
         _inv = self._inv.lower()
         if _inv == "gmls":
-            self._man = Manifold(self._Z, self._order, K=self._Knn, g=self._Kphi, T=self._Kphi)
+            # Backward modes
+            self._man_bck = Manifold(self._Z, self._order, K=self._Knn, g=self._Kphi, T=self._Kphi)
             self.inverse_transform = self._gmls
+            # Forward modes
+            self._man_for = ManifoldAltTree(
+                self._X, self._order, K=self._Knn, g=self._Kphi, T=self._Kphi,
+                tree_data=self._Z, tree_transform=lambda x: self.transform([x])[0])
         elif _inv == "pinv":
             self._C = np.linalg.pinv(self._Z, rcond=self._rcond, hermitian=False).dot(self._X)
             self.inverse_transform = self._pinv
@@ -63,7 +70,7 @@ class TransformKernel(Transform):
         return [_Z.dot(self._C) for _Z in Z]
 
     def _gmls(self, Z):
-        return [self._man.gmls(_Z, self._X) for _Z in Z]
+        return [self._man_bck.gmls(_Z, self._X) for _Z in Z]
 
     def fit(self, X: Array) -> None:
         """"""
@@ -77,16 +84,31 @@ class TransformKernel(Transform):
 
     def transform(self, X: Array) -> Array:
         """"""
-        _res = [self._ndr.transform(_X) for _X in X]
+        _res = [self._ndr.transform(np.atleast_2d(_X)) for _X in X]
         return _res
 
     def get_forward_modes(self, ref=None, **kwargs) -> np.ndarray:
-        """"""
-        raise NotImplementedError("TransformKernel does not implement get_forward_modes.")
+        """
+        We use a specialized GMLS for forward modes.
+        
+        First map ref to latent space, and find the kNN points there;
+        this is because the metric of data space can be more distorted than the latent space.
+        Then, the corresponding kNN points in the original space are found.
+        Finally, the derivative of GMLS at ref is returned, computed using the above modified kNN points.
+        """
+        modes = self._man_for.gmls(ref, self._Z, ret_der=True)[1]
+        return modes
 
     def get_backward_modes(self, ref=None, **kwargs) -> np.ndarray:
-        """"""
-        raise NotImplementedError("TransformKernel does not implement get_backward_modes.")
+        """
+        If pinv is used, return the pseudo-inverse matrix.
+        If gmls is used, the derivative of GMLS at ref is returned.
+        """
+        if self._C is not None:
+            return self._C
+        else:
+            modes = self._man_bck.gmls(ref, self._X, ret_der=True)[1]
+            return np.swapaxes(modes, -2, -1)
 
     def state_dict(self) -> dict[str, Any]:
         """"""
