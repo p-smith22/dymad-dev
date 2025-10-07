@@ -265,3 +265,99 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
     ax[1].legend()
 
     return fig, ax
+
+def _get_contour_func(ax, mode):
+    if mode == 'contour':
+        contour_func = ax.contour
+    elif mode == 'contourf':
+        contour_func = ax.contourf
+    elif mode == 'tricontourf':
+        contour_func = ax.tricontourf
+    return contour_func
+
+def plot_contour(
+        arrays, x=None, y=None, vmin=None, vmax=None, levels=20,
+        figsize=(12, 4), colorbar=True, axes=None, label=None, grid=None,
+        mode='contourf', **kwargs):
+    """
+    Plot a grid of contour plots for a list of 2D arrays.
+
+    Parameters:
+        arrays (list of np.ndarray): List of 2D arrays to plot.
+        titles (list of str): Titles for each subplot.
+        x, y (np.ndarray): Optional meshgrid for axes.
+        vmin, vmax (float): Color limits.
+        levels (int or array): Contour levels.
+        figsize (tuple): Figure size.
+        colorbar (bool): Whether to add a colorbar.
+        axes: Existing figure/axes tuple.
+        label (list): Titles for each subplot.
+        grid (tuple): Grid layout (n_rows, n_cols).
+        mode (str): 'contour', 'contourf', or 'tricontourf'.
+        **kwargs: Additional arguments for contourf.
+
+    Returns:
+        fig, axes: Matplotlib figure and axes.
+    """
+    # Validate inputs
+    n = len(arrays)
+    if grid is None:
+        grid = (1, n)
+    assert grid[0]*grid[1] >= n, "Grid size too small for number of arrays"
+
+    if label is not None:
+        assert len(label) == n, "Number of labels must match number of arrays, if provided"
+
+    if axes is None:
+        fig, ax = plt.subplots(grid[0], grid[1], figsize=figsize, sharex=True, sharey=True)
+    else:
+        fig, ax = axes
+
+    assert mode in ['contour', 'contourf', 'tricontourf'], "Mode must be 'contour', 'contourf', or 'tricontourf'"
+    if mode == 'tricontourf':
+        assert x is not None and y is not None, "x and y must be provided for tricontourf"
+
+    # Prepare contour arguments
+    contour_args = {'levels': levels}
+    if levels is None or isinstance(levels, int):
+        if vmin is not None:
+            contour_args['vmin'] = vmin
+        if vmax is not None:
+            contour_args['vmax'] = vmax
+    # Else levels is an array, vmin/vmax are ignored
+    contour_args.update(**kwargs)
+
+    # Plotting
+    ims = []
+    _ax = ax.flatten() if grid[0]*grid[1] > 1 else [ax]
+    for i, arr in enumerate(arrays):
+        _func = _get_contour_func(_ax[i], mode)
+        if x is not None and y is not None:
+            im = _func(x, y, arr, **contour_args)
+        else:
+            im = _func(arr, **contour_args)
+        ims.append(im)
+        if label:
+            _ax[i].set_title(label[i])
+    if colorbar:
+        fig.colorbar(ims[0], ax=ax, orientation='vertical', fraction=0.02, pad=0.04)
+
+    return fig, ax
+
+def compare_contour(
+        x_true, x_pred, x=None, y=None, vmin=None, vmax=None, levels=20,
+        figsize=(12, 4), colorbar=True, axes=None, label=None, grid=None,
+        mode='contourf', **kwargs):
+    """
+    Compare two contours with error contours.
+    """
+    vmin = x_true.min() if vmin is None else vmin
+    vmax = x_true.max() if vmax is None else vmax
+    x_diff = x_true - x_pred
+    err    = np.linalg.norm(x_diff) / np.linalg.norm(x_true)
+    label  = ['Truth', 'Reconstructed', f'Error: {err*100:4.2f}%']
+    arrays = [x_true, x_pred, x_diff]
+    return plot_contour(
+        arrays, x=x, y=y, vmin=vmin, vmax=vmax, levels=levels,
+        figsize=figsize, colorbar=colorbar, axes=axes, label=label, grid=(1,3),
+        mode=mode, **kwargs)
