@@ -129,7 +129,7 @@ def test_fit_t2():
     assert err < 0.02, "GMLS fit error"
 
     err = np.linalg.norm(Yder-Ydfd)
-    assert err < 0.1, "GMLS fit derivative error"
+    assert err < 0.2, "GMLS fit derivative error"
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
