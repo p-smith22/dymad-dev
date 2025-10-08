@@ -162,16 +162,17 @@ class DimensionEstimator:
         scl = np.max(_avr) if ifnrm else 1.0
         ds = np.arange(len(_avr))+1
         f = plt.figure()
-        plt.plot(ds, _avr/scl)
+        plt.plot(ds, _avr/scl, label='Local PCA mean')
         plt.fill_between(ds, (_avr+_std)/scl, (_avr-_std)/scl, alpha=0.4)
         if ifref:
             scl = np.max(sv) if ifnrm else 1.0
-            plt.plot(np.arange(len(sv))+1, sv/scl, 'r--')
+            plt.plot(np.arange(len(sv))+1, sv/scl, 'r--', label='Global PCA')
         plt.xlabel("SV Index")
         if ifnrm:
             plt.ylabel("Normalized SV")
         else:
             plt.ylabel("SV")
+        plt.legend()
 
         return (_avr, _std), f
 
