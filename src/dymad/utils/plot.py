@@ -1,3 +1,4 @@
+import imageio
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,6 +10,8 @@ LINESTY = ["-", "--", "-.", ":"]
 # Disable logging for matplotlib to avoid clutter in DEBUG mode
 plt_logger = logging.getLogger('matplotlib')
 plt_logger.setLevel(logging.INFO)
+
+logger = logging.getLogger(__name__)
 
 def plot_trajectory(
         traj, ts, model_name, us=None, labels=None, ifclose=True, prefix='.',
@@ -346,7 +349,7 @@ def plot_contour(
 
 def compare_contour(
         x_true, x_pred, x=None, y=None, vmin=None, vmax=None, levels=20,
-        figsize=(12, 4), colorbar=True, axes=None, label=None, grid=None,
+        figsize=(12, 4), colorbar=True, axes=None, label=None,
         mode='contourf', **kwargs):
     """
     Compare two contours with error contours.
@@ -361,3 +364,37 @@ def compare_contour(
         arrays, x=x, y=y, vmin=vmin, vmax=vmax, levels=levels,
         figsize=figsize, colorbar=colorbar, axes=axes, label=label, grid=(1,3),
         mode=mode, **kwargs)
+
+def animate(fig_func, filename, fps=10, n_frames=None, writer_args={}, fig_args={}):
+    """
+    Create an animation by calling a figure-generating function for each frame.
+    Args:
+        fig_func (function): Function that generates a figure for a given frame index.
+                             It should accept the frame index as its first argument,
+                             and return a matplotlib figure and axes.
+        filename (str): Output filename for the output file.
+        fps (int): Frames per second for the animation.
+        n_frames (int): Total number of frames in the animation.
+        writer_args (dict): Additional keyword arguments to pass to imageio.get_writer.
+        fig_args (dict): Additional keyword arguments to pass to fig_func.
+    """
+    writer = imageio.get_writer(filename, fps=fps, **writer_args)
+    for j in range(n_frames):
+        logger.info(f'Generating frame {j+1}/{n_frames} for {filename}')
+
+        fig, ax = fig_func(j, **fig_args)
+
+        # Render the figure to a numpy array
+        fig.canvas.draw()
+        w, h = fig.canvas.get_width_height()
+        buf = fig.canvas.buffer_rgba()
+        frame = np.frombuffer(buf, dtype=np.uint8).reshape(2*h, 2*w, 4)
+        writer.append_data(frame[:,:,:3])
+
+        # Removing existing objects otherwise they accumulate in canvas.draw
+        for _a in ax.flatten():
+            for _c in _a.collections:
+                _c.remove()
+        plt.close(fig)
+    writer.close()
+    logger.info(f'Animation saved to {filename}')

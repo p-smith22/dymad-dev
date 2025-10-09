@@ -359,4 +359,4 @@ Lastly, to ease the construction of modeling and analysis pipelines, we provide 
    * -
      - |:white_check_mark:|
      - |:white_check_mark:|
-     - |:o:|
+     - |:white_check_mark:|
