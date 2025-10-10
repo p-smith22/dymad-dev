@@ -1,6 +1,6 @@
 import numpy as np
 
-from dymad.transform import Compose, DelayEmbedder, Identity, make_transform, Scaler, SVD
+from dymad.transform import AddOne, Compose, DelayEmbedder, Identity, make_transform, Scaler, SVD
 
 def check_data(out, ref, label=''):
     for _s, _t in zip(out, ref):
@@ -30,6 +30,15 @@ Xn = np.array([
     [1.33, 3.5],
     [1.34, 4.6],
     [1.35, 5.7]])
+
+def test_addone():
+    addo = AddOne()
+    Xt = addo.transform(Xs)
+    Xr = [np.concatenate([x, np.ones((len(x), 1))], axis=-1) for x in Xs]
+    check_data(Xt, Xr, label='AddOne')
+
+    Xi = addo.inverse_transform(Xt)
+    check_data(Xi, Xs, label='Inverse AddOne')
 
 def test_identity():
     iden = Identity()

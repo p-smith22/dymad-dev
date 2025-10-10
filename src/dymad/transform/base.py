@@ -106,6 +106,49 @@ class Transform(ABC):
         """Load the state of the transform from a dictionary."""
         pass
 
+class AddOne(Transform):
+    """A class that adds one to the data."""
+    def __str__(self):
+        return "add_one"
+
+    def fit(self, X: Array) -> None:
+        """"""
+        self._inp_dim = X[0].shape[-1]
+        self._out_dim = self._inp_dim + 1
+
+    def transform(self, X: Array) -> Array:
+        """"""
+        res = []
+        for x in X:
+            shape = x.shape[:-1] + (1,)
+            res.append(np.concatenate([x, np.ones(shape)], axis=-1))
+        return res
+
+    def inverse_transform(self, X: Array) -> Array:
+        """"""
+        return [x[..., :-1] for x in X]
+
+    def get_forward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        return np.eye(self._out_dim, self._inp_dim)
+
+    def get_backward_modes(self, ref=None, **kwargs) -> np.ndarray:
+        """"""
+        return np.eye(self._out_dim, self._inp_dim)
+
+    def state_dict(self) -> dict[str, Any]:
+        """"""
+        return {
+            "inp": self._inp_dim,
+            "out": self._out_dim,
+            }
+
+    def load_state_dict(self, d) -> None:
+        """"""
+        logger.info(f"Identity: Loading parameters from checkpoint :{d}")
+        self._inp_dim = d["inp"]
+        self._out_dim = d["out"]
+
 class Autoencoder(Transform):
     """
     A class for data reduction by autoencoder.

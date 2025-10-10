@@ -2,7 +2,7 @@ import logging
 import numpy as np
 from typing import Any, Dict, List, Union
 
-from dymad.transform.base import DelayEmbedder, Identity, Lift, Scaler, SVD, Transform
+from dymad.transform.base import AddOne, DelayEmbedder, Identity, Lift, Scaler, SVD, Transform
 from dymad.transform.ndr import DiffMap, DiffMapVB, Isomap
 
 Array = List[np.ndarray]
@@ -150,6 +150,7 @@ class Compose(Transform):
         self._out_dim = d["out"]
 
 _TRN_MAP = {
+    str(AddOne()):        AddOne,
     str(Compose()):       Compose,
     str(DelayEmbedder()): DelayEmbedder,
     str(DiffMap()):       DiffMap,
