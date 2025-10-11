@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.neighbors import KDTree
 
-from dymad.numerics import DimensionEstimator, Manifold, ManifoldAnalytical, \
+from dymad.numerics import central_diff, DimensionEstimator, Manifold, ManifoldAnalytical, \
     tangent_1circle, tangent_2torus
 
 a, b = 1.0, 2.0
@@ -107,20 +107,29 @@ def test_tan_t2():
     assert np.max(dif) < 0.003, "GMLS T=4 estimate"
 
 def run_fit_t2():
-    dat = dat_t2[:500]
-    tar = dat_t2[500:1000]
+    dat = dat_t2[:800]
+    tar = dat_t2[800:1000]
     Ytrn = np.linalg.norm(np.sin(dat), axis=1)
     Ytst = np.linalg.norm(np.sin(tar), axis=1)
     man = Manifold(dat, d=2, g=4)
     man.precompute()
-    Yprd = man.gmls(tar, Ytrn)
+    Yprd, tmp = man.gmls(tar, Ytrn, ret_der=True)
+    Yder = tmp[:20].squeeze()
 
-    return Ytst, Yprd
+    fit = lambda x: man.gmls(x, Ytrn, ret_der=False)
+    Ydfd = [central_diff(fit, tar[i]) for i in range(20)]
+    Ydfd = np.array(Ydfd).squeeze()
+
+    return Ytst, Yprd, Yder, Ydfd
 
 def test_fit_t2():
-    Ytst, Yprd = run_fit_t2()
+    Ytst, Yprd, Yder, Ydfd = run_fit_t2()
+
     err = np.linalg.norm(Ytst-Yprd)/np.linalg.norm(Ytst)
-    assert err < 0.03, "GMLS fit error"
+    assert err < 0.02, "GMLS fit error"
+
+    err = np.linalg.norm(Yder-Ydfd)
+    assert err < 0.2, "GMLS fit derivative error"
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
@@ -181,7 +190,7 @@ if __name__ == "__main__":
         plt.semilogy(dif, 'b.')
 
     if iffit:
-        Ytst, Yprd = run_fit_t2()
+        Ytst, Yprd, Yder, Ydfd = run_fit_t2()
 
         f = plt.figure()
         plt.plot(Ytst, 'bo', markerfacecolor='none')

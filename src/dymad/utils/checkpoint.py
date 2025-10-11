@@ -2,11 +2,13 @@ import logging
 import numpy as np
 import os
 import torch
+from typing import Callable, Dict, List, Optional, Union, Tuple, Type
 
 # Below avoids looped imports
 from dymad.data.data import DynDataImpl as DynData
 from dymad.data.data import DynGeoDataImpl as DynGeoData
-from dymad.transform import make_transform
+from dymad.data.trajectory_manager import TrajectoryManager
+from dymad.transform import Autoencoder, make_transform
 from dymad.utils.misc import load_config
 
 logger = logging.getLogger(__name__)
@@ -192,3 +194,105 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
                 return _proc_prd(pred)
 
     return model, predict_fn
+
+
+class DataInterface:
+    """
+    Interface for data transforms, possibly with learned autoencoders.
+
+    It loads the model (if available) and data, sets up the necessary transformations,
+    and provides methods to encode, decode, and apply observables.
+
+    Cases:
+
+        - [Priority] checkpoint_path is given: Load the data transforms and model from the checkpoint.
+          May contain autoencoders.
+        - [Secondary] config_path and/or config_mod is given: Instantiate the data transforms from the config.
+          No model (i.e., autoencoders) in this case.
+    """
+    def __init__(self,
+                 model_class: Union[Type[torch.nn.Module], None] = None,
+                 checkpoint_path: Union[str, None] = None,
+                 config_path: Union[str, None] = None,
+                 config_mod: Optional[dict] = None,
+                 device: Optional[torch.device] = None):
+        self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        metadata, self.has_model = self._init_metadata(checkpoint_path, config_path, config_mod)
+        self._setup_data(metadata)
+
+        if self.has_model:
+            self.model, _ = load_model(model_class, checkpoint_path)
+            encoder = lambda x: self.model.encoder(DynData(x, None))
+            decoder = lambda z: self.model.decoder(z, None)
+            enc = Autoencoder(self.model, encoder, decoder)
+            self._trans_x.append(enc)
+
+        self.NT = self._trans_x.NT
+
+    def _init_metadata(self, checkpoint_path, config_path, config_mod) -> Tuple[Dict, bool]:
+        """Initialize metadata from config or checkpoint."""
+        if checkpoint_path is not None:
+            assert os.path.exists(checkpoint_path), "Checkpoint path does not exist."
+            return torch.load(checkpoint_path, weights_only=False)['metadata'], True
+        _config = load_config(config_path, config_mod)
+        return {'config': _config}, False
+
+    def _setup_data(self, metadata) -> None:
+        """Setup data loaders and datasets.
+
+        Striped from TrainerBase.
+        """
+        tm = TrajectoryManager(metadata, device=self.device)
+        _dataloaders, _, _ = tm.process_all()
+
+        # Turn off shuffling to ensure fixed order of samples
+        self.train_loader = torch.utils.data.DataLoader(
+            _dataloaders[0].dataset, batch_size=_dataloaders[0].batch_size, shuffle=False, collate_fn=DynData.collate)
+        self.validation_loader = torch.utils.data.DataLoader(
+            _dataloaders[1].dataset, batch_size=_dataloaders[1].batch_size, shuffle=False, collate_fn=DynData.collate)
+        self.test_loader = torch.utils.data.DataLoader(
+            _dataloaders[2].dataset, batch_size=_dataloaders[2].batch_size, shuffle=False, collate_fn=DynData.collate)
+
+        self.dtype = tm.dtype
+        self.t = torch.tensor(tm.t[0])
+
+        self._trans_x = tm._data_transform_x
+        self._trans_u = tm._data_transform_u
+
+    def encode(self, X: np.ndarray, rng: Optional[List | None] = None) -> np.ndarray:
+        """
+        Encode new trajectory data to the observer space.
+        """
+        _Z = self._trans_x.transform([np.atleast_2d(X)], rng)[0]
+        return _Z.squeeze()
+
+    def decode(self, X: np.ndarray, rng: Optional[List | None] = None) -> np.ndarray:
+        """
+        Decode trajectory data from the observer space.
+        """
+        _Z = self._trans_x.inverse_transform([np.atleast_2d(X)], rng)[0]
+        return _Z.squeeze()
+
+    def apply_obs(self, fobs: Callable) -> np.ndarray:
+        """
+        Apply a generic observable to the raw data.
+
+        Args:
+            fobs (Callable): Observable function. It should accept a 2D array input with each row as one step.
+                             The output should be a 1D array, whose ith entry corresponds to the ith step.
+        """
+        F = []
+        for batch in self.train_loader:
+            B = batch.x.cpu().numpy()[..., :-1, :]        # This is already transformed
+            B = B.reshape(-1, B.shape[-1])
+            end = self.NT-1 if self.has_model else self.NT
+            B = self._trans_x.inverse_transform([B], [0, end])[0]   # A hack to get back to the original space
+            F.append(fobs(B))
+        return np.hstack(F)
+
+    def get_forward_modes(self, ref=None, rng: Union[List, None] = None, **kwargs) -> np.ndarray:
+        return self._trans_x.get_forward_modes(ref, rng, **kwargs)
+
+    def get_backward_modes(self, ref=None, rng: Union[List, None] = None, **kwargs) -> np.ndarray:
+        return self._trans_x.get_backward_modes(ref, rng, **kwargs)

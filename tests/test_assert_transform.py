@@ -1,6 +1,6 @@
 import numpy as np
 
-from dymad.transform import Compose, DelayEmbedder, Identity, make_transform, Scaler
+from dymad.transform import AddOne, Compose, DelayEmbedder, Identity, make_transform, Scaler, SVD
 
 def check_data(out, ref, label=''):
     for _s, _t in zip(out, ref):
@@ -30,6 +30,15 @@ Xn = np.array([
     [1.33, 3.5],
     [1.34, 4.6],
     [1.35, 5.7]])
+
+def test_addone():
+    addo = AddOne()
+    Xt = addo.transform(Xs)
+    Xr = [np.concatenate([x, np.ones((len(x), 1))], axis=-1) for x in Xs]
+    check_data(Xt, Xr, label='AddOne')
+
+    Xi = addo.inverse_transform(Xt)
+    check_data(Xi, Xs, label='Inverse AddOne')
 
 def test_identity():
     iden = Identity()
@@ -64,6 +73,34 @@ def test_delay():
 
     Xi = dely.inverse_transform([Xt])[0]
     check_data(Xi, Xn, label='Inverse Delay')
+
+def test_svd():
+    svd = SVD(order=2, ifcen=True)
+    svd.fit(Xs)
+    Xt = svd.transform([Xn])[0]
+
+    tmp = np.vstack(Xs)
+    avr = np.mean(tmp, axis=0)
+    tmp = tmp - avr
+    _, _, Vh = np.linalg.svd(tmp, full_matrices=False)
+    Xr = (Xn - avr).dot(Vh.T)
+    check_data(Xt, Xr, label='SVD')
+
+    Xi = svd.inverse_transform([Xt])[0]
+    check_data(Xi, Xn, label='Inverse SVD')
+
+    # ----------
+    # Loading and reloading
+    dct = svd.state_dict()
+
+    reld = SVD()
+    reld.load_state_dict(dct)
+
+    Xt = reld.transform([Xn])[0]
+    check_data(Xt, Xr, label='SVD reload')
+
+    Xi = reld.inverse_transform([Xt])[0]
+    check_data(Xi, Xn, label='Inverse SVD reload')
 
 def test_compose():
     # ----------
@@ -109,3 +146,32 @@ def test_compose():
 
     Xi = reld.inverse_transform([Xt])[0]
     check_data(Xi, Xn, label='Inverse Compose reload')
+
+def test_compose_rng():
+    mktr = make_transform([
+        {'type': 'scaler', 'mode': '01'},
+        {'type': 'delay', 'delay': 2}
+    ])
+    mktr.fit(Xs)
+
+    # Range 0-1
+    Xt = mktr.transform([Xn], rng=[0, 1])[0]
+
+    tmp = np.vstack(Xs)
+    mx, mn = np.max(tmp, axis=0), np.min(tmp, axis=0)
+    Xr = (Xn - mn) / (mx - mn)
+    check_data(Xt, Xr, label='Compose rng 0-1')
+
+    Xi = mktr.inverse_transform([Xt], rng=[0, 1])[0]
+    check_data(Xi, Xn, label='Inverse Compose rng 0-1')
+
+    # Range 1-2
+    Xt = mktr.transform([Xn], rng=[1, 2])[0]
+
+    Xr = np.vstack([
+        Xn[:3].reshape(1, -1),
+        Xn[1:4].reshape(1, -1)])
+    check_data(Xt, Xr, label='Compose rng 1-2')
+
+    Xi = mktr.inverse_transform([Xt], rng=[1, 2])[0]
+    check_data(Xi, Xn, label='Inverse Compose rng 1-2')

@@ -15,3 +15,6 @@ Examples
    examples/kernel_s1/main
    examples/sa_lco/part1
    examples/sa_lco/part2
+   examples/vortex/part1
+   examples/vortex/part2
+   examples/vortex/part3

@@ -4,13 +4,6 @@ data:
   n_steps: 140
   double_precision: true
 
-transform_x:
-  - type: "svd"
-    ifcen: true
-    order: 12
-  - type: "scaler"
-    mode: "std"
-
 split:
   train_frac: 1
 

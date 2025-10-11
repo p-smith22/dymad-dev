@@ -162,16 +162,17 @@ class DimensionEstimator:
         scl = np.max(_avr) if ifnrm else 1.0
         ds = np.arange(len(_avr))+1
         f = plt.figure()
-        plt.plot(ds, _avr/scl)
+        plt.plot(ds, _avr/scl, label='Local PCA mean')
         plt.fill_between(ds, (_avr+_std)/scl, (_avr-_std)/scl, alpha=0.4)
         if ifref:
             scl = np.max(sv) if ifnrm else 1.0
-            plt.plot(np.arange(len(sv))+1, sv/scl, 'r--')
+            plt.plot(np.arange(len(sv))+1, sv/scl, 'r--', label='Global PCA')
         plt.xlabel("SV Index")
         if ifnrm:
             plt.ylabel("Normalized SV")
         else:
             plt.ylabel("SV")
+        plt.legend()
 
         return (_avr, _std), f
 
@@ -215,6 +216,10 @@ class Manifold:
 
         logger.info(f"Manifold info: {self._Ndat} points of {self._Ndim}-dim, intrinsic {self._Nman}-dim")
 
+    def _tree_query(self, x):
+        _, _i = self._tree.query(x, k=self._Nknn)
+        return _i
+
     def precompute(self):
         logger.info("  Precomputing")
         if self._ifprecomp:
@@ -229,7 +234,7 @@ class Manifold:
                 rems = list(range(1,self._Ndat))
                 curr = 0
                 while len(rems) > 0:
-                    _, _i = self._tree.query(self._data[curr], k=self._Nknn)
+                    _i = self._tree_query(self._data[curr])
                     _T = self._T[curr]
                     for _j in _i:
                         if _j in rems:
@@ -244,15 +249,26 @@ class Manifold:
         self._ifprecomp = True
         logger.info("  Done")
 
-    def gmls(self, x, Y):
-        _, _i = self._tree.query(x, k=self._Nknn)
+    def gmls(self, x, Y, ret_der=False):
+        # y = g(T^T (x-X))
+        #
+        # The derivative is approximate, as x impacts the tangent space estimation,
+        # but only the gradients on polynomial are included
+        #
+        # dy = dg/dd * T^T
+        _i = self._tree_query(np.atleast_2d(x))
         _T, _V = self._estimate_tangent(x, ret_V=True)
         _B = np.matmul(_V, np.swapaxes(_T, -2, -1))
         _P = self._poly_eval(self._fpsi, _B)
         _C = np.matmul(np.linalg.pinv(_P), np.atleast_3d(Y[_i]))
-        _tmp = self._fpsi.fit_transform(np.zeros((1,self._Nman)))
-        _r = np.matmul(_tmp, _C)
-        return _r.squeeze()
+        _r = _C[..., 0, :].squeeze()
+        if ret_der:
+            _tmp = _C[..., 1:self._Nman+1, :]
+            _rder = np.matmul(np.swapaxes(_tmp, -2, -1), _T)
+            if _rder.ndim == 3 and _rder.shape[0] == 1:
+                _rder = _rder[0]
+            return _r, _rder
+        return _r
 
     def _poly_eval(self, f, B):
         # PolynomialFeatures only supports 2D input
@@ -272,7 +288,7 @@ class Manifold:
         return _n.squeeze()
 
     def _estimate_tangent_1(self, x, ret_V=False):
-        _, _i = self._tree.query(x, k=self._Nknn)
+        _i = self._tree_query(x)
         _V = self._data[_i] - x[..., None, :]
         _, _, _Vh = np.linalg.svd(_V, full_matrices=False)
         _T = _Vh.conj()[..., :self._Nman, :]
@@ -341,6 +357,30 @@ class Manifold:
         iforit = t["iforit"].item()
         extT = t["extT"].detach().cpu().numpy() if t["extT"] is not None else None
         return cls(data, d, K, g, T, iforit, extT)
+
+class ManifoldAltTree(Manifold):
+    """
+    The only difference from Manifold is that a KDTree on a different set of points is used
+    to find the kNN points for GMLS.
+
+    Specifically, instead of finding kNN points of x from the original data X,
+    we first transform x to z using a given transform function, and then find
+    the kNN points of z from a given set of points Z (with a KDTree built on Z).
+
+    The rest is still the same as Manifold.
+    """
+    def __init__(self, data, d, K=None, g=None, T=None, iforit=False, extT=None,
+                 tree_data=None, tree_transform=None):
+        super().__init__(data, d, K, g, T, iforit, extT)
+
+        _leaf = max(20, self._Nknn)
+        self._tree = sps.KDTree(tree_data, leafsize=_leaf)
+        self._ftree = tree_transform
+
+    def _tree_query(self, x):
+        z = self._ftree(x)
+        _, _i = self._tree.query(z, k=self._Nknn)
+        return _i
 
 class ManifoldAnalytical(Manifold):
     def __init__(self, data, d, K=None, g=None, fT=None):

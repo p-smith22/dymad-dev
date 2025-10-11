@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 from scipy.interpolate import UnivariateSpline
-from scipy.io import loadmat
 from scipy.special import erfinv
 
 from dymad.numerics import DM, DMF, VBDM

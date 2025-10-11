@@ -1,3 +1,4 @@
+import imageio
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,6 +10,8 @@ LINESTY = ["-", "--", "-.", ":"]
 # Disable logging for matplotlib to avoid clutter in DEBUG mode
 plt_logger = logging.getLogger('matplotlib')
 plt_logger.setLevel(logging.INFO)
+
+logger = logging.getLogger(__name__)
 
 def plot_trajectory(
         traj, ts, model_name, us=None, labels=None, ifclose=True, prefix='.',
@@ -265,3 +268,137 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
     ax[1].legend()
 
     return fig, ax
+
+def _get_contour_func(ax, mode):
+    if mode == 'contour':
+        contour_func = ax.contour
+    elif mode == 'contourf':
+        contour_func = ax.contourf
+    elif mode == 'tricontourf':
+        contour_func = ax.tricontourf
+    return contour_func
+
+def plot_contour(
+        arrays, x=None, y=None, vmin=None, vmax=None, levels=20,
+        figsize=(12, 4), colorbar=True, axes=None, label=None, grid=None,
+        mode='contourf', **kwargs):
+    """
+    Plot a grid of contour plots for a list of 2D arrays.
+
+    Parameters:
+        arrays (list of np.ndarray): List of 2D arrays to plot.
+        titles (list of str): Titles for each subplot.
+        x, y (np.ndarray): Optional meshgrid for axes.
+        vmin, vmax (float): Color limits.
+        levels (int or array): Contour levels.
+        figsize (tuple): Figure size.
+        colorbar (bool): Whether to add a colorbar.
+        axes: Existing figure/axes tuple.
+        label (list): Titles for each subplot.
+        grid (tuple): Grid layout (n_rows, n_cols).
+        mode (str): 'contour', 'contourf', or 'tricontourf'.
+        **kwargs: Additional arguments for contourf.
+
+    Returns:
+        fig, axes: Matplotlib figure and axes.
+    """
+    # Validate inputs
+    n = len(arrays)
+    if grid is None:
+        grid = (1, n)
+    assert grid[0]*grid[1] >= n, "Grid size too small for number of arrays"
+
+    if label is not None:
+        assert len(label) == n, "Number of labels must match number of arrays, if provided"
+
+    if axes is None:
+        fig, ax = plt.subplots(grid[0], grid[1], figsize=figsize, sharex=True, sharey=True)
+    else:
+        fig, ax = axes
+
+    assert mode in ['contour', 'contourf', 'tricontourf'], "Mode must be 'contour', 'contourf', or 'tricontourf'"
+    if mode == 'tricontourf':
+        assert x is not None and y is not None, "x and y must be provided for tricontourf"
+
+    # Prepare contour arguments
+    contour_args = {}
+    contour_args.update(**kwargs)
+    if isinstance(levels, int):
+        vmin = arrays.min() if vmin is None else vmin
+        vmax = arrays.max() if vmax is None else vmax
+        _lvls = np.linspace(vmin, vmax, levels)
+    elif isinstance(levels, (list, np.ndarray)):
+        _lvls = levels
+    else:
+        raise ValueError("Levels must be an integer or a list/array of levels")
+    contour_args = {'levels': _lvls}
+
+    # Plotting
+    ims = []
+    _ax = ax.flatten() if grid[0]*grid[1] > 1 else [ax]
+    for i, arr in enumerate(arrays):
+        _func = _get_contour_func(_ax[i], mode)
+        if x is not None and y is not None:
+            im = _func(x, y, arr, **contour_args)
+        else:
+            im = _func(arr, **contour_args)
+        ims.append(im)
+        if label:
+            _ax[i].set_title(label[i])
+    if colorbar:
+        fig.colorbar(ims[0], ax=ax, orientation='vertical', fraction=0.02, pad=0.04)
+
+    return fig, ax
+
+def compare_contour(
+        x_true, x_pred, x=None, y=None, vmin=None, vmax=None, levels=20,
+        figsize=(12, 4), colorbar=True, axes=None, label=None,
+        mode='contourf', **kwargs):
+    """
+    Compare two contours with error contours.
+    """
+    vmin = x_true.min() if vmin is None else vmin
+    vmax = x_true.max() if vmax is None else vmax
+    x_diff = x_true - x_pred
+    err    = np.linalg.norm(x_diff) / np.linalg.norm(x_true)
+    label  = ['Truth', 'Reconstructed', f'Error: {err*100:4.2f}%']
+    arrays = [x_true, x_pred, x_diff]
+    return plot_contour(
+        arrays, x=x, y=y, vmin=vmin, vmax=vmax, levels=levels,
+        figsize=figsize, colorbar=colorbar, axes=axes, label=label, grid=(1,3),
+        mode=mode, **kwargs)
+
+def animate(fig_func, filename, fps=10, n_frames=None, writer_args={}, fig_args={}):
+    """
+    Create an animation by calling a figure-generating function for each frame.
+
+    Args:
+        fig_func (function): Function that generates a figure for a given frame index.
+                             It should accept the frame index as its first argument,
+                             and return a matplotlib figure and axes.
+        filename (str): Output filename for the output file.
+        fps (int): Frames per second for the animation.
+        n_frames (int): Total number of frames in the animation.
+        writer_args (dict): Additional keyword arguments to pass to imageio.get_writer.
+        fig_args (dict): Additional keyword arguments to pass to fig_func.
+    """
+    writer = imageio.get_writer(filename, fps=fps, **writer_args)
+    for j in range(n_frames):
+        logger.info(f'Generating frame {j+1}/{n_frames} for {filename}')
+
+        fig, ax = fig_func(j, **fig_args)
+
+        # Render the figure to a numpy array
+        fig.canvas.draw()
+        w, h = fig.canvas.get_width_height()
+        buf = fig.canvas.buffer_rgba()
+        frame = np.frombuffer(buf, dtype=np.uint8).reshape(2*h, 2*w, 4)
+        writer.append_data(frame[:,:,:3])
+
+        # Removing existing objects otherwise they accumulate in canvas.draw
+        for _a in ax.flatten():
+            for _c in _a.collections:
+                _c.remove()
+        plt.close(fig)
+    writer.close()
+    logger.info(f'Animation saved to {filename}')

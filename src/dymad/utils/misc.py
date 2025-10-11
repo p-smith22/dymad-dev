@@ -1,9 +1,10 @@
 from datetime import datetime
 import logging
 import os
+import sys
 import yaml
 
-def setup_logging(config_path: str, mode: str = 'info', prefix='.') -> None:
+def setup_logging(config_path: str = '', mode: str = 'info', prefix='.') -> None:
     """
     Setup logging configuration based on the config file.
     Assuming the config file name is in the format '<case>.yaml'
@@ -14,19 +15,29 @@ def setup_logging(config_path: str, mode: str = 'info', prefix='.') -> None:
         prefix (str): Directory prefix for the log file. Default is '.' (current directory).
     """
     _l = logging.DEBUG if mode == 'debug' else logging.INFO
+    if config_path == '':
+        # If no config path is provided, log to stdout
+        logging.basicConfig(
+            stream=sys.stdout,
+            level=_l,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            force=True
+        )
+        return
     _t = str(datetime.now())
     _t = _t.split('.')[0].replace(' ', '-').replace(':', '-')
     if prefix != '.':
         os.makedirs(prefix, exist_ok=True)
     logging.basicConfig(
-        filename=f'{prefix}/{config_path.split(".")[0]}_{_t}.log',  
-        filemode='w',  
+        filename=f'{prefix}/{config_path.split(".")[0]}_{_t}.log',
+        filemode='w',
         level=_l,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         force=True
     )
     # Having force=True flushes and closes any existing handlers,
     # so no need to close them manually here.
+    return
 
 def load_config(config_path: str, config_mod: dict = None) -> dict:
     """

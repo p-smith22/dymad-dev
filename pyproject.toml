@@ -10,14 +10,15 @@ authors         = [{name = "APUS Lab @ PSU"}]
 readme          = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "imageio>=2.36.0",
   "numpy>=2.0",
   "matplotlib>=3.9",
+  "pyyaml>=6.0",
+  "scikit-learn>=1.5.2",
   "scipy>=1.14",
   "torch>=2.5",
   "torchdiffeq>=0.2.5",
-  "torch-geometric>=2.6",
-  "pyyaml>=6.0",
-  "scikit-learn>=1.5.2"
+  "torch-geometric>=2.6"
 ]
 
 [project.optional-dependencies]

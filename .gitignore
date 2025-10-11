@@ -16,3 +16,4 @@ tests/results/*.npz
 tests/*.npz
 .ipynb_checkpoints
 *.MAT
+*.mp4

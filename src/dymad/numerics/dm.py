@@ -30,7 +30,7 @@ def epsOpt(D, F, ret_val=False):
     return _eps
 
 def compDist(a, b, K):
-    d2 = cdist(a, b, metric='sqeuclidean')
+    d2 = cdist(np.atleast_2d(a), np.atleast_2d(b), metric='sqeuclidean')
     if K is None:
         return d2
     idx = np.argsort(d2, axis=1)[:, :K]
@@ -129,25 +129,16 @@ class DMF:
         # Normalize eigenvectors
         peq = self._qest / self._Dinv1**2
         self._peq = peq / np.mean(peq / self._qest)
-        self._psi = np.zeros_like(psi)
-        for i in range(self._Npsi):
-            _factor = np.sqrt(np.mean(psi[:, i] ** 2 * (self._peq / self._qest)))
-            self._psi[:, i] = psi[:, i] / _factor
+        self._norm_factors = np.sqrt(np.mean(psi**2 * (self._peq / self._qest).reshape(-1, 1), axis=0))
+        self._psi = psi / self._norm_factors
 
     def transform(self, x):
         """
         Nystrom extension for diffusion maps.
         """
-        W, qest, _, Dinv1 = self._kernel(self._x, x)
-
+        W, _, _, Dinv1 = self._kernel(self._x, x)
         eigvecs = Dinv1.reshape(-1,1) * (W @ self._psi_raw) / self._lmbd_raw
-        eigvecs_normalized = np.zeros_like(eigvecs)
-        peq = qest / Dinv1**2
-        peq = peq / np.mean(peq / qest)
-        for i in range(self._Npsi):
-            norm_factor = np.sqrt(np.mean(eigvecs[:, i] ** 2 * (peq / qest)))
-            eigvecs_normalized[:, i] = eigvecs[:, i] / norm_factor
-
+        eigvecs_normalized = eigvecs / self._norm_factors
         return eigvecs_normalized
 
     def fit_transform(self, x):
@@ -178,7 +169,8 @@ class DMF:
             "lambda": self._lambda,
             "peq": self._peq,
             "psi_raw": self._psi_raw,
-            "psi": self._psi
+            "psi": self._psi,
+            "norm_factors": self._norm_factors
         }
 
     def load_state_dict(self, d: Dict[str, any]) -> None:
@@ -195,6 +187,7 @@ class DMF:
         self._peq = d["peq"]
         self._psi_raw = d["psi_raw"]
         self._psi = d["psi"]
+        self._norm_factors = d["norm_factors"]
 
 class DM:
     """
@@ -257,10 +250,8 @@ class DM:
         # Normalize eigenvectors
         peq = self._qest * D
         self._peq = peq / np.mean(peq / self._qest)
-        self._psi = np.zeros_like(psi)
-        for i in range(self._Npsi):
-            _factor = np.sqrt(np.mean(psi[:, i] ** 2 * (self._peq / self._qest)))
-            self._psi[:, i] = psi[:, i] / _factor
+        self._norm_factors = np.sqrt(np.mean(psi**2 * (self._peq / self._qest).reshape(-1, 1), axis=0))
+        self._psi = psi / self._norm_factors
 
     def transform(self, x, ifsym=False):
         """
@@ -278,12 +269,7 @@ class DM:
         D = np.array(W.sum(axis=1)).flatten()
 
         eigvecs = (spdiags(1/D, 0, M, M) @ W @ self._Dinv1) * self._psi_raw/self._lmbd_raw
-        eigvecs_normalized = np.zeros_like(eigvecs)
-        peq = qest * D
-        peq = peq / np.mean(peq / qest)
-        for i in range(self._Npsi):
-            norm_factor = np.sqrt(np.mean(eigvecs[:, i] ** 2 * (peq / qest)))
-            eigvecs_normalized[:, i] = eigvecs[:, i] / norm_factor
+        eigvecs_normalized = eigvecs / self._norm_factors
 
         return eigvecs_normalized
 
@@ -306,7 +292,8 @@ class DM:
             "peq": self._peq,
             "psi_raw": self._psi_raw,
             "psi": self._psi,
-            "tree": self._tree
+            "tree": self._tree,
+            "norm_factors": self._norm_factors
         }
 
     def load_state_dict(self, d: Dict[str, any]) -> None:
@@ -324,6 +311,7 @@ class DM:
         self._psi_raw = d["psi_raw"]
         self._psi = d["psi"]
         self._tree = d["tree"]
+        self._norm_factors = d["norm_factors"]
 
 class VBDM:
     """
