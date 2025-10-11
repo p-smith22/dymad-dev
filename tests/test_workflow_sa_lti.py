@@ -135,6 +135,9 @@ def sa_case(idx, path):
         return _x1+_x2
     _s.estimate_measure(func_obs, 6, 0.1, thetas=5)
 
+    _s.eval_eigfunc_jac()
+    _s.eval_eigmode_jac()
+
 @pytest.mark.parametrize("idx", range(len(cfgs)))
 def test_sa(sa_lti_data, sa_lti_test, env_setup, idx):
     train_case(idx, sa_lti_data, env_setup)
