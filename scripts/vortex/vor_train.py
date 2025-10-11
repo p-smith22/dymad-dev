@@ -16,7 +16,8 @@ def gen_mdl_kb(e, l, k):
         "latent_dimension" : l,
         "koopman_dimension" : k,
         "activation" : "prelu",
-        "weight_init" : "xavier_uniform"}
+        "weight_init" : "xavier_uniform",
+        "predictor_type" : "exp"}
 
 mdl_kl = {
     "name" : 'ker_model',
@@ -34,14 +35,14 @@ mdl_kl = {
     }
 
 trn_nd = {
-    "n_epochs": 500,
+    "n_epochs": 200,
     "save_interval": 50,
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
     "reconstruction_weight": 1.0,
     "dynamics_weight": 1.0,
-    "sweep_lengths": [2, 3, 4, 6, 8],
+    "sweep_lengths": [2],
     "sweep_epoch_step": 100,
     "chop_mode": "unfold",
     "chop_step": 1,
@@ -55,9 +56,11 @@ trn_nd = {
         "times": 1}
     }
 trn_ae = copy.deepcopy(trn_nd)
-trn_ae["n_epochs"] = 3000
-trn_ae["ls_update"]["interval"] = 100
-trn_ae["ls_update"]["times"] = 4
+trn_ae["n_epochs"] = 2000
+trn_ae["sweep_lengths"] = [2, 10, 50]
+trn_ae["sweep_epoch_step"] = 500
+trn_ae["ls_update"]["interval"] = 500
+trn_ae["ls_update"]["times"] = 2
 trn_ae["ls_update"]["reset"] = False
 
 trn_ln = {
@@ -75,6 +78,9 @@ trn_svd = {
     "ifcen": True,
     "order": 12
 }
+trn_add = {
+    "type" : "add_one"
+}
 trn_dmf = {
     "type" : "dm",
     "edim": 3,
@@ -88,18 +94,17 @@ trn_dmf = {
 config_path = 'vor_model.yaml'
 
 cfgs = [
-    ('kbf_node', KBF,  NODETrainer,     {"model": gen_mdl_kb(0,0,12), "training" : trn_nd}),
-    ('dkbf_ae',  DKBF, NODETrainer,     {"model": gen_mdl_kb(3,64,3), "training" : trn_nd}),
-    ('dkbf_ln',  DKBF, LinearTrainer,   {"model": gen_mdl_kb(0,0,12), "training" : trn_ln}),
+    ('kbf_node', KBF,  NODETrainer,     {"model": gen_mdl_kb(0,0,13), "training" : trn_nd, "transform_x" : [trn_svd, trn_add]}),
+    ('dkbf_ln',  DKBF, LinearTrainer,   {"model": gen_mdl_kb(0,0,13), "training" : trn_ln, "transform_x" : [trn_svd, trn_add]}),
+    ('dkbf_ae',  DKBF, NODETrainer,     {"model": gen_mdl_kb(3,64,3), "training" : trn_ae, "transform_x" : [trn_svd]}),
     ('dkbf_dm',  DKBF, LinearTrainer,   {"model": gen_mdl_kb(0,0,3),  "training" : trn_ln, "transform_x" : [trn_svd, trn_dmf]}),
     ('dks_ln',  DKMSK, LinearTrainer,   {"model": mdl_kl, "training" : trn_rw}),
     ]
 
 IDX = [0, 1, 2, 3, 4]
-# IDX = [3]
 
-iftrn = 0
-ifplt = 0
+iftrn = 1
+ifplt = 1
 ifprd = 1
 
 if iftrn:

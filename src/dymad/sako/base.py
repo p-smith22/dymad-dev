@@ -6,12 +6,19 @@ from typing import Optional, Tuple, Type
 
 from dymad.data import DynData
 from dymad.models import KBF, DKBF
-from dymad.numerics import check_orthogonality, complex_grid, complex_map, disc2cont, eig_low_rank, scaled_eig, truncate_sequence
+from dymad.numerics import check_orthogonality, complex_grid, complex_map, disc2cont, eig_low_rank, mode_split, scaled_eig, truncate_sequence
 from dymad.sako.rals import estimate_pseudospectrum, RALowRank
 from dymad.sako.sako import SAKO
-from dymad.utils import DataInterface
+from dymad.utils import DataInterface, plot_contour
 
 logger = logging.getLogger(__name__)
+
+LMAP = {
+    'r': 'Real',
+    'i': 'Imag',
+    'a': 'Amp.',
+    'p': 'Phase'
+}
 
 def filter_spectrum(sako, eigs, order='full', remove_one=True):
     """
@@ -161,12 +168,6 @@ class SpectralAnalysis:
             return _xt, _pt.squeeze()
         return _xt
 
-    def mapto_obs(self, X):
-        """
-        Map new trajectory data to the observer space.
-        """
-        return self._ctx.encode(X)
-
     def estimate_measure(self, fobs, order, eps, thetas = 101):
         """
         Estimate the measure of the observable along the unit circle.
@@ -174,26 +175,31 @@ class SpectralAnalysis:
         gobs = self._ctx.apply_obs(fobs).reshape(-1)
         return self._sako.estimate_measure(gobs, order, eps, thetas)
 
-    def eval_eigfun(self, X, idx):
+    def eval_eigfun(self, X, idx, rng=None):
         """
-        Evaluate the eigenfunctions at given locations
-        """
-        _P = self.mapto_obs(X)
-        return _P.dot(self._vl[:,idx])
-
-    def eval_eigfun_em(self, X, idx, rng):
-        """
-        Evaluate the eigenfunctions at given locations in embedded space
+        Evaluate the eigenfunctions at given locations, possibly in embedded space
         """
         _P = self._ctx.encode(X, rng)
         return _P.dot(self._vl[:,idx])
 
-    def eval_eigfun_par(self, par, idx, func):
+    def eval_eigfun_par(self, par, idx, func, rng=None):
         """
         Evaluate the eigenfunctions at given parametrization
         """
-        _P = self.mapto_obs(func(par))
+        _P = self._ctx.encode(func(par), rng)
         return _P.dot(self._vl[:,idx])
+
+    def eval_eigfunc_jac(self, ref=None, rng=None, **kwargs) -> np.ndarray:
+        if ref is None:
+            ref = np.zeros((1, self._ctx._Ninp))
+        _mode = self._ctx.get_forward_modes(ref, rng, **kwargs)
+        return self._vl.T.dot(_mode)
+
+    def eval_eigmode_jac(self, ref=None, rng=None, **kwargs) -> np.ndarray:
+        if ref is None:
+            ref = np.zeros((1, self._ctx._Nout))
+        _mode = self._ctx.get_backward_modes(ref, rng, **kwargs)
+        return self._vr.T.dot(_mode)
 
     def set_conj_map(self, J):
         """
@@ -424,7 +430,7 @@ class SpectralAnalysis:
             _refs, _errs = None, None
         else:
             if ifobs:
-                _refs = self.mapto_obs(ref).real
+                _refs = self._ctx.encode(ref).real
             else:
                 _refs = np.array(ref)
             if _refs.ndim == 2:
@@ -471,11 +477,11 @@ class SpectralAnalysis:
         if space == 'full':
             _fun = self.eval_eigfun(_tmp, _idx)
         elif callable(space):
-            _fun = self.eval_eigfun_par(_tmp, _idx, space)
+            _fun = self.eval_eigfun_par(_tmp, _idx, func=space)
         else:
             # For higher dimensional states, use embedded space
             # `space` should specify the sequence of encoder to use
-            _fun = self.eval_eigfun_em(_tmp, _idx, space)
+            _fun = self.eval_eigfun(_tmp, _idx, rng=space)
 
         # Plotting
         _func = complex_map[mode]
@@ -492,6 +498,53 @@ class SpectralAnalysis:
             _ax[_i].set_title(f'{_j}: {np.angle(self._wc[_j]):3.2e} / {self._res[_j].real:3.2e}')
 
         return f, ax
+
+    def plot_eigjac_contour(self,
+                            ref=None, rng=None, eig='func',
+                            lam='ct', comp='ri', idx='all', shape=(),
+                            contour_args={}, **kwargs):
+        assert len(shape) == 2, "Shape should be of length 2 for contour plotting"
+
+        if eig == 'func':
+            _modes = self.eval_eigfunc_jac(ref, rng, **kwargs)
+        elif eig == 'mode':
+            _modes = self.eval_eigmode_jac(self._ctx.encode(ref), rng, **kwargs)
+        else:
+            raise ValueError(f"Unknown eig {eig} for Jacobian plotting")
+
+        _w = self._wc if lam == 'ct' else self._wd
+        ls, ms = mode_split(_w, _modes, comp=comp)
+        if idx == 'all':
+            idx = np.arange(len(ls), dtype=int)
+        assert isinstance(idx, (list, np.ndarray)), "idx should be a list or array of integers"
+        ls, ms = ls[idx], ms[idx]
+
+        if comp == 'p':
+            vdx = [0]
+        else:
+            vdx = []
+            for _i, _c in enumerate(comp):
+                if _c != 'p':
+                    vdx.append(_i)
+        tmp = ms[:,vdx]
+        vmin, vmax = np.min(tmp), np.max(tmp)
+
+        labels = []
+        for _i, _idx in enumerate(idx):
+            tmp = []
+            for _j, _c in enumerate(comp):
+                if _j == 0:
+                    _prf = f'Mode {_idx}: '
+                else:
+                    _prf = ''
+                lbl = f"{_prf}{LMAP[_c]} / {ls[_i][_j]:3.2e}"
+                tmp.append(lbl)
+            labels += tmp
+
+        contour_args.update(label=labels, vmin=vmin, vmax=vmax)
+        f, ax = plot_contour(ms.reshape(len(labels), *shape), **contour_args)
+
+        return (f, ax), (ls, ms)
 
     def plot_vec_line(self, idx, which='func', modes=['angle'], ncols=1, figsize=(6,10)):
         """

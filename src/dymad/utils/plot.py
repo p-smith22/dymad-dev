@@ -321,14 +321,17 @@ def plot_contour(
         assert x is not None and y is not None, "x and y must be provided for tricontourf"
 
     # Prepare contour arguments
-    contour_args = {'levels': levels}
-    if levels is None or isinstance(levels, int):
-        if vmin is not None:
-            contour_args['vmin'] = vmin
-        if vmax is not None:
-            contour_args['vmax'] = vmax
-    # Else levels is an array, vmin/vmax are ignored
+    contour_args = {}
     contour_args.update(**kwargs)
+    if isinstance(levels, int):
+        vmin = arrays.min() if vmin is None else vmin
+        vmax = arrays.max() if vmax is None else vmax
+        _lvls = np.linspace(vmin, vmax, levels)
+    elif isinstance(levels, (list, np.ndarray)):
+        _lvls = levels
+    else:
+        raise ValueError("Levels must be an integer or a list/array of levels")
+    contour_args = {'levels': _lvls}
 
     # Plotting
     ims = []

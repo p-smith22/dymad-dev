@@ -370,6 +370,57 @@ def real_lowrank_from_eigpairs(
 
     return B, U_real, V_real
 
+def mode_split(
+    l: np.ndarray,
+    U: np.ndarray,
+    comp: str = 'ri',
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Split eigenvalues and modes according to the requested components.
+
+    Consider r pairs of eigenvalues and modes, modes in shape (r, n),
+    this function splits them as (r, k) and (r, k, n), where k is the number of
+    requested components.
+
+    For example, if comp='ri', then k=2, and the two components are the
+    real and imaginary parts of the eigenvalues and modes.
+
+    Args:
+        l:      (r,) eigenvalues
+        U:      (r, n) modes
+        comp:   'r' - real, 'i' - imag, 'a' - amplitude, 'p' - phase,
+                can be composed like 'ri', 'ap' etc.;
+                default is 'ri'.
+
+    Returns:
+        l_split: (r, k)
+        U_split: (r, k, n)
+    """
+    r = l.shape[0]
+    assert U.shape[0] == r, "Mismatch in number of modes"
+    n = U.shape[1]
+
+    assert all([c in 'riap' for c in comp]), "Invalid comp string"
+
+    l_split, U_split = [], []
+    for c in comp:
+        if c == 'r':
+            l_split.append(l.real.reshape(r, 1))
+            U_split.append(U.real.reshape(r, 1, n))
+        elif c == 'i':
+            l_split.append(l.imag.reshape(r, 1))
+            U_split.append(U.imag.reshape(r, 1, n))
+        elif c == 'a':
+            l_split.append(np.abs(l).reshape(r, 1))
+            U_split.append(np.abs(U).reshape(r, 1, n))
+        elif c == 'p':
+            l_split.append(np.angle(l).reshape(r, 1))
+            U_split.append(np.angle(U).reshape(r, 1, n))
+    l_split = np.hstack(l_split)
+    U_split = np.concatenate(U_split, axis=1)
+
+    return l_split, U_split
+
 def _phiS(U: torch.Tensor, V: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
     """
     Compute a batch of phi_1(s_i * S) where S = V^T U, using block matrix exponentials.

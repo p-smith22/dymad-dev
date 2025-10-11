@@ -94,4 +94,4 @@ def torch_jacobian(f, x, v=None, dtype=torch.float64):
             jac.append(jvp)
         jac = torch.stack(jac, dim=1)  # shape (output_dim, num_directions)
 
-    return jac.numpy()
+    return jac.detach().numpy()
