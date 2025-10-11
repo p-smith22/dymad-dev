@@ -1,5 +1,4 @@
 import logging
-from pyexpat import model
 import numpy as np
 import os
 import torch

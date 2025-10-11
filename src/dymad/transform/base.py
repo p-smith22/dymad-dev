@@ -145,7 +145,7 @@ class AddOne(Transform):
 
     def load_state_dict(self, d) -> None:
         """"""
-        logger.info(f"Identity: Loading parameters from checkpoint :{d}")
+        logger.info(f"AddOne: Loading parameters from checkpoint :{d}")
         self._inp_dim = d["inp"]
         self._out_dim = d["out"]
 
