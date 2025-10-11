@@ -371,6 +371,7 @@ def compare_contour(
 def animate(fig_func, filename, fps=10, n_frames=None, writer_args={}, fig_args={}):
     """
     Create an animation by calling a figure-generating function for each frame.
+
     Args:
         fig_func (function): Function that generates a figure for a given frame index.
                              It should accept the frame index as its first argument,

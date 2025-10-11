@@ -78,6 +78,10 @@ trn_svd = {
     "ifcen": True,
     "order": 12
 }
+trn_scl = {
+    "type" : "scaler",
+    "mode" : "std",
+}
 trn_add = {
     "type" : "add_one"
 }
@@ -98,7 +102,7 @@ cfgs = [
     ('dkbf_ln',  DKBF, LinearTrainer,   {"model": gen_mdl_kb(0,0,13), "training" : trn_ln, "transform_x" : [trn_svd, trn_add]}),
     ('dkbf_ae',  DKBF, NODETrainer,     {"model": gen_mdl_kb(3,64,3), "training" : trn_ae, "transform_x" : [trn_svd]}),
     ('dkbf_dm',  DKBF, LinearTrainer,   {"model": gen_mdl_kb(0,0,3),  "training" : trn_ln, "transform_x" : [trn_svd, trn_dmf]}),
-    ('dks_ln',  DKMSK, LinearTrainer,   {"model": mdl_kl, "training" : trn_rw}),
+    ('dks_ln',  DKMSK, LinearTrainer,   {"model": mdl_kl, "training" : trn_rw, "transform_x" : [trn_svd, trn_scl]}),
     ]
 
 IDX = [0, 1, 2, 3, 4]

@@ -88,7 +88,7 @@ if ifmod:
 
     if ifsvd:
         modes_s = di.get_backward_modes(ref=Xsvd[idx], rng=[0,1]).reshape(-1, Nx, Ny)
-        arrays = np.concatenate([ref, modes_s[:5]], axis=0)
+        arrays = np.concatenate([ref, 200*modes_s[:5]], axis=0)
         labels = [f'step {idx}'] + [f'mode {_i+1}' for _i in range(5)]
         f, ax = plot_contour(arrays,
             figsize=(12, 4), colorbar=True, label=labels, grid=(2, 3), mode='contourf')
@@ -109,9 +109,9 @@ if ifmod:
             _a.set_axis_off()
 
     if iffor:
-        arrays = np.concatenate([ref, modes_f], axis=0)
+        arrays = np.concatenate([ref, 40000*modes_f], axis=0)
         labels = [f'step {idx}'] + [f'mode {_i+1}' for _i in range(3)]
-        f, ax = plot_contour(arrays, vmin=-0.0001, vmax=0.0001,
+        f, ax = plot_contour(arrays, vmin=-4, vmax=4,
             figsize=(8, 4), colorbar=True, label=labels, grid=(2, 2), mode='contourf')
         for _a in ax.flatten():
             _a.set_axis_off()

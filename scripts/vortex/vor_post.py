@@ -32,10 +32,10 @@ sas = [sact, sand, saae, sadm]
 lbs = ['CT-ND', 'DT-LN', 'DT-AE', 'DT-DM']
 Nsa = len(sas)
 
-ifprd = 0
-ifeig = 0
-ifmod = 0
-ifani = 0
+ifprd = 1
+ifeig = 1
+ifmod = 1
+ifani = 1
 
 if ifprd:
     x0s = xs[0]
@@ -74,7 +74,7 @@ if ifeig:
 if ifmod:
     ## Jacobian of eigenfunctions
     ## i.e., modes mapping observables to Koopman space
-    for i in range(Nsa):
+    for i in range(2):
         (f, ax), _ = sas[i].plot_eigjac_contour(
             eig='mode', lam='dt', comp='riap', idx=[0,2,4,6,8], shape=(Nx, Ny),
             contour_args={"figsize":(12,8), "colorbar":True, "grid":(5,4), "mode":'contourf'})
@@ -83,19 +83,20 @@ if ifmod:
 
 if ifani:
     IDX = 2
+    eig = 'func'
 
     fig, ax = plt.subplots(nrows=3, ncols=5, figsize=(16,4))
-    def contour_fig(j):
+    def contour_fig(j, eig):
         colorbar = j == 0
         cs = ax[1,0].contourf(xs[j].reshape(Nx, Ny), vmin=-16, vmax=16, levels=20)
         ax[1,0].set_title(f'Step {j}')
         if colorbar:
             plt.colorbar(cs, ax=ax[1,0])
         _, _ = sas[IDX].plot_eigjac_contour(ref = xs[j],
-            eig='func', lam='dt', comp='ria', idx='all', shape=(Nx, Ny),
+            eig=eig, lam='dt', comp='ria', idx='all', shape=(Nx, Ny),
             contour_args={"axes":(fig,ax[:,1:4]), "levels":20, "colorbar":colorbar, "mode":'contourf'})
         _, _ = sas[IDX].plot_eigjac_contour(ref = xs[j],
-            eig='func', lam='dt', comp='p', idx='all', shape=(Nx, Ny),
+            eig=eig, lam='dt', comp='p', idx='all', shape=(Nx, Ny),
             contour_args={"axes":(fig,ax[:,4].reshape(-1,1)), "levels":20, "colorbar":colorbar, "mode":'contourf'})
         for _a in ax.flatten():
             _a.set_axis_off()
@@ -104,6 +105,6 @@ if ifani:
     # contour_fig(0)
 
     setup_logging()
-    animate(contour_fig, filename=f"vis_{lbs[IDX]}.mp4", fps=10, n_frames=len(t_grid))
+    animate(lambda i: contour_fig(i, eig), filename=f"vis_{lbs[IDX]}_{eig}.mp4", fps=10, n_frames=len(t_grid))
 
 plt.show()

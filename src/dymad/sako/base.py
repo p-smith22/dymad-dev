@@ -508,7 +508,10 @@ class SpectralAnalysis:
         if eig == 'func':
             _modes = self.eval_eigfunc_jac(ref, rng, **kwargs)
         elif eig == 'mode':
-            _modes = self.eval_eigmode_jac(self._ctx.encode(ref), rng, **kwargs)
+            _ref = None
+            if ref is not None:
+                _ref = self._ctx.encode(ref)
+            _modes = self.eval_eigmode_jac(_ref, rng, **kwargs)
         else:
             raise ValueError(f"Unknown eig {eig} for Jacobian plotting")
 
