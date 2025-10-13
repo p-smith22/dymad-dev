@@ -131,7 +131,8 @@ cfgs = [
     ('dkbf_ndls', DGKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dtls}),
     ('dkbf_ln',   DGKBF, LinearTrainer,   {"model": mdl_kb, "training" : trn_ln}),
     ('dkm_ln',    DGKM,  LinearTrainer,   {"model": mdl_km, "training" : trn_l2}),
-    ('dkmsk_ln',  DGKMSK,LinearTrainer,   {"model": mdl_km, "training" : trn_l2}),]
+    ('dkmsk_ln',  DGKMSK,LinearTrainer,   {"model": mdl_km, "training" : trn_l2}),
+    ]
 
 def train_case(idx, data, path):
     _, MDL, Trainer, opt = cfgs[idx]
