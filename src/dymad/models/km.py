@@ -2,12 +2,12 @@ import numpy as np
 import torch
 from typing import Dict, Union, Tuple
 
-from dymad.data import DynData, DynGeoData
-from dymad.models import ModelTempUCat, ModelTempUCatGraph
+from dymad.io import DynData
+from dymad.models import ModelTempUCat, ModelTempUCatGraph, \
+    predict_continuous, predict_continuous_fenc, predict_discrete, \
+    predict_graph_continuous, predict_graph_discrete
 from dymad.modules import make_krr
 from dymad.numerics import Manifold
-from dymad.utils import predict_continuous, predict_continuous_fenc, predict_discrete, \
-    predict_graph_continuous, predict_graph_discrete
 
 class KM(ModelTempUCat):
     """
@@ -236,7 +236,7 @@ class GKM(ModelTempUCatGraph):
         }
         self.dynamics_net = make_krr(**opts)
 
-    def _zu_cat_ctrl(self, z: torch.Tensor, w: DynGeoData) -> torch.Tensor:
+    def _zu_cat_ctrl(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """Concatenate state and control inputs."""
         u_reshaped = w.ug
         z_u = (z.unsqueeze(-1) * u_reshaped.unsqueeze(-2)).reshape(*z.shape[:-1], -1)
@@ -244,7 +244,7 @@ class GKM(ModelTempUCatGraph):
             return torch.cat([z, z_u, u_reshaped], dim=-1)
         return torch.cat([z, z_u], dim=-1)
 
-    def predict(self, x0: torch.Tensor, w: DynGeoData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
         return predict_graph_continuous(self, x0, ts, w.edge_index, us=w.u, method=method, order=self.input_order, **kwargs)
 
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -282,7 +282,7 @@ class DGKM(GKM):
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
         super().__init__(model_config, data_meta, dtype=dtype, device=device)
 
-    def predict(self, x0: torch.Tensor, w: DynGeoData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         return predict_graph_discrete(self, x0, ts, w.edge_index, us=w.u)
 
 class DGKMSK(GKM):
@@ -294,10 +294,10 @@ class DGKMSK(GKM):
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
         super().__init__(model_config, data_meta, dtype=dtype, device=device)
 
-    def dynamics(self, z: torch.Tensor, w: DynGeoData) -> torch.Tensor:
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return z + self.dynamics_net(self._zu_cat(z, w))
 
-    def predict(self, x0: torch.Tensor, w: DynGeoData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         return predict_graph_discrete(self, x0, ts, w.edge_index, us=w.u)
 
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:

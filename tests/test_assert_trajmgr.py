@@ -2,7 +2,7 @@ import copy
 import numpy as np
 from pathlib import Path
 
-from dymad.data import DynData, TrajectoryManager
+from dymad.io import DynData, TrajectoryManager
 from dymad.transform import make_transform
 
 HERE = Path(__file__).parent
@@ -58,14 +58,14 @@ def test_trajmgr(lti_data):
     trnu.fit(utrn)
     Utst = trnu.transform(utst)
 
-    Dtst = [DynData(xt, ut[2:]) for xt, ut in zip(Xtst, Utst)]
+    Dtst = [DynData(x=xt, u=ut[2:]) for xt, ut in zip(Xtst, Utst)]
     check_data(Dtst, tm.test_set, label='Transform X and U')
 
     Xrec = trnx.inverse_transform([_d.x for _d in Dtst])
     Urec = trnu.inverse_transform([_d.u for _d in Dtst])
-    Drec = [DynData(xr, ur) for xr, ur in zip(Xrec, Urec)]
+    Drec = [DynData(x=xr, u=ur) for xr, ur in zip(Xrec, Urec)]
     Uref = [us[_i][2:] for _i in tm.test_set_index]
-    Dref = [DynData(xt, ur) for xt, ur in zip(xtst, Uref)]
+    Dref = [DynData(x=xt, u=ur) for xt, ur in zip(xtst, Uref)]
     check_data(Drec, Dref, label='Inverse Transform X and U')
 
     # --------------------

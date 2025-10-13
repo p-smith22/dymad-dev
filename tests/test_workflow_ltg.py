@@ -14,9 +14,9 @@ import os
 import pytest
 import torch
 
+from dymad.io import load_model
 from dymad.models import DGKBF, DGKM, DGKMSK, DGLDM, GKBF, GKM, GLDM
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
-from dymad.utils import load_model
 
 mdl_kb = {
     "name" : 'ltg_model',

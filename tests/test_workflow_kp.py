@@ -13,9 +13,9 @@ import os
 import pytest
 import torch
 
+from dymad.io import load_model
 from dymad.models import DKBF, DLDM, KBF, LDM
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
-from dymad.utils import load_model
 
 mdl_kb = {
     "name" : 'kp_model',

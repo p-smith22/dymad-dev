@@ -8,9 +8,9 @@ import os
 import pytest
 import torch
 
+from dymad.io import load_model
 from dymad.models import DKM, DKMSK, KM, KMM
 from dymad.training import NODETrainer, LinearTrainer
-from dymad.utils import load_model
 
 # Options
 ## Regular kernels

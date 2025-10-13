@@ -4,9 +4,7 @@ import torch
 from torchdiffeq import odeint
 from typing import Union
 
-# Below avoids looped imports
-from dymad.data.data import DynDataImpl as DynData
-from dymad.data.data import DynGeoDataImpl as DynGeoData
+from dymad.io import DynData
 from dymad.numerics import expm_low_rank, expm_full_rank
 from dymad.utils import ControlInterpolator
 
@@ -117,19 +115,19 @@ def predict_continuous(
     if _us is not None:
         logger.debug(f"predict_continuous: {'Batch' if is_batch else 'Single'} mode (controlled)")
         u0 = _us[:, 0, :]
-        z0 = model.encoder(DynData(_x0, u0))
+        z0 = model.encoder(DynData(x=_x0, u=u0))
         interp = ControlInterpolator(ts, _us, order=order)
         def ode_func(t, z):
             x = model.decoder(z, None)
             u = interp(t)
-            _, z_dot, _ = model(DynData(x, u))
+            _, z_dot, _ = model(DynData(x=x, u=u))
             return z_dot
     else:
         logger.debug(f"predict_continuous: {'Batch' if is_batch else 'Single'} mode (autonomous)")
-        z0 = model.encoder(DynData(_x0, None))
+        z0 = model.encoder(DynData(x=_x0))
         def ode_func(t, z):
             x = model.decoder(z, None)
-            _, z_dot, _ = model(DynData(x, None))
+            _, z_dot, _ = model(DynData(x=x))
             return z_dot
 
     logger.debug(f"predict_continuous: Starting ODE integration with shape {z0.shape}, method {method}, and interpolation order {order if _us is not None else 'N/A'}")
@@ -171,7 +169,7 @@ def predict_continuous_exp(
         W = (U, V)
 
     logger.debug(f"predict_continuous_exp: {'Batch' if is_batch else 'Single'} mode (autonomous)")
-    z0 = model.encoder(DynData(_x0, None))
+    z0 = model.encoder(DynData(x=_x0))
 
     logger.debug(f"predict_continuous_exp: Starting ODE integration with shape {z0.shape}")
     dt = ts - ts[0]  # (n_steps,)
@@ -204,24 +202,24 @@ def predict_continuous_fenc(
     if _us is not None:
         # Initial state preparation
         u0 = _us[:, 0, :]
-        z0 = model.encoder(DynData(_x0, u0))
+        z0 = model.encoder(DynData(x=_x0, u=u0))
 
         # Discrete-time forward pass
         logger.debug(f"predict_continuous_fenc: Starting forward iterations with shape {z0.shape}")
         z_traj = [z0]
         for k in range(n_steps - 1):
             u_k = _us[:, k, :]
-            z_next = model.fenc_step(z_traj[-1], DynData(None, u_k), ts[k+1]-ts[k])
+            z_next = model.fenc_step(z_traj[-1], DynData(u=u_k), ts[k+1]-ts[k])
             z_traj.append(z_next)
     else:
         # Initial state preparation
-        z0 = model.encoder(DynData(_x0, None))
+        z0 = model.encoder(DynData(x=_x0))
 
         # Discrete-time forward pass
         logger.debug(f"predict_continuous_fenc: Starting forward iterations with shape {z0.shape}")
         z_traj = [z0]
         for k in range(n_steps - 1):
-            z_next = model.fenc_step(z_traj[-1], DynData(None, None), ts[k+1]-ts[k])
+            z_next = model.fenc_step(z_traj[-1], DynData(), ts[k+1]-ts[k])
             z_traj.append(z_next)
     z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, z_dim)
     logger.debug(f"predict_continuous_fenc: Completed integration, trajectory shape: {z_traj.shape}")
@@ -274,24 +272,24 @@ def predict_graph_continuous(
     """
     device = x0.device
     _x0, ts, _us, n_steps, is_batch, _ei = _prepare_data(x0, ts, us, device, edge_index=edge_index)
-    _data = DynGeoData(None, None, _ei)
+    _data = DynData(ei=_ei)
 
     if _us is not None:
         logger.debug(f"predict_graph_continuous: {'Batch' if is_batch else 'Single'} mode (controlled)")
         u0 = _us[:, 0, :]
-        z0 = model.encoder(DynGeoData(_x0, u0, _ei))
+        z0 = model.encoder(DynData(x=_x0, u=u0, ei=_ei))
         interp = ControlInterpolator(ts, _us, order=order)
         def ode_func(t, z):
             x = model.decoder(z, _data)
             u = interp(t)
-            _, z_dot, _ = model(DynGeoData(x, u, _ei))
+            _, z_dot, _ = model(DynData(x=x, u=u, ei=_ei))
             return z_dot
     else:
         logger.debug(f"predict_graph_continuous: {'Batch' if is_batch else 'Single'} mode (autonomous)")
-        z0 = model.encoder(DynGeoData(_x0, None, _ei))
+        z0 = model.encoder(DynData(x=_x0, ei=_ei))
         def ode_func(t, z):
             x = model.decoder(z, _data)
-            _, z_dot, _ = model(DynGeoData(x, None, _ei))
+            _, z_dot, _ = model(DynData(x=x, ei=_ei))
             return z_dot
 
     logger.debug(f"predict_graph_continuous: Starting ODE integration with shape {z0.shape}, method {method}, and interpolation order {order if _us is not None else 'N/A'}")
@@ -353,7 +351,7 @@ def predict_discrete(
     if _us is not None:
         # Initial state preparation
         u0 = _us[:, 0, :]
-        z0 = model.encoder(DynData(_x0, u0))
+        z0 = model.encoder(DynData(x=_x0, u=u0))
 
         # Discrete-time forward pass
         logger.debug(f"predict_discrete: Starting forward iterations with shape {z0.shape}")
@@ -361,18 +359,18 @@ def predict_discrete(
         for k in range(n_steps - 1):
             x_k = model.decoder(z_traj[-1], None)
             u_k = _us[:, k, :]
-            _, z_next, _ = model(DynData(x_k, u_k))
+            _, z_next, _ = model(DynData(x=x_k, u=u_k))
             z_traj.append(z_next)
     else:
         # Initial state preparation
-        z0 = model.encoder(DynData(_x0, None))
+        z0 = model.encoder(DynData(x=_x0))
 
         # Discrete-time forward pass
         logger.debug(f"predict_discrete: Starting forward iterations with shape {z0.shape}")
         z_traj = [z0]
         for k in range(n_steps - 1):
             x_k = model.decoder(z_traj[-1], None)
-            _, z_next, _ = model(DynData(x_k, None))
+            _, z_next, _ = model(DynData(x=x_k))
             z_traj.append(z_next)
     z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, z_dim)
     logger.debug(f"predict_discrete: Completed integration, trajectory shape: {z_traj.shape}")
@@ -408,7 +406,7 @@ def predict_discrete_exp(
     logger.debug(f"predict_discrete: {'Batch' if is_batch else 'Single'} mode")
 
     # Initial state preparation
-    z0 = model.encoder(DynData(_x0, None))
+    z0 = model.encoder(DynData(x=_x0))
 
     # Discrete-time forward pass
     logger.debug(f"predict_discrete_exp: Starting forward iterations with shape {z0.shape}")
@@ -462,29 +460,29 @@ def predict_graph_discrete(
     """
     device = x0.device
     _x0, _, _us, n_steps, is_batch, _ei = _prepare_data(x0, ts, us, device, edge_index=edge_index)
-    _data = DynGeoData(None, None, _ei)
+    _data = DynData(ei=_ei)
 
     logger.debug(f"predict_graph_discrete: {'Batch' if is_batch else 'Single'} mode")
 
     if _us is not None:
         u0 = _us[:, 0, :]
-        z0 = model.encoder(DynGeoData(_x0, u0, _ei))
+        z0 = model.encoder(DynData(x=_x0, u=u0, ei=_ei))
 
         logger.debug(f"predict_graph_discrete: Starting forward iterations with shape {z0.shape}")
         z_traj = [z0]
         for k in range(n_steps - 1):
             x_k = model.decoder(z_traj[-1], _data)
             u_k = _us[:, k, :]
-            _, z_next, _ = model(DynGeoData(x_k, u_k, _ei))
+            _, z_next, _ = model(DynData(x=x_k, u=u_k, ei=_ei))
             z_traj.append(z_next)
     else:
-        z0 = model.encoder(DynGeoData(_x0, None, _ei))
+        z0 = model.encoder(DynData(x=_x0, ei=_ei))
 
         logger.debug(f"predict_graph_discrete: Starting forward iterations with shape {z0.shape}")
         z_traj = [z0]
         for k in range(n_steps - 1):
             x_k = model.decoder(z_traj[-1], _data)
-            _, z_next, _ = model(DynGeoData(x_k, None, _ei))
+            _, z_next, _ = model(DynData(x=x_k, ei=_ei))
             z_traj.append(z_next)
 
     z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, node, z_dim)

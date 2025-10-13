@@ -4,12 +4,12 @@ import numpy as np
 import torch
 from typing import Optional, Tuple, Type
 
-from dymad.data import DynData
+from dymad.io import DataInterface, DynData
 from dymad.models import KBF, DKBF
 from dymad.numerics import check_orthogonality, complex_grid, complex_map, disc2cont, eig_low_rank, mode_split, scaled_eig, truncate_sequence
 from dymad.sako.rals import estimate_pseudospectrum, RALowRank
 from dymad.sako.sako import SAKO
-from dymad.utils import DataInterface, plot_contour
+from dymad.utils import plot_contour
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ class SAInterface(DataInterface):
     def _setup_sa_terms(self):
         P0, P1 = [], []
         for batch in self.train_loader:
-            _P = self.model.encoder(DynData(batch.x, None)).cpu().detach().numpy()
+            _P = self.model.encoder(DynData(x=batch.x)).cpu().detach().numpy()
             _P0, _P1 = _P[..., :-1, :], _P[..., 1:, :]
             _P0 = _P0.reshape(-1, _P0.shape[-1])
             _P1 = _P1.reshape(-1, _P1.shape[-1])

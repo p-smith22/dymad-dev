@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 from typing import Tuple, Union
 
-from dymad.data import DynData, DynGeoData
+from dymad.io import DynData
 from dymad.numerics.linalg import logm_low_rank, real_lowrank_from_eigpairs, scaled_eig, truncated_lstsq
 from dymad.sako import filter_spectrum, SAKO
 
@@ -19,14 +19,14 @@ def _dt_target(z: torch.Tensor) -> torch.Tensor:
     """Compute discrete-time targets."""
     return z[..., 1:, :]
 
-def _comp_linear_features_dt(model, batch: DynData | DynGeoData, **kwargs) -> torch.Tensor:
+def _comp_linear_features_dt(model, batch: DynData, **kwargs) -> torch.Tensor:
     """Compute linear features for discrete-time models."""
     A, z = model.linear_features(batch)
     _A = A[..., :-1, :]
     _z = _dt_target(z)
     return _A.reshape(-1, _A.shape[-1]), _z.reshape(-1, _z.shape[-1])
 
-def _comp_linear_eval_dt(model, batch: DynData | DynGeoData, **kwargs) -> torch.Tensor:
+def _comp_linear_eval_dt(model, batch: DynData, **kwargs) -> torch.Tensor:
     """Compute predicted targets for discrete-time models.
     z_dot really means z_next here.
     """
@@ -45,13 +45,13 @@ def _ct_target(z: torch.Tensor, dt, order=2) -> torch.Tensor:
     else:
         raise ValueError(f"Unsupported FD order: {order}. Only 1 and 2 are supported.")
 
-def _comp_linear_features_ct(model, batch: DynData | DynGeoData, **kwargs) -> torch.Tensor:
+def _comp_linear_features_ct(model, batch: DynData, **kwargs) -> torch.Tensor:
     """Compute linear features for continuous-time models."""
     A, z = model.linear_features(batch)
     _z = _ct_target(z, kwargs['dt'], kwargs.get('order', 2))
     return A.reshape(-1, A.shape[-1]), _z.reshape(-1, _z.shape[-1])
 
-def _comp_linear_eval_ct(model, batch: DynData | DynGeoData, **kwargs) -> torch.Tensor:
+def _comp_linear_eval_ct(model, batch: DynData, **kwargs) -> torch.Tensor:
     """Compute predicted targets for continuous-time models."""
     z_dot, z = model.linear_eval(batch)
     return z_dot, _ct_target(z, kwargs['dt'], kwargs.get('order', 2))
@@ -252,7 +252,7 @@ class LSUpdater:
         # Additional logging
         logger.info(f"Using method: {self.method} with params: {self.params}")
 
-    def eval_batch(self, model, batch: Union[DynData, DynGeoData], criterion) -> torch.Tensor:
+    def eval_batch(self, model, batch: DynData, criterion) -> torch.Tensor:
         """
         Process a batch and return predictions and ground truth states.
 

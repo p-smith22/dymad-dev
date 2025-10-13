@@ -1,11 +1,9 @@
 from abc import ABC
 import torch
 import torch.nn as nn
-from typing import Tuple, Union
+from typing import Tuple
 
-from dymad.data import DynData, DynGeoData
-
-Data = Union[DynData, DynGeoData]
+from dymad.io import DynData as Data
 
 class ModelBase(nn.Module, ABC):
     r"""

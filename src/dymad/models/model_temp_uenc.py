@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from typing import Dict, Union, Tuple
 
-from dymad.data import DynData, DynGeoData
+from dymad.io import DynData
 from dymad.models import ModelBase
 from dymad.modules import make_autoencoder
 
@@ -250,24 +250,24 @@ class ModelTempUEncGraph(ModelBase):
         model_info += f"Input order: {self.input_order}"
         return model_info
 
-    def _encoder_ctrl(self, w: DynGeoData) -> torch.Tensor:
+    def _encoder_ctrl(self, w: DynData) -> torch.Tensor:
         xu_cat = torch.cat([w.xg, w.ug], dim=-1)
         return w.g(self.encoder_net(xu_cat, w.edge_index))
 
-    def _encoder_auto(self, w: DynGeoData) -> torch.Tensor:
+    def _encoder_auto(self, w: DynData) -> torch.Tensor:
         return w.g(self.encoder_net(w.xg, w.edge_index))
 
-    def decoder(self, z: torch.Tensor, w: DynGeoData) -> torch.Tensor:
+    def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return self.decoder_net(z, w.edge_index)
 
-    def dynamics(self, z: torch.Tensor, w: DynGeoData) -> torch.Tensor:
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return self.dynamics_net(z)
 
-    def forward(self, w: DynGeoData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         z = self.encoder(w)
         z_dot = self.dynamics(z, w)
         x_hat = self.decoder(z, w)
         return z, z_dot, x_hat
 
-    def predict(self, x0: torch.Tensor, w: DynGeoData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
         raise NotImplementedError("Implement in derived class.")

@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from torch_geometric.utils import dense_to_sparse
 
-from dymad.data import DynGeoData, TrajectoryManagerGraph
+from dymad.io import DynData, TrajectoryManagerGraph
 from dymad.transform import make_transform
 
 def check_data(out, ref, label=''):
@@ -72,7 +72,7 @@ def test_trajmgr(ltg_data):
     Utst = trnu.transform(utst)
     Utst = [np.concatenate([ut, ut, ut], axis=-1) for ut in Utst]
 
-    Dtst = [DynGeoData(xt, ut[:,2:], edge_index) for xt, ut in zip(Xtst, Utst)]
+    Dtst = [DynData(x=xt, u=ut[:,2:], ei=edge_index) for xt, ut in zip(Xtst, Utst)]
     check_data(Dtst, tm.test_set, label='Transform X and U')
 
     # ---
@@ -85,10 +85,10 @@ def test_trajmgr(ltg_data):
     Urec = trnu.inverse_transform([_d.u[:,0].reshape(-1,1) for _d in Dtst])
     Urec = [np.concatenate([ur, ur, ur], axis=-1) for ur in Urec]
 
-    Drec = [DynGeoData(xr, ur, edge_index) for xr, ur in zip(Xrec, Urec)]
+    Drec = [DynData(x=xr, u=ur, ei=edge_index) for xr, ur in zip(Xrec, Urec)]
     Xref = [xs[_i] for _i in tm.test_set_index]
     Uref = [us[_i][:,2:] for _i in tm.test_set_index]
-    Dref = [DynGeoData(xr, ur, edge_index) for xr, ur in zip(Xref, Uref)]
+    Dref = [DynData(x=xr, u=ur, ei=edge_index) for xr, ur in zip(Xref, Uref)]
     check_data(Drec, Dref, label='Inverse Transform X and U')
 
     # --------------------

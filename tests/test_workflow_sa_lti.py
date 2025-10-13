@@ -4,10 +4,10 @@ import os
 import pytest
 import torch
 
+from dymad.io import load_model
 from dymad.models import DKBF, KBF
 from dymad.sako import SpectralAnalysis
 from dymad.training import LinearTrainer, NODETrainer
-from dymad.utils import load_model
 
 mdl_kb = {
     "name" : 'sa_model',

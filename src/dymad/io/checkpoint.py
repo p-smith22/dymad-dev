@@ -4,10 +4,8 @@ import os
 import torch
 from typing import Callable, Dict, List, Optional, Union, Tuple, Type
 
-# Below avoids looped imports
-from dymad.data.data import DynDataImpl as DynData
-from dymad.data.data import DynGeoDataImpl as DynGeoData
-from dymad.data.trajectory_manager import TrajectoryManager
+from dymad.io.data import DynData
+from dymad.io.trajectory_manager import TrajectoryManager
 from dymad.transform import Autoencoder, make_transform
 from dymad.utils.misc import load_config
 
@@ -166,7 +164,7 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
                 """Predict trajectory in data space."""
                 _x0 = _proc_x0(x0, device)
                 with torch.no_grad():
-                    pred = model.predict(_x0, DynGeoData(None, None, ei), t).cpu().numpy()
+                    pred = model.predict(_x0, DynData(ei=ei), t).cpu().numpy()
                 return _proc_prd(pred)
         else:
             def predict_fn(x0, us, t, ei=None, device="cpu"):
@@ -174,7 +172,7 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
                 _x0 = _proc_x0(x0, device)
                 _u  = _proc_u(us, device)
                 with torch.no_grad():
-                    pred = model.predict(_x0, DynGeoData(None, _u, ei), t).cpu().numpy()
+                    pred = model.predict(_x0, DynData(u=_u, ei=ei), t).cpu().numpy()
                 return _proc_prd(pred)
     else:
         if _is_autonomous:
@@ -182,7 +180,7 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
                 """Predict trajectory in data space."""
                 _x0 = _proc_x0(x0, device)
                 with torch.no_grad():
-                    pred = model.predict(_x0, DynData(None, None), t).cpu().numpy()
+                    pred = model.predict(_x0, DynData(), t).cpu().numpy()
                 return _proc_prd(pred)
         else:
             def predict_fn(x0, us, t, device="cpu"):
@@ -190,7 +188,7 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
                 _x0 = _proc_x0(x0, device)
                 _u  = _proc_u(us, device)
                 with torch.no_grad():
-                    pred = model.predict(_x0, DynData(None, _u), t).cpu().numpy()
+                    pred = model.predict(_x0, DynData(u=_u), t).cpu().numpy()
                 return _proc_prd(pred)
 
     return model, predict_fn
@@ -223,7 +221,7 @@ class DataInterface:
 
         if self.has_model:
             self.model, _ = load_model(model_class, checkpoint_path)
-            encoder = lambda x: self.model.encoder(DynData(x, None))
+            encoder = lambda x: self.model.encoder(DynData(x=x))
             decoder = lambda z: self.model.decoder(z, None)
             enc = Autoencoder(self.model, encoder, decoder)
             self._trans_x.append(enc)

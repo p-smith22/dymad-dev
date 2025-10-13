@@ -9,7 +9,7 @@ Below you'll find the complete public API, grouped by module.
    :recursive:
    :caption: API Modules
 
-   dymad.data
+   dymad.io
    dymad.losses
    dymad.models
    dymad.modules

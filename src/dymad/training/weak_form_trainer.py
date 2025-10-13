@@ -2,7 +2,7 @@ import logging
 import torch
 from typing import Dict, Type, Union
 
-from dymad.data import DynData, DynGeoData
+from dymad.io import DynData
 from dymad.numerics.weak import generate_weak_weights
 from dymad.training.trainer_base import TrainerBase
 
@@ -46,7 +46,7 @@ class WeakFormTrainer(TrainerBase):
         self.C = torch.tensor(C.T, dtype=dtype, device=self.device)
         self.D = torch.tensor(D.T, dtype=dtype, device=self.device)
 
-    def _process_batch(self, batch: Union[DynData, DynGeoData]) -> torch.Tensor:
+    def _process_batch(self, batch: DynData) -> torch.Tensor:
         B = batch.to(self.device)
         z, z_dot, x_hat = self.model(B)
 

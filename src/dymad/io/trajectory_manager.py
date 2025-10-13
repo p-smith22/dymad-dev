@@ -1,13 +1,11 @@
 import logging
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 from typing import Optional, Union, Tuple, Dict, List
 
+from dymad.io.data import DynData
 from dymad.transform import make_transform
-# Below avoids looped imports
-from dymad.data.data import DynDataImpl as DynData
-from dymad.data.data import DynGeoDataImpl as DynGeoData
 
 logger = logging.getLogger(__name__)
 
@@ -421,8 +419,8 @@ class TrajectoryManager:
         else:
             # Then we assemble the dataset of x.
             return [DynData(
-                x=torch.tensor(_x, dtype=self.dtype, device=self.device),
-                u=None) for _x in _X]
+                x=torch.tensor(_x, dtype=self.dtype, device=self.device))
+                for _x in _X]
 
     def _create_dt_n_steps_metadata(self) -> List[List[float]]:
         """
@@ -692,8 +690,8 @@ class TrajectoryManagerGraph(TrajectoryManager):
         else:
             # Then we assemble the dataset of x.
             return [DynData(
-                x=torch.tensor(self._graph_data_reshape(_x, forward=False), dtype=self.dtype, device=self.device),
-                u=None) for _x in _X]
+                x=torch.tensor(self._graph_data_reshape(_x, forward=False), dtype=self.dtype, device=self.device))
+                for _x in _X]
 
     def _graph_data_reshape(self, data: np.ndarray, forward: bool) -> np.ndarray:
         """
@@ -737,12 +735,12 @@ class TrajectoryManagerGraph(TrajectoryManager):
         # Convert adjacency matrix to edge_index and edge_attr using PyG
         edge_index, _ = dense_to_sparse(adj)
 
-        # Create DynGeoData objects for each set
-        self.train_set = [DynGeoData(x=traj.x, u=traj.u, edge_index=edge_index) for traj in self.train_set]
-        self.valid_set = [DynGeoData(x=traj.x, u=traj.u, edge_index=edge_index) for traj in self.valid_set]
-        self.test_set  = [DynGeoData(x=traj.x, u=traj.u, edge_index=edge_index) for traj in self.test_set]
+        # Create DynData objects for each set
+        self.train_set = [DynData(x=traj.x, u=traj.u, ei=edge_index) for traj in self.train_set]
+        self.valid_set = [DynData(x=traj.x, u=traj.u, ei=edge_index) for traj in self.valid_set]
+        self.test_set  = [DynData(x=traj.x, u=traj.u, ei=edge_index) for traj in self.test_set]
 
         # Lastly the dataloaders
-        self.train_loader = DataLoader(self.train_set, batch_size=batch_size, shuffle=True,  collate_fn=DynGeoData.collate)
-        self.valid_loader = DataLoader(self.valid_set, batch_size=batch_size, shuffle=False, collate_fn=DynGeoData.collate)
-        self.test_loader  = DataLoader(self.test_set,  batch_size=batch_size, shuffle=False, collate_fn=DynGeoData.collate)
+        self.train_loader = DataLoader(self.train_set, batch_size=batch_size, shuffle=True,  collate_fn=DynData.collate)
+        self.valid_loader = DataLoader(self.valid_set, batch_size=batch_size, shuffle=False, collate_fn=DynData.collate)
+        self.test_loader  = DataLoader(self.test_set,  batch_size=batch_size, shuffle=False, collate_fn=DynData.collate)

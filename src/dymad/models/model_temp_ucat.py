@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from typing import Dict, Union, Tuple
 
-from dymad.data import DynData, DynGeoData
+from dymad.io import DynData
 from dymad.models import ModelBase
 from dymad.modules import make_autoencoder
 
@@ -231,40 +231,40 @@ class ModelTempUCatGraph(ModelBase):
         model_info += f"Input order: {self.input_order}"
         return model_info
 
-    def encoder(self, w: DynGeoData) -> torch.Tensor:
+    def encoder(self, w: DynData) -> torch.Tensor:
         # The GNN implementation outputs flattened features
         # Here internal dynamics are node-wise, so we need to reshape
         # the features to node*features_per_node again
         return w.g(self.encoder_net(w.xg, w.edge_index))
 
-    def decoder(self, z: torch.Tensor, w: DynGeoData) -> torch.Tensor:
+    def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         # Since the decoder outputs to the original space,
         # which is assumed to be flattened, we can use the GNN decoder directly
         # Note: the input, though, is still node-wise
         return self.decoder_net(z, w.edge_index)
 
-    def dynamics(self, z: torch.Tensor, w: DynGeoData) -> torch.Tensor:
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """Compute dynamics in Koopman space using bilinear form."""
         return self.dynamics_net(self._zu_cat(z, w))
 
-    def _zu_cat_ctrl(self, z: torch.Tensor, w: DynGeoData) -> torch.Tensor:
+    def _zu_cat_ctrl(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """Concatenate state and control inputs."""
         raise NotImplementedError("Implement in derived class.")
 
-    def _zu_cat_auto(self, z: torch.Tensor, w: DynGeoData) -> torch.Tensor:
+    def _zu_cat_auto(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """Concatenate state and control inputs."""
         return z
 
-    def forward(self, w: DynGeoData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         z = self.encoder(w)
         z_dot = self.dynamics(z, w)
         x_hat = self.decoder(z, w)
         return z, z_dot, x_hat
 
-    def predict(self, x0: torch.Tensor, w: DynGeoData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
         raise NotImplementedError("Implement in derived class.")
 
-    def linear_features(self, w: DynGeoData) -> Tuple[torch.Tensor, torch.Tensor]:
+    def linear_features(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute linear features, f, and outputs, dz, for the model.
 
         Main difference with ModelTempUCat: the middle two dimensions are permuted, so that
@@ -275,7 +275,7 @@ class ModelTempUCatGraph(ModelBase):
         f = self._zu_cat(z, w)
         return f.permute(0, 2, 1, 3), z.permute(0, 2, 1, 3)
 
-    def linear_eval(self, w: DynGeoData) -> Tuple[torch.Tensor, torch.Tensor]:
+    def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute linear evaluation, dz, and states, z, for the model.
 
         Same idea as in linear_features about the permutation.

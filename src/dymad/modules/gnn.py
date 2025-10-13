@@ -99,7 +99,7 @@ class GNN(nn.Module):
         Otherwise, we process each edge_index sequentially, which would incur
         a severe performance degradation.
 
-        Fortunately, the inputs are assumed to come from DynGeoData, which
+        Fortunately, the inputs are assumed to come from DynData, which
         collates batch data into a single large graph, so that here we always
         have n_batch=1.
         """
