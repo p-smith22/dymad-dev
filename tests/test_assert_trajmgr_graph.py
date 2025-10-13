@@ -10,7 +10,7 @@ def check_data(out, ref, label=''):
     for _s, _t in zip(out, ref):
         assert np.allclose(_s.x, _t.x), f"{label} failed: {_s.x} != {_t.x}"
         assert np.allclose(_s.u, _t.u), f"{label} failed: {_s.u} != {_t.u}"
-        assert np.allclose(_s.edge_index, _t.edge_index), f"{label} failed: {_s.edge_index} != {_t.edge_index}"
+        assert np.allclose(_s.ei, _t.ei), f"{label} failed: {_s.ei} != {_t.ei}"
     print(f"{label} passed.")
 
 def test_trajmgr(ltg_data):

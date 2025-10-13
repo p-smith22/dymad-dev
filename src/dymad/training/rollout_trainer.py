@@ -2,7 +2,7 @@ import logging
 import torch
 from typing import Dict, Type, Union
 
-from dymad.data import DynData, DynGeoData
+from dymad.io import DynData
 from dymad.training.node_trainer import NODETrainer
 from dymad.utils.scheduler import make_scheduler
 
@@ -55,7 +55,7 @@ class RollOutTrainer(NODETrainer):
             logger.info(f"Chop mode: {self.chop_mode}, window stride: {self.chop_step}")
         logger.info(f"Weights: Dynamics {self.dynamics_weight}, Reconstruction {self.recon_weight}")
 
-    def _process_batch(self, batch: Union[DynData, DynGeoData]) -> torch.Tensor:
+    def _process_batch(self, batch: DynData) -> torch.Tensor:
         """Process a batch and return predictions and ground truth states."""
         num_steps = self.schedulers[1].get_length()
 

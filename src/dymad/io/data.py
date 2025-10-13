@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import torch
 from typing import List, Union
 
@@ -40,17 +40,17 @@ class DynData:
     """n_nodes (int): Number of nodes in the graph structure."""
 
     # Other data
-    meta: List[dict] = []
+    meta: List[dict] = field(default_factory=list)
     """meta (List[dict]): Metadata for each time series."""
 
     _has_graph: bool = False
     """_has_graph (bool): Whether the data has graph structure."""
 
     def __post_init__(self):
-        if self.edge_index is not None:
+        if self.ei is not None:
             # There is graph structure
             self._has_graph = True
-            self.n_nodes = self.edge_index.max().item() + 1
+            self.n_nodes = self.ei.max().item() + 1
             self.x_reshape = self.x.shape[:-1] + (self.n_nodes, -1)
             self.y_reshape = self.y.shape[:-1] + (self.n_nodes, -1)
             self.u_reshape = self.u.shape[:-1] + (self.n_nodes, -1)

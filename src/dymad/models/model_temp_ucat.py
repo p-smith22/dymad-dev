@@ -3,7 +3,7 @@ import torch
 from typing import Dict, Union, Tuple
 
 from dymad.io import DynData
-from dymad.models import ModelBase
+from dymad.models.model_base import ModelBase
 from dymad.modules import make_autoencoder
 
 class ModelTempUCat(ModelBase):
@@ -235,13 +235,13 @@ class ModelTempUCatGraph(ModelBase):
         # The GNN implementation outputs flattened features
         # Here internal dynamics are node-wise, so we need to reshape
         # the features to node*features_per_node again
-        return w.g(self.encoder_net(w.xg, w.edge_index))
+        return w.g(self.encoder_net(w.xg, w.ei))
 
     def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         # Since the decoder outputs to the original space,
         # which is assumed to be flattened, we can use the GNN decoder directly
         # Note: the input, though, is still node-wise
-        return self.decoder_net(z, w.edge_index)
+        return self.decoder_net(z, w.ei)
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """Compute dynamics in Koopman space using bilinear form."""

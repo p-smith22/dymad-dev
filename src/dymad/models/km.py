@@ -3,8 +3,8 @@ import torch
 from typing import Dict, Union, Tuple
 
 from dymad.io import DynData
-from dymad.models import ModelTempUCat, ModelTempUCatGraph, \
-    predict_continuous, predict_continuous_fenc, predict_discrete, \
+from dymad.models.model_temp_ucat import ModelTempUCat, ModelTempUCatGraph
+from dymad.models.prediction import predict_continuous, predict_continuous_fenc, predict_discrete, \
     predict_graph_continuous, predict_graph_discrete
 from dymad.modules import make_krr
 from dymad.numerics import Manifold

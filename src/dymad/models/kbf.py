@@ -3,8 +3,8 @@ import torch
 from typing import Dict, Union
 
 from dymad.io import DynData
-from dymad.models import ModelTempUCat, ModelTempUCatGraph, \
-    predict_continuous, predict_continuous_exp, \
+from dymad.models.model_temp_ucat import ModelTempUCat, ModelTempUCatGraph
+from dymad.models.prediction import predict_continuous, predict_continuous_exp, \
     predict_discrete, predict_discrete_exp, \
     predict_graph_continuous, predict_graph_discrete
 from dymad.modules import FlexLinear

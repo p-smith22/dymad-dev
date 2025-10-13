@@ -3,8 +3,9 @@ import torch
 from typing import Dict, Union
 
 from dymad.io import DynData
-from dymad.models import ModelTempUEnc, ModelTempUEncGraph, \
-    predict_continuous, predict_discrete, predict_graph_continuous, predict_graph_discrete
+from dymad.models.model_temp_uenc import ModelTempUEnc, ModelTempUEncGraph
+from dymad.models.prediction import predict_continuous, predict_discrete, \
+    predict_graph_continuous, predict_graph_discrete
 from dymad.modules import MLP
 
 class LDM(ModelTempUEnc):

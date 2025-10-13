@@ -3,7 +3,7 @@ import torch
 from typing import Dict, Union, Tuple
 
 from dymad.io import DynData
-from dymad.models import ModelBase
+from dymad.models.model_base import ModelBase
 from dymad.modules import make_autoencoder
 
 class ModelTempUEnc(ModelBase):
@@ -252,13 +252,13 @@ class ModelTempUEncGraph(ModelBase):
 
     def _encoder_ctrl(self, w: DynData) -> torch.Tensor:
         xu_cat = torch.cat([w.xg, w.ug], dim=-1)
-        return w.g(self.encoder_net(xu_cat, w.edge_index))
+        return w.g(self.encoder_net(xu_cat, w.ei))
 
     def _encoder_auto(self, w: DynData) -> torch.Tensor:
-        return w.g(self.encoder_net(w.xg, w.edge_index))
+        return w.g(self.encoder_net(w.xg, w.ei))
 
     def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.decoder_net(z, w.edge_index)
+        return self.decoder_net(z, w.ei)
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return self.dynamics_net(z)
