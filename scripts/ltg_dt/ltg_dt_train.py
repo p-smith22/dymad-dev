@@ -4,9 +4,10 @@ import numpy as np
 import torch
 from torch_geometric.utils import dense_to_sparse
 
+from dymad.io import load_model
 from dymad.models import DGLDM, DGKBF, DGKM, DGKMSK
 from dymad.training import NODETrainer, LinearTrainer
-from dymad.utils import load_model, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
 
 B = 128
 N = 501
@@ -53,7 +54,7 @@ cases = [
 ]
 
 # IDX = [1, 2]
-IDX = [4]
+IDX = [1]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0

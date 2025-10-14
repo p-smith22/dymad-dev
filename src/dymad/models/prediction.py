@@ -77,6 +77,7 @@ def predict_continuous(
     x0: torch.Tensor,
     ts: Union[np.ndarray, torch.Tensor],
     us: torch.Tensor = None,
+    edge_index: torch.Tensor = None,
     method: str = 'dopri5',
     order: str = 'cubic',
     **kwargs
@@ -97,6 +98,7 @@ def predict_continuous(
             - Single: shape (n_steps, n_controls)
             - Batch: shape (batch_size, n_steps, n_controls)
 
+        edge_index (torch.Tensor, optional): Edge indices for the graph.
         method (str): ODE solver method (default: 'dopri5').
         order (str): Interpolation method for control inputs ('zoh', 'linear', or 'cubic').
 
@@ -110,31 +112,34 @@ def predict_continuous(
         ValueError: If input dimensions do not match requirements.
     """
     device = x0.device
-    _x0, ts, _us, n_steps, is_batch, _ = _prepare_data(x0, ts, us, device)
+    _x0, ts, _us, n_steps, is_batch, _ei = _prepare_data(x0, ts, us, device, edge_index=edge_index)
+    _data = DynData(ei=_ei)
 
     if _us is not None:
         logger.debug(f"predict_continuous: {'Batch' if is_batch else 'Single'} mode (controlled)")
         u0 = _us[:, 0, :]
-        z0 = model.encoder(DynData(x=_x0, u=u0))
         interp = ControlInterpolator(ts, _us, order=order)
-        def ode_func(t, z):
-            x = model.decoder(z, None)
-            u = interp(t)
-            _, z_dot, _ = model(DynData(x=x, u=u))
-            return z_dot
     else:
         logger.debug(f"predict_continuous: {'Batch' if is_batch else 'Single'} mode (autonomous)")
-        z0 = model.encoder(DynData(x=_x0))
-        def ode_func(t, z):
-            x = model.decoder(z, None)
-            _, z_dot, _ = model(DynData(x=x))
-            return z_dot
+        u0 = None
+        interp = ControlInterpolator(ts, None)
+
+    z0 = model.encoder(DynData(x=_x0, u=u0, ei=_ei))
+    def ode_func(t, z):
+        x = model.decoder(z, _data)
+        u = interp(t)
+        _, z_dot, _ = model(DynData(x=x, u=u, ei=_ei))
+        return z_dot
 
     logger.debug(f"predict_continuous: Starting ODE integration with shape {z0.shape}, method {method}, and interpolation order {order if _us is not None else 'N/A'}")
     z_traj = odeint(ode_func, z0, ts, method=method, **kwargs)
     logger.debug(f"predict_continuous: Completed integration, trajectory shape: {z_traj.shape}")
 
-    x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None).view(n_steps, z_traj.shape[1], -1)
+    if _ei is None:
+        x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None).view(n_steps, z_traj.shape[1], -1)
+    else:
+        tmp = z_traj.permute(1, 0, 2, 3)  # (batch_size, n_steps, node, z_dim)
+        x_traj = model.decoder(tmp, _data).permute(1, 0, 2)
     if not is_batch:
         x_traj = x_traj.squeeze(1)
 
@@ -202,25 +207,18 @@ def predict_continuous_fenc(
     if _us is not None:
         # Initial state preparation
         u0 = _us[:, 0, :]
-        z0 = model.encoder(DynData(x=_x0, u=u0))
-
-        # Discrete-time forward pass
-        logger.debug(f"predict_continuous_fenc: Starting forward iterations with shape {z0.shape}")
-        z_traj = [z0]
-        for k in range(n_steps - 1):
-            u_k = _us[:, k, :]
-            z_next = model.fenc_step(z_traj[-1], DynData(u=u_k), ts[k+1]-ts[k])
-            z_traj.append(z_next)
     else:
-        # Initial state preparation
-        z0 = model.encoder(DynData(x=_x0))
+        u0 = None
+    z0 = model.encoder(DynData(x=_x0, u=u0))
 
-        # Discrete-time forward pass
-        logger.debug(f"predict_continuous_fenc: Starting forward iterations with shape {z0.shape}")
-        z_traj = [z0]
-        for k in range(n_steps - 1):
-            z_next = model.fenc_step(z_traj[-1], DynData(), ts[k+1]-ts[k])
-            z_traj.append(z_next)
+    # Discrete-time forward pass
+    logger.debug(f"predict_continuous_fenc: Starting forward iterations with shape {z0.shape}")
+    z_traj = [z0]
+    for k in range(n_steps - 1):
+        u_k = None if _us is None else _us[:, k, :]
+        z_next = model.fenc_step(z_traj[-1], DynData(u=u_k), ts[k+1]-ts[k])
+        z_traj.append(z_next)
+
     z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, z_dim)
     logger.debug(f"predict_continuous_fenc: Completed integration, trajectory shape: {z_traj.shape}")
 
@@ -229,80 +227,6 @@ def predict_continuous_fenc(
         x_traj = x_traj.squeeze(1)
 
     logger.debug(f"predict_continuous_fenc: Final trajectory shape {x_traj.shape}")
-    return x_traj
-
-def predict_graph_continuous(
-    model,
-    x0: torch.Tensor,
-    ts: Union[np.ndarray, torch.Tensor],
-    edge_index: torch.Tensor,
-    us: torch.Tensor = None,
-    method: str = 'dopri5',
-    order: str = 'cubic',
-    **kwargs
-) -> torch.Tensor:
-    """
-    Predict trajectory(ies) for (graph) models with batch support.
-
-    Args:
-        model: Model with encoder, decoder, and dynamics methods.
-        x0 (torch.Tensor): Initial state(s).
-
-            - Single: shape (n_features,)
-            - Batch: shape (batch_size, n_features)
-
-        ts (Union[np.ndarray, torch.Tensor]): Time points (n_steps,).
-        edge_index (torch.Tensor): Edge indices for the graph.
-        us (torch.Tensor, optional): Control trajectory(ies).
-
-            - Single: shape (n_steps, n_controls)
-            - Batch: shape (batch_size, n_steps, n_controls)
-
-        method (str): ODE solver method (default: 'dopri5').
-        order (str): Interpolation method for control inputs ('zoh', 'linear', or 'cubic').
-
-    Returns:
-        torch.Tensor: Predicted trajectory(ies).
-
-            - Single: shape (n_steps, n_features)
-            - Batch: shape (n_steps, batch_size, n_features)
-
-    Raises:
-        ValueError: If input dimensions do not match requirements.
-    """
-    device = x0.device
-    _x0, ts, _us, n_steps, is_batch, _ei = _prepare_data(x0, ts, us, device, edge_index=edge_index)
-    _data = DynData(ei=_ei)
-
-    if _us is not None:
-        logger.debug(f"predict_graph_continuous: {'Batch' if is_batch else 'Single'} mode (controlled)")
-        u0 = _us[:, 0, :]
-        z0 = model.encoder(DynData(x=_x0, u=u0, ei=_ei))
-        interp = ControlInterpolator(ts, _us, order=order)
-        def ode_func(t, z):
-            x = model.decoder(z, _data)
-            u = interp(t)
-            _, z_dot, _ = model(DynData(x=x, u=u, ei=_ei))
-            return z_dot
-    else:
-        logger.debug(f"predict_graph_continuous: {'Batch' if is_batch else 'Single'} mode (autonomous)")
-        z0 = model.encoder(DynData(x=_x0, ei=_ei))
-        def ode_func(t, z):
-            x = model.decoder(z, _data)
-            _, z_dot, _ = model(DynData(x=x, ei=_ei))
-            return z_dot
-
-    logger.debug(f"predict_graph_continuous: Starting ODE integration with shape {z0.shape}, method {method}, and interpolation order {order if _us is not None else 'N/A'}")
-    z_traj = odeint(ode_func, z0, ts, method=method, **kwargs)
-    logger.debug(f"predict_graph_continuous: Completed integration, trajectory shape: {z_traj.shape}")
-
-    tmp = z_traj.permute(1, 0, 2, 3)  # (batch_size, n_steps, node, z_dim)
-    x_traj = model.decoder(tmp, _data).permute(1, 0, 2)
-
-    if not is_batch:
-        x_traj = x_traj.squeeze(1)
-
-    logger.debug(f"predict_graph_continuous: Final trajectory shape {x_traj.shape}")
     return x_traj
 
 # ------------------
@@ -314,6 +238,7 @@ def predict_discrete(
     x0: torch.Tensor,
     ts: Union[np.ndarray, torch.Tensor],
     us: torch.Tensor = None,
+    edge_index: torch.Tensor = None,
     **kwargs
 ) -> torch.Tensor:
     """
@@ -332,6 +257,8 @@ def predict_discrete(
             - Single: (n_steps, n_controls)
             - Batch: (batch_size, n_steps, n_controls)
 
+        edge_index (torch.Tensor): Edge indices for the graph.
+
     Returns:
         torch.Tensor:
             Predicted trajectory(ies)
@@ -344,38 +271,37 @@ def predict_discrete(
     """
     device = x0.device
     # Use _prepare_data for consistency
-    _x0, _, _us, n_steps, is_batch, _ = _prepare_data(x0, ts, us, device)
+    _x0, _, _us, n_steps, is_batch, _ei = _prepare_data(x0, ts, us, device, edge_index=edge_index)
+    _data = DynData(ei=_ei)
 
     logger.debug(f"predict_discrete: {'Batch' if is_batch else 'Single'} mode")
 
     if _us is not None:
         # Initial state preparation
         u0 = _us[:, 0, :]
-        z0 = model.encoder(DynData(x=_x0, u=u0))
-
-        # Discrete-time forward pass
-        logger.debug(f"predict_discrete: Starting forward iterations with shape {z0.shape}")
-        z_traj = [z0]
-        for k in range(n_steps - 1):
-            x_k = model.decoder(z_traj[-1], None)
-            u_k = _us[:, k, :]
-            _, z_next, _ = model(DynData(x=x_k, u=u_k))
-            z_traj.append(z_next)
     else:
-        # Initial state preparation
-        z0 = model.encoder(DynData(x=_x0))
+        u0 = None
+    z0 = model.encoder(DynData(x=_x0, u=u0, ei=_ei))
 
-        # Discrete-time forward pass
-        logger.debug(f"predict_discrete: Starting forward iterations with shape {z0.shape}")
-        z_traj = [z0]
-        for k in range(n_steps - 1):
-            x_k = model.decoder(z_traj[-1], None)
-            _, z_next, _ = model(DynData(x=x_k))
-            z_traj.append(z_next)
+    # Discrete-time forward pass
+    logger.debug(f"predict_discrete: Starting forward iterations with shape {z0.shape}")
+    z_traj = [z0]
+    for k in range(n_steps - 1):
+        x_k = model.decoder(z_traj[-1], _data)
+        u_k = None if _us is None else _us[:, k, :]
+        _, z_next, _ = model(DynData(x=x_k, u=u_k, ei=_ei))
+        z_traj.append(z_next)
+
     z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, z_dim)
     logger.debug(f"predict_discrete: Completed integration, trajectory shape: {z_traj.shape}")
 
-    x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None).view(n_steps, z_traj.shape[1], -1)
+    if _ei is None:
+        x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None).view(n_steps, z_traj.shape[1], -1)
+    else:
+        # after stack: z_traj (n_steps, batch_size, node, z_dim)
+        tmp = z_traj.permute(1, 0, 2, 3)  # (batch_size, n_steps, node, z_dim)
+        x_traj = model.decoder(tmp, _data).permute(1, 0, 2)
+
     if not is_batch:
         x_traj = x_traj.squeeze(1)
 
@@ -422,75 +348,4 @@ def predict_discrete_exp(
         x_traj = x_traj.squeeze(1)
 
     logger.debug(f"predict_discrete_exp: Final trajectory shape {x_traj.shape}")
-    return x_traj
-
-def predict_graph_discrete(
-    model,
-    x0: torch.Tensor,
-    ts: Union[np.ndarray, torch.Tensor],
-    edge_index: torch.Tensor,
-    us: torch.Tensor = None,
-    **kwargs
-) -> torch.Tensor:
-    """
-    Predict trajectory(ies) for (graph) models with batch support.
-
-    Args:
-        model: Model with encoder, decoder, and dynamics methods.
-        x0 (torch.Tensor): Initial state(s):
-
-            - Single: (n_features,)
-            - Batch: (batch_size, n_features)
-
-        ts (Union[np.ndarray, torch.Tensor]): Time points (n_steps,).
-        edge_index (torch.Tensor): Edge indices for the graph.
-        us (torch.Tensor, optional): Control trajectory(ies):
-
-            - Single: (n_steps, n_controls)
-            - Batch: (batch_size, n_steps, n_controls)
-
-    Returns:
-        torch.Tensor: Predicted trajectory(ies)
-
-            - Single: (n_steps, n_features)
-            - Batch: (n_steps, batch_size, n_features)
-
-    Raises:
-        ValueError: If input dimensions do not match requirements.
-    """
-    device = x0.device
-    _x0, _, _us, n_steps, is_batch, _ei = _prepare_data(x0, ts, us, device, edge_index=edge_index)
-    _data = DynData(ei=_ei)
-
-    logger.debug(f"predict_graph_discrete: {'Batch' if is_batch else 'Single'} mode")
-
-    if _us is not None:
-        u0 = _us[:, 0, :]
-        z0 = model.encoder(DynData(x=_x0, u=u0, ei=_ei))
-
-        logger.debug(f"predict_graph_discrete: Starting forward iterations with shape {z0.shape}")
-        z_traj = [z0]
-        for k in range(n_steps - 1):
-            x_k = model.decoder(z_traj[-1], _data)
-            u_k = _us[:, k, :]
-            _, z_next, _ = model(DynData(x=x_k, u=u_k, ei=_ei))
-            z_traj.append(z_next)
-    else:
-        z0 = model.encoder(DynData(x=_x0, ei=_ei))
-
-        logger.debug(f"predict_graph_discrete: Starting forward iterations with shape {z0.shape}")
-        z_traj = [z0]
-        for k in range(n_steps - 1):
-            x_k = model.decoder(z_traj[-1], _data)
-            _, z_next, _ = model(DynData(x=x_k, ei=_ei))
-            z_traj.append(z_next)
-
-    z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, node, z_dim)
-    tmp = z_traj.permute(1, 0, 2, 3)  # (batch_size, n_steps, node, z_dim)
-    x_traj = model.decoder(tmp, _data).permute(1, 0, 2)
-
-    if not is_batch:
-        x_traj = x_traj.squeeze(1)
-
-    logger.debug(f"predict_graph_discrete: Final trajectory shape {x_traj.shape}")
     return x_traj

@@ -3,9 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from dymad.io import load_model
 from dymad.models import LDM, KBF
 from dymad.training import WeakFormTrainer, NODETrainer
-from dymad.utils import load_model, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
 
 B = 128
 N = 501
@@ -39,7 +40,7 @@ config_gau = {
 
 cfgs = [(LDM, 'ldm'), (KBF, 'kbf')]
 
-ifdat = 1
+ifdat = 0
 iftrn = 1
 ifplt = 1
 ifprd = 1

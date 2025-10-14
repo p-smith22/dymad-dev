@@ -20,13 +20,16 @@ class ControlInterpolator(nn.Module):
     def __init__(self, t, u, order='linear'):
         super().__init__()
 
-        assert u.ndim >= 2, "Control signal must have at least 2 dimensions"
+        if u is not None:
+            assert u.ndim >= 2, "Control signal must have at least 2 dimensions"
 
         self.order = order.lower()
         self.register_buffer('t', t)
         self.register_buffer('u', u)
 
-        if self.order == 'zoh':
+        if u is None:
+            self._interp = self._interp_none
+        elif self.order == 'zoh':
             self._interp = self._interp_0
         elif self.order == 'linear':
             self._interp = self._interp_1
@@ -44,6 +47,9 @@ class ControlInterpolator(nn.Module):
 
     def forward(self, t_query: torch.Tensor) -> torch.Tensor:
         return self._interp(t_query)
+
+    def _interp_none(self, t_query: torch.Tensor) -> torch.Tensor:
+        return None
 
     def _interp_0(self, t_query: torch.Tensor) -> torch.Tensor:
         idx = torch.searchsorted(self.t, t_query).clamp(1, self.t.numel()-1)

@@ -4,8 +4,7 @@ from typing import Dict, Union, Tuple
 
 from dymad.io import DynData
 from dymad.models.model_temp_ucat import ModelTempUCat, ModelTempUCatGraph
-from dymad.models.prediction import predict_continuous, predict_continuous_fenc, predict_discrete, \
-    predict_graph_continuous, predict_graph_discrete
+from dymad.models.prediction import predict_continuous, predict_continuous_fenc, predict_discrete
 from dymad.modules import make_krr
 from dymad.numerics import Manifold
 
@@ -245,7 +244,7 @@ class GKM(ModelTempUCatGraph):
         return torch.cat([z, z_u], dim=-1)
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        return predict_graph_continuous(self, x0, ts, w.ei, us=w.u, method=method, order=self.input_order, **kwargs)
+        return predict_continuous(self, x0, ts, us=w.u, edge_index=w.ei, method=method, order=self.input_order, **kwargs)
 
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -283,7 +282,7 @@ class DGKM(GKM):
         super().__init__(model_config, data_meta, dtype=dtype, device=device)
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
-        return predict_graph_discrete(self, x0, ts, w.ei, us=w.u)
+        return predict_discrete(self, x0, ts, us=w.u, edge_index=w.ei)
 
 class DGKMSK(GKM):
     """Graph version of DKMSK.
@@ -298,7 +297,7 @@ class DGKMSK(GKM):
         return z + self.dynamics_net(self._zu_cat(z, w))
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
-        return predict_graph_discrete(self, x0, ts, w.ei, us=w.u)
+        return predict_discrete(self, x0, ts, us=w.u, edge_index=w.ei)
 
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         self.dynamics_net.set_train_data(inp, out-inp[..., :self.kernel_dimension])

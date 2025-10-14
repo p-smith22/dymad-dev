@@ -4,9 +4,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from dymad.io import load_model
 from dymad.models import DKMSK, KM, KMM
 from dymad.training import LinearTrainer
-from dymad.utils import load_model, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_trajectory, setup_logging, TrajectorySampler
 
 B = 20
 N = 101

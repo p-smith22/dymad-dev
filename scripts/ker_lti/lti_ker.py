@@ -3,9 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from dymad.io import load_model
 from dymad.models import DKM, DKMSK, KM
 from dymad.training import NODETrainer, LinearTrainer
-from dymad.utils import load_model, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_trajectory, setup_logging, TrajectorySampler
 
 B = 30
 N = 41
@@ -130,7 +131,7 @@ cfgs = [
 # IDX = [0, 1, 2, 3, 4, 5]
 # IDX = [0, 1]
 # IDX = [2, 3]
-IDX = [5]
+IDX = [4]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0

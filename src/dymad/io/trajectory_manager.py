@@ -357,8 +357,7 @@ class TrajectoryManager:
         Apply data transformations to the loaded trajectories and control inputs.
         This creates the train-valid-test datasets.
 
-        This method applies transformations defined in the configuration for both
-        state features (x) and control inputs (u).
+        This method applies transformations defined in the configuration for x, y, u, p
         """
         assert self.train_set_index is not None, "Dataset must be split before applying transformations."
 
@@ -508,9 +507,6 @@ class TrajectoryManager:
         """
         Create dataloaders for train, validation, and test sets based on the model type.
 
-        The model type is specified in the YAML config under "dataloader/model_type"
-        and can be one of "NN", "LSTM", or "GNN".
-
         This method creates and stores three dataloaders as class attributes:
         - self.train_loader
         - self.valid_loader
@@ -622,10 +618,7 @@ class TrajectoryManagerGraph(TrajectoryManager):
     .. math::
         x = [x_1, x_2, ..., x_N], \text{where } x_i \in R^M,
 
-    Same applies to control inputs, if present.
-
-    Note:
-        Currently, edge attributes and time-varying adjacency matrices are not supported.
+    Same applies to other data members, if present.
 
     Args:
         metadata (dict): Configuration dictionary.
