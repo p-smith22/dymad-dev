@@ -13,6 +13,7 @@ dependencies = [
   "imageio>=2.36.0",
   "numpy>=2.0",
   "matplotlib>=3.9",
+  "pytest-rerunfailures",
   "pyyaml>=6.0",
   "scikit-learn>=1.5.2",
   "scipy>=1.14",
@@ -32,7 +33,6 @@ docs = [
 ]
 test = [
   "pytest>=8",
-  "pytest-rerunfailures",
 ]
 
 # pyproject.toml
@@ -42,8 +42,8 @@ addopts = [
   "-ra",            # show reasons for skips/xpasses
   "--strict-markers",
   "--maxfail=0",
-  "-q",
-  "--reruns 1"
+  "--reruns=1",
+  "-q"
 ]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

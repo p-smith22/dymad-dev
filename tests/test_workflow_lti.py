@@ -151,9 +151,9 @@ def predict_case(idx, sample, path, ifdl = False):
     _, prd_func = load_model(MDL, path/'lti_model.pt', path/'lti_model.yaml', config_mod=opt)
     with torch.no_grad():
         if ifdl:
-            prd_func(x_data, u_data, t_data[:-1])
+            prd_func(x_data, t_data[:-1], u=u_data)
         else:
-            prd_func(x_data, u_data, t_data)
+            prd_func(x_data, t_data, u=u_data)
 
 @pytest.mark.parametrize("idx", range(len(cfgs)))
 def test_lti(lti_data, lti_gau, env_setup, idx):

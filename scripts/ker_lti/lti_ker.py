@@ -166,7 +166,7 @@ if ifprd:
         mdl, MDL, _, _ = cfgs[_i]
         _, prd_func = load_model(MDL, f'ker_{mdl}.pt')
         with torch.no_grad():
-            pred = prd_func(x_data, u_data, t_data)
+            pred = prd_func(x_data, t_data, u=u_data)
         res.append(pred)
 
     plot_trajectory(

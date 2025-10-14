@@ -101,7 +101,7 @@ if ifprd:
         _, prd_func = load_model(MDL, f'ltg_{mdl}.pt', f'ltg_{mdl}.yaml')
 
         with torch.no_grad():
-            pred = prd_func(x_data, u_data, t_data, ei=edge_index)
+            pred = prd_func(x_data, t_data, u=u_data, ei=edge_index)
             res.append(pred)
 
     plot_trajectory(

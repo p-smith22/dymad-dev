@@ -143,13 +143,17 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
         _x0 = torch.tensor(_x0, dtype=dtype, device=device)
         return _x0
 
-    def _proc_u(us, device):
-        _u  = np.array(_data_transform_u.transform(_atleast_3d(us)))
-        if isinstance(_u, np.ndarray):
-            _u = torch.tensor(_u, dtype=dtype, device=device)
-        else:
-            _u = _u.clone().detach().to(device)
-        return _u
+    if _is_autonomous:
+        def _proc_u(us, device):
+            return None
+    else:
+        def _proc_u(us, device):
+            _u  = np.array(_data_transform_u.transform(_atleast_3d(us)))
+            if isinstance(_u, np.ndarray):
+                _u = torch.tensor(_u, dtype=dtype, device=device)
+            else:
+                _u = _u.clone().detach().to(device)
+            return _u
 
     def _proc_prd(pred):
         _prd = np.array(_data_transform_x.inverse_transform(_atleast_3d(pred))).squeeze()
@@ -158,38 +162,13 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
         return np.transpose(_prd, (1, 0, 2))
 
     # Prediction in data space
-    if model.GRAPH:
-        if _is_autonomous:
-            def predict_fn(x0, t, ei=None, device="cpu"):
-                """Predict trajectory in data space."""
-                _x0 = _proc_x0(x0, device)
-                with torch.no_grad():
-                    pred = model.predict(_x0, DynData(ei=ei), t).cpu().numpy()
-                return _proc_prd(pred)
-        else:
-            def predict_fn(x0, us, t, ei=None, device="cpu"):
-                """Predict trajectory in data space."""
-                _x0 = _proc_x0(x0, device)
-                _u  = _proc_u(us, device)
-                with torch.no_grad():
-                    pred = model.predict(_x0, DynData(u=_u, ei=ei), t).cpu().numpy()
-                return _proc_prd(pred)
-    else:
-        if _is_autonomous:
-            def predict_fn(x0, t, device="cpu"):
-                """Predict trajectory in data space."""
-                _x0 = _proc_x0(x0, device)
-                with torch.no_grad():
-                    pred = model.predict(_x0, DynData(), t).cpu().numpy()
-                return _proc_prd(pred)
-        else:
-            def predict_fn(x0, us, t, device="cpu"):
-                """Predict trajectory in data space."""
-                _x0 = _proc_x0(x0, device)
-                _u  = _proc_u(us, device)
-                with torch.no_grad():
-                    pred = model.predict(_x0, DynData(u=_u), t).cpu().numpy()
-                return _proc_prd(pred)
+    def predict_fn(x0, t, u=None, ei=None, device="cpu"):
+        """Predict trajectory in data space."""
+        _x0 = _proc_x0(x0, device)
+        _u  = _proc_u(u, device)
+        with torch.no_grad():
+            pred = model.predict(_x0, DynData(u=_u, ei=ei), t).cpu().numpy()
+        return _proc_prd(pred)
 
     return model, predict_fn
 

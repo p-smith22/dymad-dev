@@ -90,8 +90,8 @@ if ifprd:
         mdl_nd, prd_nd = load_model(MDL, f'ltd_{mdl}_node.pt', f'ltd_{mdl}_node.yaml')
 
         with torch.no_grad():
-            weak_pred = prd_wf(x_data, u_data, t_data[:-1])
-            node_pred = prd_nd(x_data, u_data, t_data[:-1])
+            weak_pred = prd_wf(x_data, t_data[:-1], u=u_data)
+            node_pred = prd_nd(x_data, t_data[:-1], u=u_data)
 
         plot_trajectory(
             np.array([x_data, weak_pred, node_pred]), t_data, "LTD",
