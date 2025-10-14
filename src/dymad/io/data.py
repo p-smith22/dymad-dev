@@ -14,17 +14,27 @@ class DynData:
     t: Union[torch.Tensor, None] = None
     """t (torch.Tensor): Time tensor of shape (batch_size, n_steps)."""
 
-    x: Union[torch.Tensor, None] = None
-    """x (torch.Tensor): State tensor of shape (batch_size, n_steps, n_states)."""
+    x: torch.Tensor = field(default_factory=torch.Tensor)
+    """
+    x (torch.Tensor): Feature tensor of shape (batch_size, n_steps, n_features).
+    The only data member that is always required.
+    """
 
     y: Union[torch.Tensor, None] = None
-    """y (torch.Tensor): Observation tensor of shape (batch_size, n_steps, n_observations)."""
+    """
+    y (torch.Tensor): Auxiliary tensor of shape (batch_size, n_steps, n_aux).
+    Additional data that may be used for supervised learning, e.g., additional observations.
+    """
 
     u: Union[torch.Tensor, None] = None
     """u (torch.Tensor): Control tensor of shape (batch_size, n_steps, n_controls)."""
 
     p: Union[torch.Tensor, None] = None
-    """p (torch.Tensor): Parameter tensor of shape (batch_size, n_steps, n_parameters)."""
+    """
+    p (torch.Tensor): Parameter tensor of shape (batch_size, n_parameters).
+    Meant for constants that do not vary with time.
+    If there are intermittent step changes in parameters, they should be treated as controls in u.
+    """
 
     # Graph-only
     ei: Union[torch.Tensor, None] = None
@@ -60,7 +70,7 @@ class DynData:
 
     def to(self, device: torch.device, non_blocking: bool = False) -> "DynData":
         """
-        Move the state and control tensors to a different device.
+        Move data tensors to a different device.
 
         Args:
             device (torch.device): The target device.
@@ -70,7 +80,7 @@ class DynData:
             DynData: A DynData instance with tensors on the target device.
         """
         self.t = self.t.to(device, non_blocking=non_blocking) if self.t is not None else None
-        self.x = self.x.to(device, non_blocking=non_blocking) if self.x is not None else None
+        self.x = self.x.to(device, non_blocking=non_blocking)
         self.y = self.y.to(device, non_blocking=non_blocking) if self.y is not None else None
         self.u = self.u.to(device, non_blocking=non_blocking) if self.u is not None else None
         self.p = self.p.to(device, non_blocking=non_blocking) if self.p is not None else None
@@ -94,7 +104,7 @@ class DynData:
             batch_list (List[DynData]): List of DynData instances to collate.
 
         Returns:
-            DynData: A single DynData instance with stacked state and control tensors.
+            DynData: A single DynData instance with stacked data tensors.
         """
         ms = []
         for b in batch_list:
@@ -102,7 +112,7 @@ class DynData:
 
         if batch_list[0]._has_graph:
             ts = torch.concatenate([b.t for b in batch_list], dim=-1).unsqueeze(0) if batch_list[0].t is not None else None
-            xs = torch.concatenate([b.x for b in batch_list], dim=-1).unsqueeze(0) if batch_list[0].x is not None else None
+            xs = torch.concatenate([b.x for b in batch_list], dim=-1).unsqueeze(0)
             ys = torch.concatenate([b.y for b in batch_list], dim=-1).unsqueeze(0) if batch_list[0].y is not None else None
             us = torch.concatenate([b.u for b in batch_list], dim=-1).unsqueeze(0) if batch_list[0].u is not None else None
             ps = torch.concatenate([b.p for b in batch_list], dim=-1).unsqueeze(0) if batch_list[0].p is not None else None
@@ -119,7 +129,7 @@ class DynData:
             return DynData(t=ts, x=xs, y=ys, u=us, p=ps, ei=ei, ew=ew, ea=ea, meta=ms)
 
         ts = torch.stack([b.t for b in batch_list], dim=0) if batch_list[0].t is not None else None
-        xs = torch.stack([b.x for b in batch_list], dim=0) if batch_list[0].x is not None else None
+        xs = torch.stack([b.x for b in batch_list], dim=0)
         ys = torch.stack([b.y for b in batch_list], dim=0) if batch_list[0].y is not None else None
         us = torch.stack([b.u for b in batch_list], dim=0) if batch_list[0].u is not None else None
         ps = torch.stack([b.p for b in batch_list], dim=0) if batch_list[0].p is not None else None
@@ -127,11 +137,11 @@ class DynData:
 
     def truncate(self, num_step):
         return DynData(
-            t = self.t[:, :num_step]    if self.t is not None else None,
-            x = self.x[:, :num_step, :] if self.x is not None else None,
+            t = self.t[:, :num_step] if self.t is not None else None,
+            x = self.x[:, :num_step, :],
             y = self.y[:, :num_step, :] if self.y is not None else None,
             u = self.u[:, :num_step, :] if self.u is not None else None,
-            p = self.p[:, :num_step, :] if self.p is not None else None,
+            p = self.p,
             # ei = self.ei[:, :num_step, :, :] if self._has_graph else None,
             ei = self.ei if self._has_graph else None,
             ew = self.ew[:, :num_step, :]    if self.ew is not None else None,
@@ -155,10 +165,11 @@ class DynData:
         # unfold produces a tensor of shape (batch_size, n_window, :, window)
         # merge the first two dimensions and permute the last two gives (batch_size*n_window, window, :)
         t_unfolded = self.t.unfold(1, window, stride).reshape(-1, window) if self.t is not None else None
-        x_unfolded = self.x.unfold(1, window, stride).reshape(-1, self.x.size(-1), window).permute(0, 2, 1) if self.x is not None else None
+        x_unfolded = self.x.unfold(1, window, stride).reshape(-1, self.x.size(-1), window).permute(0, 2, 1)
+        n_windows = x_unfolded.size(0) // self.x.size(0)
         y_unfolded = self.y.unfold(1, window, stride).reshape(-1, self.y.size(-1), window).permute(0, 2, 1) if self.y is not None else None
         u_unfolded = self.u.unfold(1, window, stride).reshape(-1, self.u.size(-1), window).permute(0, 2, 1) if self.u is not None else None
-        p_unfolded = self.p.unfold(1, window, stride).reshape(-1, self.p.size(-1), window).permute(0, 2, 1) if self.p is not None else None
+        p_unfolded = self.p.repeat_interleave(n_windows, dim=0) if self.p is not None else None
         if self._has_graph:
             ei_unfolded = self.ei.unfold(1, window, stride).reshape(-1, 2, self.ei.size(-1), window).permute(0, 3, 1, 2)
             ew_unfolded = self.ew.unfold(1, window, stride).reshape(-1, self.ew.size(-1), window).permute(0, 2, 1)      if self.ew is not None else None
@@ -171,14 +182,14 @@ class DynData:
     @property
     def xg(self) -> torch.Tensor:
         """
-        Get the state tensor with shape (batch_size, n_steps, n_nodes, n_states_per_node).
+        Get the feature tensor with shape (batch_size, n_steps, n_nodes, n_features_per_node).
         """
         return self.x.reshape(*self.x_reshape)
 
     @property
     def yg(self) -> torch.Tensor:
         """
-        Get the observation tensor with shape (batch_size, n_steps, n_nodes, n_obs_per_node).
+        Get the auxiliary tensor with shape (batch_size, n_steps, n_nodes, n_aux_per_node).
         """
         return self.y.reshape(*self.y_reshape)
 
@@ -192,7 +203,7 @@ class DynData:
     @property
     def pg(self) -> Union[torch.Tensor, None]:
         """
-        Get the parameter tensor with shape (batch_size, n_steps, n_nodes, n_parameters).
+        Get the parameter tensor with shape (batch_size, n_nodes, n_parameters).
         """
         return self.p.reshape(*self.p_reshape)
 

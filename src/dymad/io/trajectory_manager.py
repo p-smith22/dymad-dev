@@ -15,6 +15,75 @@ except:
     logging.warning("torch_geometric is not installed. GNN-related functionality will be unavailable.")
     dense_to_sparse = None
 
+def _process_data(data, x, label, base_dim=1, offset=0):
+    """
+    x as reference data, list of arrays.
+
+    When offset = 1, effectively the n_steps dimension is removed, so the method processes time-invariant data.
+
+    Expecting to return a list of `n_traj` arrays:
+    _data = [... d_i ...]
+    where d_i has shape (n_steps, ...) and ndim(d_i) = base_dim + 1
+    """
+    _dim = base_dim - offset
+    if data is None:
+        logging.info(f"No {label} detected. Setting to None.")
+        if offset == 0:
+            _data = [np.empty((_x.shape[0], 0)) for _x in x]
+        else:
+            _data = [np.empty((0,)) for _ in x]
+
+    elif isinstance(data, np.ndarray):
+        if data.ndim == _dim + 2:  # (n_traj, n_steps, ...)
+            logging.info(f"Detected {label} as np.ndarray (n_traj, n_steps, ...): {data.shape}. Splitting into list of arrays.")
+            _data = [np.array(_u) for _u in data]
+        elif data.ndim == _dim + 1:  # (n_steps, ...)
+            if len(x) > 1:
+                logging.info(f"Detected {label} as np.ndarray (n_steps, ...): {data.shape} but x is multi-traj ({len(x)}). Broadcasting {label} to all trajectories.")
+                _data = [np.array(data) for _ in x]
+            else:
+                logging.info(f"Detected {label} as np.ndarray (n_steps, ...): {data.shape}. Wrapping as single-element list.")
+                _data = [np.array(data)]
+        elif data.ndim == _dim and _dim > 0:  # (...,)
+            logging.info(f"Detected {label} as np.ndarray (...,): {data.shape}. Expanding to trajectory for each x and broadcasting to all trajectories.")
+            _data = [np.tile(data, (x.shape[0], 1)) for x in x]
+        else:
+            msg = f"Unsupported {label} shape: {data.shape}"
+            logging.error(msg)
+            raise ValueError(msg)
+
+    elif isinstance(data, list):
+        if len(data) == 1 and len(x) > 1:
+            # Single data for multiple x, broadcast
+            u0 = np.array(data[0])
+            if u0.ndim == _dim and _dim > 0:
+                logging.info(f"Detected {label} as single {base_dim}-dim array in list for multiple x. Tiling and broadcasting to all trajectories.")
+                _data = [np.tile(u0, (x.shape[0], 1)) for x in x]
+            elif u0.ndim == _dim + 1:
+                logging.info(f"Detected {label} as single {base_dim+1}-dim array in list for multiple x. Broadcasting to all trajectories.")
+                _data = [np.array(u0) for _ in x]
+            else:
+                msg = f"Unsupported {label} shape in list: {u0.shape}"
+                logging.error(msg)
+                raise ValueError(msg)
+        else:
+            logging.info(f"Detected {label} as list of arrays. Converting all to np.ndarray.")
+            _data = [np.array(_u) for _u in data]
+
+    else:
+        logging.error(f"{label} must be a np.ndarray or list of np.ndarrays")
+        raise TypeError(f"{label} must be a np.ndarray or list of np.ndarrays")
+
+    # Data validation
+    assert len(_data) == len(x), f"{label} list length ({len(_data)}) must match x list length ({len(x)})"
+    if _data[0].size > 0:
+        for xi, ui in zip(x, _data):
+            if xi.shape[0] != ui.shape[0]:
+                msg = f"Each trajectory in x ({xi.shape[0]}) and {label} ({ui.shape[0]}) must have the same number of time steps"
+                logging.error(msg)
+                raise ValueError(msg)
+    return _data
+
 class TrajectoryManager:
     """
     A class to manage trajectory data loading, preprocessing, and
@@ -42,6 +111,8 @@ class TrajectoryManager:
         self.data_path = self.metadata['config']['data']['path']
 
         self._data_transform_x = make_transform(self.metadata['config'].get('transform_x', None))
+        self._data_transform_y = make_transform(self.metadata['config'].get('transform_y', None))
+        self._data_transform_p = make_transform(self.metadata['config'].get('transform_p', None))
         cfg_transform_u = self.metadata['config'].get('transform_u', None)
         self._data_transform_u = make_transform(cfg_transform_u)
         if cfg_transform_u is None:
@@ -69,8 +140,12 @@ class TrajectoryManager:
             self._data_is_split = True
 
             self._data_transform_x.load_state_dict(metadata["transform_x_state"])
+            if "transform_y_state" in metadata:
+                self._data_transform_y.load_state_dict(metadata["transform_y_state"])
             if "transform_u_state" in metadata:
                 self._data_transform_u.load_state_dict(metadata["transform_u_state"])
+            if "transform_p_state" in metadata:
+                self._data_transform_p.load_state_dict(metadata["transform_p_state"])
             self._transform_fitted = True
         else:
             self.train_set_index = None
@@ -134,123 +209,56 @@ class TrajectoryManager:
         # Load the binary data from the file.
         data = np.load(path, allow_pickle=True)
 
-        # Extract x, t, and u from the loaded data.
-        self.x = data['x']
-        self.t = data['t']
-        self.u = data.get('u', None)
+        # Extract entries from the loaded data.
+        logging.info("Loading raw data...")
+        keys = ['t', 'x', 'y', 'u', 'p']
+        vals = []
+        for k in keys:
+            _tmp = data.get(k, None)
+            if k == 'x' and _tmp is None:
+                msg = "x must be provided in the data file."
+                logging.error(msg)
+                raise ValueError(msg)
+            if _tmp is not None:
+                logging.info(f"{k} shape: {_tmp.shape if isinstance(_tmp, np.ndarray) else f'{len(_tmp)} list of arrays'}")
+            vals.append(_tmp)
         logging.info("Raw data loaded.")
-        logging.info(f"x shape: {self.x.shape if isinstance(self.x, np.ndarray) else f'{len(self.x)} list of arrays'}")
-        logging.info(f"t shape: {self.t.shape if isinstance(self.t, np.ndarray) else f'{len(self.t)} list of arrays'}")
-        if self.u is not None:
-            logging.info(f"u shape: {self.u.shape if isinstance(self.u, np.ndarray) else f'{len(self.u)} list of arrays'}")
+
         # Process x
-        if isinstance(self.x, np.ndarray):
-            if self.x.ndim == 3:  # multiple trajectories as (n_traj, n_steps, n_features)
-                logging.info(f"Detected x as 3D np.ndarray (n_traj, n_steps, n_features): {self.x.shape}. Splitting into list of arrays.")
-                self.x = [np.array(_x) for _x in self.x]
-            elif self.x.ndim == 2:  # single trajectory (n_steps, n_features)
-                logging.info(f"Detected x as 2D np.ndarray, treating it as a single trajectory (n_steps, n_features): {self.x.shape}. Wrapping as single-element list.")
-                self.x = [np.array(self.x)]
+        x = vals[1]
+        if isinstance(x, np.ndarray):
+            if x.ndim == 3:  # multiple trajectories as (n_traj, n_steps, n_features)
+                logging.info(f"Detected x as 3D np.ndarray (n_traj, n_steps, n_features): {x.shape}. Splitting into list of arrays.")
+                self.x = [np.array(_x) for _x in x]
+            elif x.ndim == 2:  # single trajectory (n_steps, n_features)
+                logging.info(f"Detected x as 2D np.ndarray, treating it as a single trajectory (n_steps, n_features): {x.shape}. Wrapping as single-element list.")
+                self.x = [np.array(x)]
             else:
-                logging.error(f"Unsupported x shape: {self.x.shape}")
-                raise ValueError(f"Unsupported x shape: {self.x.shape}")
-        elif isinstance(self.x, list):
+                msg = f"Unsupported x shape: {x.shape}"
+                logging.error(msg)
+                raise ValueError(msg)
+        elif isinstance(x, list):
             logging.info(f"Detected x as list of arrays.")
-            self.x = [np.array(_x) for _x in self.x]
+            self.x = [np.array(_x) for _x in x]
         else:
-            logging.error("x must be a numpy array or list of arrays")
-            raise TypeError("x must be a numpy array or list of arrays")
-
-        # Process u
-        self._is_autonomous = False
-        if self.u is None:
-            logging.info("No control input u detected. Creating zero-valued control inputs for autonomous system.")
-            # Create zero control inputs with shape (n_steps, 1) for each trajectory
-            # for unified processing later.
-            self.u = [np.zeros((x.shape[0], 1)) for x in self.x]
-            self._is_autonomous = True
-        elif isinstance(self.u, np.ndarray):
-            if self.u.ndim == 3:  # (n_traj, n_steps, n_controls)
-                logging.info(f"Detected u as 3D np.ndarray (n_traj, n_steps, n_controls): {self.u.shape}. Splitting into list of arrays.")
-                self.u = [np.array(_u) for _u in self.u]
-            elif self.u.ndim == 2:  # (n_steps, n_controls)
-                if len(self.x) > 1:
-                    logging.info(f"Detected u as 2D np.ndarray (n_steps, n_controls) but x is multi-traj ({len(self.x)}). Broadcasting u to all trajectories.")
-                    self.u = [np.array(self.u) for _ in self.x]
-                else:
-                    logging.info(f"Detected u as 2D np.ndarray (n_steps, n_controls): {self.u.shape}. Wrapping as single-element list.")
-                    self.u = [np.array(self.u)]
-            elif self.u.ndim == 1:  # (n_controls,) - constant control input
-                logging.info(f"Detected u as 1D np.ndarray (n_controls,): {self.u.shape}. Expanding to trajectory for each x and broadcasting to all trajectories.")
-                self.u = [np.tile(self.u, (x.shape[0], 1)) for x in self.x]
-            else:
-                logging.error(f"Unsupported u shape: {self.u.shape}")
-                raise ValueError(f"Unsupported u shape: {self.u.shape}")
-        elif isinstance(self.u, list):
-            if len(self.u) == 1 and len(self.x) > 1:
-                # Single u for multiple x, broadcast
-                u0 = np.array(self.u[0])
-                if u0.ndim == 1:
-                    logging.info(f"Detected u as single 1D array in list for multiple x. Expanding and broadcasting to all trajectories.")
-                    self.u = [np.tile(u0, (x.shape[0], 1)) for x in self.x]
-                elif u0.ndim == 2:
-                    logging.info(f"Detected u as single 2D array in list for multiple x. Broadcasting to all trajectories.")
-                    self.u = [np.array(u0) for _ in self.x]
-                else:
-                    logging.error(f"Unsupported u shape in list: {u0.shape}")
-                    raise ValueError(f"Unsupported u shape in list: {u0.shape}")
-            else:
-                logging.info(f"Detected u as list of arrays. Converting all to np.ndarray.")
-                self.u = [np.array(_u) for _u in self.u]
-        else:
-            logging.error("u must be a numpy array or list of arrays")
-            raise TypeError("u must be a numpy array or list of arrays")
-
-        # Ensure x and u have matching trajectory count and length
-        if len(self.x) != len(self.u):
-            logging.error("x and u must have the same number of trajectories")
-            raise ValueError("x and u must have the same number of trajectories")
-        for xi, ui in zip(self.x, self.u):
-            if xi.shape[0] != ui.shape[0]:
-                logging.error("Each trajectory in x and u must have the same number of time steps")
-                raise ValueError("Each trajectory in x and u must have the same number of time steps")
+            logging.error("x must be a np.ndarray or list of np.ndarrays")
+            raise TypeError("x must be a np.ndarray or list of np.ndarrays")
 
         # Process t
-        if isinstance(self.t, (float, int)):
-            logging.info(f"Detected t as scalar ({self.t}). Generating uniform time arrays for each trajectory.")
-            self.dt = float(self.t)
-            self.t = [np.arange(traj.shape[0]) * self.dt for traj in self.x]
-            self.dt = [self.dt for _ in self.t]
-        elif isinstance(self.t, np.ndarray):
-            if self.t.ndim == 1:
-                if len(self.x) > 1:
-                    logging.info(f"Detected t as 1D np.ndarray (n_steps,) but x is multi-traj ({len(self.x)}). Broadcasting t to all trajectories.")
-                    self.t = [np.array(self.t) for _ in self.x]
-                    self.dt = [self.t[0][1] - self.t[0][0] for _ in self.x]
-                else:
-                    logging.info(f"Detected t as 1D np.ndarray (n_steps,): {self.t.shape}. Wrapping as single-element list.")
-                    self.dt = [self.t[1] - self.t[0]]
-                    self.t = [self.t]
-            elif self.t.ndim == 2:
-                logging.info(f"Detected t as 2D np.ndarray (n_traj, n_steps): {self.t.shape}. Splitting into list of arrays.")
-                self.t = [ti for ti in self.t]
-                self.dt = [ti[1] - ti[0] for ti in self.t]
-            else:
-                logging.error(f"Unsupported array dimension for t: {self.t.ndim}")
-                raise ValueError(f"Unsupported array dimension for t: {self.t.ndim}")
-        elif isinstance(self.t, list):
-            if len(self.t) == 1 and len(self.x) > 1:
-                logging.info(f"Detected t as single array in list for multiple x. Broadcasting t to all trajectories.")
-                t0 = np.array(self.t[0])
-                self.t = [t0 for _ in self.x]
-                self.dt = [t0[1] - t0[0] for _ in self.x]
-            else:
-                logging.info(f"Detected t as list of arrays. Converting all to np.ndarray and computing dt for each.")
-                self.t = [np.array(ti) for ti in self.t]
-                self.dt = [ti[1] - ti[0] for ti in self.t]
-        else:
-            logging.error("t must be a float, numpy array, or list of numpy arrays")
-            raise TypeError("t must be a float, numpy array, or list of numpy arrays")
+        self.t = _process_data(vals[0], self.x, "t", base_dim=0, offset=0)
+        if self.t[0].size == 0:
+            self.t = [np.arange(_x.shape[0]) for _x in self.x]
+        self.dt = [ti[1] - ti[0] for ti in self.t]
+
+        # Process y
+        self.y = _process_data(vals[2], self.x, "y", base_dim=1, offset=0)
+
+        # Process u
+        self.u = _process_data(vals[3], self.x, "u", base_dim=1, offset=0)
+        self._is_autonomous = self.u[0].size == 0
+
+        # Process p
+        self.p = _process_data(vals[4], self.x, "p", base_dim=1, offset=1)
 
     def data_truncation(self) -> None:
         """
@@ -269,29 +277,33 @@ class TrajectoryManager:
         # Subset trajectories if n_samples is provided.
         if n_samples is not None:
             if n_samples > 1:
-                self.x = self.x[:n_samples]
-                self.u = self.u[:n_samples]
                 self.t = self.t[:n_samples]
                 self.dt = self.dt[:n_samples]
+                self.x = self.x[:n_samples]
+                self.y = self.y[:n_samples]
+                self.u = self.u[:n_samples]
+                self.p = self.p[:n_samples]
 
         # Truncate each trajectory's length if n_steps is provided.
         if n_steps is not None:
-            self.x = [traj[:n_steps] for traj in self.x]
-            # Truncate control inputs to match trajectory length
-            self.u = [inp[:n_steps] for inp in self.u]
-            self.t = [ti[:n_steps] for ti in self.t]
+            self.t = [_t[:n_steps] for _t in self.t]
+            self.x = [_x[:n_steps] for _x in self.x]
+            self.y = [_y[:n_steps] for _y in self.y]
+            self.u = [_u[:n_steps] for _u in self.u]
+            # self.p is time-invariant
 
         # Populate metadata.
         self.metadata["n_samples"] = len(self.x)
         self.metadata["n_state_features"] = int(self.x[0].shape[-1])
-        if self._is_autonomous:
-            self.metadata["n_control_features"] = 0
-        else:
-            self.metadata["n_control_features"] = int(self.u[0].shape[-1])
+        self.metadata["n_aux_features"] = int(self.y[0].shape[-1])
+        self.metadata["n_control_features"] = int(self.u[0].shape[-1])
+        self.metadata["n_parameters"] = int(self.p[0].shape[-1])
         logging.info("Data loaded and processed.")
         logging.info(f"Number of samples: {self.metadata['n_samples']}")
         logging.info(f"Number of state features: {self.metadata['n_state_features']}")
+        logging.info(f"Number of auxiliary features: {self.metadata['n_aux_features']}")
         logging.info(f"Number of control features: {self.metadata['n_control_features']}")
+        logging.info(f"Number of parameters: {self.metadata["n_parameters"]}")
         logging.info(f"Delay embedding size: {self.metadata['delay']}")
 
     def split_dataset_index(self):
@@ -356,11 +368,23 @@ class TrajectoryManager:
             self._data_transform_x.fit(X)
             self.metadata["transform_x_state"] = self._data_transform_x.state_dict()
 
+            if self.metadata["n_aux_features"] > 0:
+                logging.info("Fitting transformation for auxiliary features.")
+                Y = [self.y[i] for i in self.train_set_index]
+                self._data_transform_y.fit(Y)
+                self.metadata["transform_y_state"] = self._data_transform_y.state_dict()
+
             if self.metadata["n_control_features"] > 0:
                 logging.info("Fitting transformation for control inputs.")
                 U = [self.u[i] for i in self.train_set_index]
                 self._data_transform_u.fit(U)
                 self.metadata["transform_u_state"] = self._data_transform_u.state_dict()
+
+            if self.metadata["n_parameters"] > 0:
+                logging.info("Fitting transformation for parameters.")
+                P = [self.p[i] for i in self.train_set_index]
+                self._data_transform_p.fit(P)
+                self.metadata["transform_p_state"] = self._data_transform_p.state_dict()
         else:
             logging.info("Transformations already fitted. Skipping fitting step.")
 
@@ -381,15 +405,25 @@ class TrajectoryManager:
 
         # Bookkeeping metadata for the dataset.
         self.metadata['n_total_state_features'] = self._data_transform_x._out_dim
-        if self._is_autonomous:
+        if self.metadata["n_aux_features"] == 0:
+            self.metadata['n_total_aux_features'] = 0
+        else:
+            self.metadata['n_total_aux_features'] = self._data_transform_y._out_dim
+        if self.metadata["n_control_features"] == 0:
             self.metadata['n_total_control_features'] = 0
         else:
             self.metadata['n_total_control_features'] = self._data_transform_u._out_dim
+        if self.metadata["n_parameters"] == 0:
+            self.metadata['n_total_parameters'] = 0
+        else:
+            self.metadata['n_total_parameters'] = self._data_transform_p._out_dim
         self.metadata['n_total_features'] = self.metadata['n_total_state_features'] + self.metadata['n_total_control_features']
         self.metadata["dt_and_n_steps"] = self._create_dt_n_steps_metadata()
 
         logging.info(f"Number of total state features: {self.metadata['n_total_state_features']}")
+        logging.info(f"Number of total auxiliary features: {self.metadata['n_total_aux_features']}")
         logging.info(f"Number of total control features: {self.metadata['n_total_control_features']}")
+        logging.info(f"Number of total parameters: {self.metadata['n_total_parameters']}")
 
     def _transform_by_index(self, indices: torch.Tensor) -> List[DynData]:
         # Process X first
@@ -400,6 +434,20 @@ class TrajectoryManager:
         if _d > 0:
             _X = [x[_d:] for x in _X]
 
+        _T = [self.t[i] for i in indices]
+        if self.metadata["delay"] > 0:
+            _T = [t[:-self.metadata["delay"]] for t in _T]
+
+        if self.metadata["n_aux_features"] > 0:
+            # Process Y only if there are auxiliary features.
+            # Same idea as for X, we trim out the first few steps if the delay in x is larger.
+            _Y = self._data_transform_y.transform([self.y[i] for i in indices])
+            _d = self.metadata["delay"] - self._data_transform_y.delay
+            if _d > 0:
+                _Y = [y[_d:] for y in _Y]
+        else:
+            _Y = [None for _ in _X]
+
         if self.metadata["n_control_features"] > 0:
             # Process U only if there are control features.
             # Same idea as for X, we trim out the first few steps if the delay in x is larger.
@@ -407,20 +455,26 @@ class TrajectoryManager:
             _d = self.metadata["delay"] - self._data_transform_u.delay
             if _d > 0:
                 _U = [u[_d:] for u in _U]
-
-            # Then we assemble the dataset of x and u.
-            dataset = []
-            for _x, _u in zip(_X, _U):
-                dataset.append(DynData(
-                    x=torch.tensor(_x, dtype=self.dtype, device=self.device),
-                    u=torch.tensor(_u, dtype=self.dtype, device=self.device)
-                ))
-            return dataset
         else:
-            # Then we assemble the dataset of x.
-            return [DynData(
-                x=torch.tensor(_x, dtype=self.dtype, device=self.device))
-                for _x in _X]
+            _U = [None for _ in _X]
+
+        if self.metadata["n_parameters"] > 0:
+            # Nothing to delay for parameters, they are time-invariant.
+            _P = self._data_transform_p.transform([self.p[i] for i in indices])
+        else:
+            _P = [None for _ in _X]
+
+        # Lastly assemble the dataset.
+        dataset = []
+        for _t, _x, _y, _u, _p in zip(_T, _X, _Y, _U, _P):
+            dataset.append(DynData(
+                t=torch.tensor(_t, dtype=self.dtype, device=self.device),
+                x=torch.tensor(_x, dtype=self.dtype, device=self.device),
+                y=torch.tensor(_y, dtype=self.dtype, device=self.device) if _y is not None else None,
+                u=torch.tensor(_u, dtype=self.dtype, device=self.device) if _u is not None else None,
+                p=torch.tensor(_p, dtype=self.dtype, device=self.device) if _p is not None else None
+        ))
+        return dataset
 
     def _create_dt_n_steps_metadata(self) -> List[List[float]]:
         """
