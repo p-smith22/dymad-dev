@@ -5,11 +5,12 @@ import numpy as np
 import scipy.integrate as spi
 import torch
 
+from dymad.io import load_model
 from dymad.models import DKBF, KBF
 from dymad.numerics import complex_plot
 from dymad.sako import per_state_err, SpectralAnalysis
 from dymad.training import LinearTrainer, NODETrainer
-from dymad.utils import load_model, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_trajectory, setup_logging, TrajectorySampler
 
 B = 500
 N = 81

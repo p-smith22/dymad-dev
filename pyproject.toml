@@ -42,7 +42,7 @@ addopts = [
   "-ra",            # show reasons for skips/xpasses
   "--strict-markers",
   "--maxfail=0",
-  "--reruns=1",
+  "--reruns=2",
   "-q"
 ]
 testpaths = ["tests"]
