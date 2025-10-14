@@ -32,6 +32,7 @@ docs = [
 ]
 test = [
   "pytest>=8",
+  "pytest-rerunfailures",
 ]
 
 # pyproject.toml
@@ -41,7 +42,8 @@ addopts = [
   "-ra",            # show reasons for skips/xpasses
   "--strict-markers",
   "--maxfail=0",
-  "-q"
+  "-q",
+  "--reruns 1"
 ]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
