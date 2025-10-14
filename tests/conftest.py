@@ -68,6 +68,32 @@ def env_setup():
     shutil.rmtree(HERE/'checkpoints', ignore_errors=True)
 
 @pytest.fixture(scope='session')
+def trj_data():
+    # ---- runs ONCE before any tests execute ----
+
+    # --------------------
+    # Data generation
+    B = 8
+    N = 21
+    t_grid = np.linspace(0, 0.1, N)
+
+    sampler = TrajectorySampler(f, g, config=HERE/'lti_data.yaml', config_mod=config_chr)
+    ts, xs, us, ys = sampler.sample(t_grid, batch=B)
+    ys = np.hstack([xs[0], xs[1]])    # This will be repeated
+    ps = [np.arange(4)+_i for _i in range(len(xs))]
+    np.savez_compressed(HERE/'trj.npz', t=ts, x=xs, y=ys, u=us, p=ps)
+
+    # ---- Interface to the tests ----
+    yield HERE/'trj.npz'
+
+    # ---- runs ONCE after all tests finish (even on failure) ----
+
+    # --------------------
+    # Clean up
+    if os.path.exists(HERE/'trj.npz'):
+        os.remove(HERE/'trj.npz')
+
+@pytest.fixture(scope='session')
 def lti_data():
     # ---- runs ONCE before any tests execute ----
 

@@ -76,7 +76,7 @@ def _process_data(data, x, label, base_dim=1, offset=0):
 
     # Data validation
     assert len(_data) == len(x), f"{label} list length ({len(_data)}) must match x list length ({len(x)})"
-    if _data[0].size > 0:
+    if _data[0].size > 0 and offset == 0:
         for xi, ui in zip(x, _data):
             if xi.shape[0] != ui.shape[0]:
                 msg = f"Each trajectory in x ({xi.shape[0]}) and {label} ({ui.shape[0]}) must have the same number of time steps"
@@ -435,7 +435,7 @@ class TrajectoryManager:
 
         _T = [self.t[i] for i in indices]
         if self.metadata["delay"] > 0:
-            _T = [t[:-self.metadata["delay"]] for t in _T]
+            _T = [t[self.metadata["delay"]:] for t in _T]
 
         if self.metadata["n_aux_features"] > 0:
             # Process Y only if there are auxiliary features.
