@@ -140,6 +140,8 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
 
     def _proc_x0(x0, device):
         _x0 = np.array(_data_transform_x.transform(_atleast_3d(x0)))[:,0,:]
+        if len(_x0) == 1:
+            _x0 = _x0[0]
         _x0 = torch.tensor(_x0, dtype=dtype, device=device)
         return _x0
 
@@ -148,11 +150,10 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
             return None
     else:
         def _proc_u(us, device):
-            _u  = np.array(_data_transform_u.transform(_atleast_3d(us)))
-            if isinstance(_u, np.ndarray):
-                _u = torch.tensor(_u, dtype=dtype, device=device)
-            else:
-                _u = _u.clone().detach().to(device)
+            _u = np.array(_data_transform_u.transform(_atleast_3d(us)))
+            if len(_u) == 1:
+                _u = _u[0]
+            _u = torch.tensor(_u, dtype=dtype, device=device)
             return _u
 
     def _proc_prd(pred):
