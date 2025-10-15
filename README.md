@@ -43,8 +43,9 @@ If there are API errors such as some files not found, try deleting the auto-gene
 
 # TODO notes
 
-- Include edge_attr etc in DynGeoData, see [here](https://pytorch-geometric.readthedocs.io/en/latest/cheatsheet/gnn_cheatsheet.html)
+- Include edge_attr etc in ChebConv, see [here](https://pytorch-geometric.readthedocs.io/en/latest/cheatsheet/gnn_cheatsheet.html)
 - Verify the RNN-type training
+- Variable length data (Data class does allow this, but collate and training need to adapt)
 - Update the aircraft example
 - Update the double pendulum example
 - FTLE and CLV for nonlinear latent dynamics
