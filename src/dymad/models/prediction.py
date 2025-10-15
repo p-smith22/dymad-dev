@@ -60,6 +60,8 @@ def _prepare_data(x0, ts, us, device, edge_index=None):
     # Edge indices
     _ei = None
     if edge_index is not None:
+        if isinstance(edge_index, np.ndarray):
+            edge_index = torch.from_numpy(edge_index).long()
         if edge_index.ndim == 2:
             # Expand to batches and time steps
             # edge_index: (2, n_edges) -> (_Nb, _Nt, 2, n_edges)

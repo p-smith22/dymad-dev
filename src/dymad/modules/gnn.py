@@ -92,7 +92,7 @@ class GNN(nn.Module):
 
         - `x` (..., n_nodes, n_features).
         - `edge_index` (..., 2, n_edges).
-        - Returns (..., n_nodes, n_new_features).
+        - Returns (..., n_nodes*n_new_features).
 
         If ...=1, we can process the entire batch in one go.
         Otherwise, we aggregate the graph on the fly so the shapes are reduced
@@ -122,7 +122,7 @@ class GNN(nn.Module):
             # Process node features
             _x_cat = x.reshape(1, -1, _x_shape[1])
             _out = self._forward_single(_x_cat, _ei_cat, **kwargs)
-            return _out.reshape(*_x_batch, _x_shape[0], -1)
+            return _out.reshape(*_x_batch, -1)
 
     def _forward_single(self, x, edge_index, **kwargs):
         """
