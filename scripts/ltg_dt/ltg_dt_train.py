@@ -2,12 +2,11 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch_geometric.utils import dense_to_sparse
 
 from dymad.io import load_model
 from dymad.models import DGLDM, DGKBF, DGKM, DGKMSK
 from dymad.training import NODETrainer, LinearTrainer
-from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import adj_to_edge, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
 
 B = 128
 N = 501
@@ -88,7 +87,7 @@ if ifplt:
 
 if ifprd:
     sampler = TrajectorySampler(f, g, config='ltg_data.yaml', config_mod=config_gau)
-    edge_index = dense_to_sparse(torch.Tensor(adj))[0]
+    edge_index = adj_to_edge(adj)[0]
 
     ts, xs, us, ys = sampler.sample(t_grid, batch=1)
     x_data = np.concatenate([ys[0], ys[0], ys[0]], axis=-1)

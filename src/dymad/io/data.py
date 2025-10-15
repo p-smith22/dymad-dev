@@ -142,8 +142,7 @@ class DynData:
             y = self.y[:, :num_step, :] if self.y is not None else None,
             u = self.u[:, :num_step, :] if self.u is not None else None,
             p = self.p,
-            # ei = self.ei[:, :num_step, :, :] if self._has_graph else None,
-            ei = self.ei if self._has_graph else None,
+            ei = self.ei[:, :num_step, :, :] if self._has_graph else None,
             ew = self.ew[:, :num_step, :]    if self.ew is not None else None,
             ea = self.ea[:, :num_step, :, :] if self.ea is not None else None,
             n_nodes = self.n_nodes,
@@ -166,7 +165,7 @@ class DynData:
         # merge the first two dimensions and permute the last two gives (batch_size*n_window, window, :)
         t_unfolded = self.t.unfold(1, window, stride).reshape(-1, window) if self.t is not None else None
         x_unfolded = self.x.unfold(1, window, stride).reshape(-1, self.x.size(-1), window).permute(0, 2, 1)
-        n_windows = x_unfolded.size(0) // self.x.size(0)
+        n_windows  = x_unfolded.size(0) // self.x.size(0)
         y_unfolded = self.y.unfold(1, window, stride).reshape(-1, self.y.size(-1), window).permute(0, 2, 1) if self.y is not None else None
         u_unfolded = self.u.unfold(1, window, stride).reshape(-1, self.u.size(-1), window).permute(0, 2, 1) if self.u is not None else None
         p_unfolded = self.p.repeat_interleave(n_windows, dim=0) if self.p is not None else None

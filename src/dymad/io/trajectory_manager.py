@@ -6,14 +6,9 @@ from typing import Optional, Union, Tuple, Dict, List
 
 from dymad.io.data import DynData
 from dymad.transform import make_transform
+from dymad.utils.graph import adj_to_edge
 
 logger = logging.getLogger(__name__)
-
-try:
-    from torch_geometric.utils import dense_to_sparse
-except:
-    logging.warning("torch_geometric is not installed. GNN-related functionality will be unavailable.")
-    dense_to_sparse = None
 
 def _process_data(data, x, label, base_dim=1, offset=0):
     """
@@ -46,7 +41,7 @@ def _process_data(data, x, label, base_dim=1, offset=0):
                 _data = [np.array(data)]
         elif data.ndim == _dim and _dim > 0:  # (...,)
             logging.info(f"Detected {label} as np.ndarray (...,): {data.shape}. Expanding to trajectory for each x and broadcasting to all trajectories.")
-            _data = [np.tile(data, (x.shape[0], 1)) for x in x]
+            _data = [np.tile(data, (x.shape[0],) + (1,) * base_dim) for x in x]
         else:
             msg = f"Unsupported {label} shape: {data.shape}"
             logging.error(msg)
@@ -58,7 +53,7 @@ def _process_data(data, x, label, base_dim=1, offset=0):
             u0 = np.array(data[0])
             if u0.ndim == _dim and _dim > 0:
                 logging.info(f"Detected {label} as single {base_dim}-dim array in list for multiple x. Tiling and broadcasting to all trajectories.")
-                _data = [np.tile(u0, (x.shape[0], 1)) for x in x]
+                _data = [np.tile(u0, (x.shape[0],) + (1,) * base_dim) for x in x]
             elif u0.ndim == _dim + 1:
                 logging.info(f"Detected {label} as single {base_dim+1}-dim array in list for multiple x. Broadcasting to all trajectories.")
                 _data = [np.array(u0) for _ in x]
@@ -402,27 +397,7 @@ class TrajectoryManager:
             # For time, we remove the last "delay" time steps.
             self.t = [ti[:-self.metadata["delay"]] for ti in self.t]
 
-        # Bookkeeping metadata for the dataset.
-        self.metadata['n_total_state_features'] = self._data_transform_x._out_dim
-        if self.metadata["n_aux_features"] == 0:
-            self.metadata['n_total_aux_features'] = 0
-        else:
-            self.metadata['n_total_aux_features'] = self._data_transform_y._out_dim
-        if self.metadata["n_control_features"] == 0:
-            self.metadata['n_total_control_features'] = 0
-        else:
-            self.metadata['n_total_control_features'] = self._data_transform_u._out_dim
-        if self.metadata["n_parameters"] == 0:
-            self.metadata['n_total_parameters'] = 0
-        else:
-            self.metadata['n_total_parameters'] = self._data_transform_p._out_dim
-        self.metadata['n_total_features'] = self.metadata['n_total_state_features'] + self.metadata['n_total_control_features']
-        self.metadata["dt_and_n_steps"] = self._create_dt_n_steps_metadata()
-
-        logging.info(f"Number of total state features: {self.metadata['n_total_state_features']}")
-        logging.info(f"Number of total auxiliary features: {self.metadata['n_total_aux_features']}")
-        logging.info(f"Number of total control features: {self.metadata['n_total_control_features']}")
-        logging.info(f"Number of total parameters: {self.metadata['n_total_parameters']}")
+        self._update_dataset_metadata()
 
     def _transform_by_index(self, indices: torch.Tensor) -> List[DynData]:
         # Process X first
@@ -475,6 +450,29 @@ class TrajectoryManager:
         ))
         return dataset
 
+    def _update_dataset_metadata(self):
+        # Bookkeeping metadata for the dataset.
+        self.metadata['n_total_state_features'] = self._data_transform_x._out_dim
+        if self.metadata["n_aux_features"] == 0:
+            self.metadata['n_total_aux_features'] = 0
+        else:
+            self.metadata['n_total_aux_features'] = self._data_transform_y._out_dim
+        if self.metadata["n_control_features"] == 0:
+            self.metadata['n_total_control_features'] = 0
+        else:
+            self.metadata['n_total_control_features'] = self._data_transform_u._out_dim
+        if self.metadata["n_parameters"] == 0:
+            self.metadata['n_total_parameters'] = 0
+        else:
+            self.metadata['n_total_parameters'] = self._data_transform_p._out_dim
+        self.metadata['n_total_features'] = self.metadata['n_total_state_features'] + self.metadata['n_total_control_features']
+        self.metadata["dt_and_n_steps"] = self._create_dt_n_steps_metadata()
+
+        logging.info(f"Number of total state features: {self.metadata['n_total_state_features']}")
+        logging.info(f"Number of total auxiliary features: {self.metadata['n_total_aux_features']}")
+        logging.info(f"Number of total control features: {self.metadata['n_total_control_features']}")
+        logging.info(f"Number of total parameters: {self.metadata['n_total_parameters']}")
+
     def _create_dt_n_steps_metadata(self) -> List[List[float]]:
         """
         Create metadata for dt and n_steps, optimizing storage if values are uniform.
@@ -515,10 +513,10 @@ class TrajectoryManager:
         dl_cfg = self.metadata['config'].get("dataloader", {})
         batch_size: int = dl_cfg.get("batch_size", 1)
 
-        logging.info(f"Creating dataloaders for NN model with batch size {batch_size}.")
-        self.train_loader = DataLoader(self.train_set, batch_size=batch_size, shuffle=True, collate_fn=DynData.collate)
+        logging.info(f"Creating dataloaders for model with batch size {batch_size}.")
+        self.train_loader = DataLoader(self.train_set, batch_size=batch_size, shuffle=True,  collate_fn=DynData.collate)
         self.valid_loader = DataLoader(self.valid_set, batch_size=batch_size, shuffle=False, collate_fn=DynData.collate)
-        self.test_loader = DataLoader(self.test_set, batch_size=batch_size, shuffle=False, collate_fn=DynData.collate)
+        self.test_loader  = DataLoader(self.test_set,  batch_size=batch_size, shuffle=False, collate_fn=DynData.collate)
 
         # Shelved until LSTM is verified.
 
@@ -631,34 +629,90 @@ class TrajectoryManagerGraph(TrajectoryManager):
         super().__init__(metadata, device)
         self.adj = adj  # Store the adjacency matrix if provided externally
 
-    def load_data(self, path: str) -> None:
-        """
-        Load raw data from a binary file.
+        self._data_transform_ew = make_transform(self.metadata['config'].get('transform_ew', None))
+        self._data_transform_ea = make_transform(self.metadata['config'].get('transform_ea', None))
 
-        Args:
-            path (str): Path to the data file.
-        """
+        if "train_set_index" in metadata:
+            if "transform_ew_state" in metadata:
+                self._data_transform_ew.load_state_dict(metadata["transform_ew_state"])
+            if "transform_ea_state" in metadata:
+                self._data_transform_ea.load_state_dict(metadata["transform_ea_state"])
+
+    def load_data(self, path: str) -> None:
         super().load_data(path)
 
-        # Load the binary data from the file.
+        # Load the binary data from the file again.
+        # by now t/x/y/u/p should have been loaded.
         data = np.load(path, allow_pickle=True)
+        ei = data.get('ei', None)
+        ew = data.get('ew', None)
+        ea = data.get('ea', None)
 
-        # Try to load adjacency matrix from data if not provided externally
-        if self.adj is None:
-            try:
-                self.adj = data['adj_mat']
-                logging.info("Loaded adjacency matrix from data file")
-            except KeyError:
-                logging.error("No adjacency matrix found in data file and none provided externally")
-                raise ValueError("Adjacency matrix is required for GNN model type but none was found")
+        adj = data.get('adj_mat', None)
+        if adj is not None:
+            if self.adj is not None:
+                logging.warning("Adjacency matrix provided both externally and in data file. Using the one from data.")
+            self.adj = np.array(adj)
+            logging.info("Loaded adjacency matrix from data file")
+
+        # Process ei and ew
+        if ei is not None:
+            if self.adj is not None:
+                logging.warning("Edge index provided both externally and in data file. Using the one from data.")
+        else:
+            logging.info("Edge index is not in data, generating from adjacency matrix")
+            if isinstance(self.adj, np.ndarray):
+                if self.adj.ndim == 3:
+                    ei, ew = [], []
+                    for i in range(self.adj.shape[0]):
+                        _ei, _ew = adj_to_edge(self.adj[i])
+                        ei.append(_ei)
+                        ew.append(_ew)
+                elif self.adj.ndim == 2:
+                    ei, ew = adj_to_edge(self.adj)
+                else:
+                    msg = f"Unsupported adjacency matrix shape: {self.adj.shape}"
+                    logging.error(msg)
+                    raise ValueError(msg)
+            else:
+                msg = f"Unsupported adjacency matrix type {type(self.adj)}."
+                logging.error(msg)
+                raise ValueError(msg)
+        self.ei = _process_data(ei, self.x, "ei", base_dim=2, offset=0)
+        self.ew = _process_data(ew, self.x, "ew", base_dim=1, offset=0)
+
+        # Process ea
+        self.ea = _process_data(ea, self.x, "ea", base_dim=2, offset=0)
+
+    def data_truncation(self) -> None:
+        super().data_truncation()
+
+        cfg = self.metadata['config'].get("data", {})
+        n_samples: Optional[int] = cfg.get("n_samples", None)
+        n_steps: Optional[int] = cfg.get("n_steps", None)
+        # Subset trajectories if n_samples is provided.
+        if n_samples is not None:
+            if n_samples > 1:
+                self.ei = self.ei[:n_samples]
+                self.ew = self.ew[:n_samples]
+                self.ea = self.ea[:n_samples]
+
+        # Truncate each trajectory's length if n_steps is provided.
+        if n_steps is not None:
+            self.ei = [_ei[:n_steps] for _ei in self.ei]
+            self.ew = [_ew[:n_steps] for _ew in self.ew]
+            self.ea = [_ea[:n_steps] for _ea in self.ea]
+
+        # Complete metadata
+        self.metadata["n_edge_weights"] = 1 if self.ew[0].size > 0 else 0
+        self.metadata["n_edge_features"] = int(self.ea[0].shape[-1])
+        logging.info(f"Number of edge features: {self.metadata['n_edge_features']}")
+        logging.info(f"Number of edge weights: {self.metadata['n_edge_weights']}")
 
     def apply_data_transformations(self) -> None:
         """
         Apply data transformations to the loaded trajectories and control inputs.
         This creates the train-valid-test datasets.
-
-        This method applies transformations defined in the configuration for both
-        state features (x) and control inputs (u).
 
         The raw data is expected to be [T, n_nodes * n_features], but the transformation
         assumes [T * n_nodes, n_features].  So extra reshaping is needed.
@@ -671,11 +725,35 @@ class TrajectoryManagerGraph(TrajectoryManager):
             self._data_transform_x.fit(np.vstack(X))  # Make sure the input is 3D
             self.metadata["transform_x_state"] = self._data_transform_x.state_dict()
 
+            if self.metadata["n_aux_features"] > 0:
+                logging.info("Fitting transformation for auxiliary features.")
+                Y = [self._graph_data_reshape(self.y[i], forward=True) for i in self.train_set_index]
+                self._data_transform_y.fit(np.vstack(Y))
+                self.metadata["transform_y_state"] = self._data_transform_y.state_dict()
+
             if self.metadata["n_control_features"] > 0:
                 logging.info("Fitting transformation for control inputs.")
                 U = [self._graph_data_reshape(self.u[i], forward=True) for i in self.train_set_index]
                 self._data_transform_u.fit(np.vstack(U))
                 self.metadata["transform_u_state"] = self._data_transform_u.state_dict()
+
+            if self.metadata["n_parameters"] > 0:
+                logging.info("Fitting transformation for parameters.")
+                P = [self._graph_data_reshape(self.p[i][...,None,:], forward=True) for i in self.train_set_index]
+                self._data_transform_p.fit(np.vstack(P))
+                self.metadata["transform_p_state"] = self._data_transform_p.state_dict()
+
+            if self.metadata["n_edge_weights"] > 0:
+                logging.info("Fitting transformation for edge weights.")
+                E = [self.ew[i] for i in self.train_set_index]
+                self._data_transform_ew.fit(E)
+                self.metadata["transform_ew_state"] = self._data_transform_ew.state_dict()
+
+            if self.metadata["n_edge_features"] > 0:
+                logging.info("Fitting transformation for edge features.")
+                E = [self.ea[i] for i in self.train_set_index]
+                self._data_transform_ea.fit(E)
+                self.metadata["transform_ea_state"] = self._data_transform_ea.state_dict()
         else:
             logging.info("Transformations already fitted. Skipping fitting step.")
 
@@ -694,51 +772,72 @@ class TrajectoryManagerGraph(TrajectoryManager):
             # For time, we remove the last "delay" time steps.
             self.t = [ti[:-self.metadata["delay"]] for ti in self.t]
 
-        # Bookkeeping metadata for the dataset.
-        # The total number of features is the sum of state and control features.
-        self.metadata['n_total_state_features'] = self._data_transform_x._out_dim
-        if self._is_autonomous:
-            self.metadata['n_total_control_features'] = 0
-        else:
-            self.metadata['n_total_control_features'] = self._data_transform_u._out_dim
-        self.metadata['n_total_features'] = self.metadata['n_total_state_features'] + self.metadata['n_total_control_features']
-        self.metadata["dt_and_n_steps"] = self._create_dt_n_steps_metadata()
-
-        logging.info(f"Number of total state features: {self.metadata['n_total_state_features']}")
-        logging.info(f"Number of total control features: {self.metadata['n_total_control_features']}")
+        self._update_dataset_metadata()
 
     def _transform_by_index(self, indices: torch.Tensor) -> List[DynData]:
         # Process X first
         # If the common delay is larger (larger delay in u), we trim out the first few steps.
         # This way the latest x and u are aligned.
         tmp = [self._graph_data_reshape(self.x[i], forward=True) for i in indices]
-        _X = [self._data_transform_x.transform(_t) for _t in tmp]
+        _X = [np.array(self._data_transform_x.transform(_t)) for _t in tmp]
         _d = self.metadata["delay"] - self._data_transform_x.delay
         if _d > 0:
-            _X = [x[_d:] for x in _X]
+            _X = [x[:, _d:] for x in _X]
+
+        _T = [self.t[i] for i in indices]
+        if self.metadata["delay"] > 0:
+            _T = [t[self.metadata["delay"]:] for t in _T]
+
+        if self.metadata["n_aux_features"] > 0:
+            tmp = [self._graph_data_reshape(self.y[i], forward=True) for i in indices]
+            _Y = [np.array(self._data_transform_y.transform(_t)) for _t in tmp]
+            _d = self.metadata["delay"]
+            if _d > 0:
+                _Y = [y[:, _d:] for y in _Y]
+        else:
+            _Y = [None for _ in _X]
 
         if self.metadata["n_control_features"] > 0:
-            # Process U only if there are control features.
-            # Same idea as for X, we trim out the first few steps if the delay in x is larger.
             tmp = [self._graph_data_reshape(self.u[i], forward=True) for i in indices]
-            _U = [self._data_transform_u.transform(_t) for _t in tmp]
+            _U = [np.array(self._data_transform_u.transform(_t)) for _t in tmp]
             _d = self.metadata["delay"] - self._data_transform_u.delay
             if _d > 0:
-                _U = [u[_d:] for u in _U]
-
-            # Then we assemble the dataset of x and u.
-            dataset = []
-            for _x, _u in zip(_X, _U):
-                dataset.append(DynData(
-                    x=torch.tensor(self._graph_data_reshape(_x, forward=False), dtype=self.dtype, device=self.device),
-                    u=torch.tensor(self._graph_data_reshape(_u, forward=False), dtype=self.dtype, device=self.device)
-                ))
-            return dataset
+                _U = [u[:, _d:] for u in _U]
         else:
-            # Then we assemble the dataset of x.
-            return [DynData(
-                x=torch.tensor(self._graph_data_reshape(_x, forward=False), dtype=self.dtype, device=self.device))
-                for _x in _X]
+            _U = [None for _ in _X]
+
+        if self.metadata["n_parameters"] > 0:
+            tmp = [self._graph_data_reshape(self.p[i][..., None, :], forward=True) for i in indices]
+            _P = [self._data_transform_p.transform(_t) for _t in tmp]
+        else:
+            _P = [None for _ in _X]
+
+        _Ei = [self.ei[i] for i in indices]
+
+        if self.metadata["n_edge_weights"] > 0:
+            _Ew = [self._data_transform_ew.transform(self.ew[i]) for i in indices]
+        else:
+            _Ew = [None for _ in _X]
+
+        if self.metadata["n_edge_features"] > 0:
+            _Ea = [self._data_transform_ea.transform(self.ea[i]) for i in indices]
+        else:
+            _Ea = [None for _ in _X]
+
+        # Lastly assemble the dataset.
+        dataset = []
+        for _t, _x, _y, _u, _p, _ei, _ew, _ea in zip(_T, _X, _Y, _U, _P, _Ei, _Ew, _Ea):
+            dataset.append(DynData(
+                t=torch.tensor(_t, dtype=self.dtype, device=self.device),
+                x=torch.tensor(self._graph_data_reshape(_x, forward=False), dtype=self.dtype, device=self.device),
+                y=torch.tensor(self._graph_data_reshape(_y, forward=False), dtype=self.dtype, device=self.device) if _y is not None else None,
+                u=torch.tensor(self._graph_data_reshape(_u, forward=False), dtype=self.dtype, device=self.device) if _u is not None else None,
+                p=torch.tensor(self._graph_data_reshape(_p, forward=False).squeeze(-2), dtype=self.dtype, device=self.device) if _p is not None else None,
+                ei=torch.tensor(_ei, dtype=torch.int64, device=self.device),
+                ew=torch.tensor(_ew, dtype=self.dtype, device=self.device) if _ew is not None else None,
+                ea=torch.tensor(_ea, dtype=self.dtype, device=self.device) if _ea is not None else None,
+            ))
+        return dataset
 
     def _graph_data_reshape(self, data: np.ndarray, forward: bool) -> np.ndarray:
         """
@@ -755,39 +854,3 @@ class TrajectoryManagerGraph(TrajectoryManager):
         # Reshape from [n_nodes, T, n_features] to [T, n_nodes * n_features]
         tmp = np.swapaxes(data, 0, 1)  # [T, n_nodes, n_features_per_node]
         return tmp.reshape(tmp.shape[0], -1)
-
-    def create_dataloaders(self) -> None:
-        """
-        Create dataloaders for train, validation, and test sets.
-
-        This method creates and stores three dataloaders as class attributes:
-        - self.train_loader
-        - self.valid_loader
-        - self.test_loader
-        """
-        dl_cfg = self.metadata['config'].get("dataloader", {})
-        batch_size: int = dl_cfg.get("batch_size", 1)
-
-        logging.info(f"Creating dataloaders for GNN model with batch size {batch_size}.")
-        gnn_cfg = dl_cfg.get("gnn", {})
-        # Use provided adj matrix if available, otherwise try to get from config (TODO: does not support dynamic graphs yet)
-        adj = self.adj if self.adj is not None else gnn_cfg.get("adjacency", None)
-
-        # Convert numpy array to torch tensor if needed
-        if isinstance(adj, np.ndarray):
-            adj = torch.tensor(adj, dtype=self.dtype, device=self.train_set[0].x.device)
-        else:
-            adj = adj.to(self.train_set[0].x.device)
-
-        # Convert adjacency matrix to edge_index and edge_attr using PyG
-        edge_index, _ = dense_to_sparse(adj)
-
-        # Create DynData objects for each set
-        self.train_set = [DynData(x=traj.x, u=traj.u, ei=edge_index) for traj in self.train_set]
-        self.valid_set = [DynData(x=traj.x, u=traj.u, ei=edge_index) for traj in self.valid_set]
-        self.test_set  = [DynData(x=traj.x, u=traj.u, ei=edge_index) for traj in self.test_set]
-
-        # Lastly the dataloaders
-        self.train_loader = DataLoader(self.train_set, batch_size=batch_size, shuffle=True,  collate_fn=DynData.collate)
-        self.valid_loader = DataLoader(self.valid_set, batch_size=batch_size, shuffle=False, collate_fn=DynData.collate)
-        self.test_loader  = DataLoader(self.test_set,  batch_size=batch_size, shuffle=False, collate_fn=DynData.collate)
