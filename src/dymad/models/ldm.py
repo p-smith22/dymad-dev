@@ -101,7 +101,10 @@ class GLDM(ModelTempUEncGraph):
         )
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        return predict_continuous(self, x0, ts, us=w.u, edge_index=w.ei, method=method, order=self.input_order, **kwargs)
+        return predict_continuous(
+            self, x0, ts,
+            us=w.u, edge_index=w.ei, edge_weights=w.ew, edge_attr=w.ea,
+            method=method, order=self.input_order, **kwargs)
 
 class DGLDM(GLDM):
     """Discrete Graph Latent Dynamics Model (DGLDM) - discrete-time version.
@@ -116,4 +119,6 @@ class DGLDM(GLDM):
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
-        return predict_discrete(self, x0, ts, us=w.u, edge_index=w.ei)
+        return predict_discrete(
+            self, x0, ts,
+            us=w.u, edge_index=w.ei, edge_weights=w.ew, edge_attr=w.ea)

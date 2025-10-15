@@ -77,7 +77,7 @@ def _resolve_activation(spec, dtype, device) -> nn.Module:
     raise TypeError("activation must be str, nn.Module subclass, "
                     f"or nn.Module instance, got {type(spec)}")
 
-def _resolve_gcl(spec) -> nn.Module:
+def _resolve_gcl(spec, opts) -> nn.Module:
     """
     Turn a user-supplied graph convolutional layer *specification* into an nn.Module.
     `spec` can be a string, a GCL class, or a constructed module.
@@ -88,7 +88,7 @@ def _resolve_gcl(spec) -> nn.Module:
         if key not in _GCL_MAP:
             raise ValueError(f"Unknown GCL string '{spec}'. "
                              f"Valid keys are {sorted(_GCL_MAP.keys())}.")
-        return _GCL_MAP[key]
+        return lambda in_dim, out_dim: _GCL_MAP[key](in_dim, out_dim, **opts)
 
     # case 2 ─ GCL *class* (subclass of MessagePassing)
     if isinstance(spec, type) and issubclass(spec, MessagePassing):

@@ -92,6 +92,8 @@ def predict_continuous(
     ts: Union[np.ndarray, torch.Tensor],
     us: torch.Tensor = None,
     edge_index: torch.Tensor = None,
+    edge_weights: torch.Tensor = None,
+    edge_attr: torch.Tensor = None,
     method: str = 'dopri5',
     order: str = 'cubic',
     **kwargs
@@ -260,6 +262,8 @@ def predict_discrete(
     ts: Union[np.ndarray, torch.Tensor],
     us: torch.Tensor = None,
     edge_index: torch.Tensor = None,
+    edge_weights: torch.Tensor = None,
+    edge_attr: torch.Tensor = None,
     **kwargs
 ) -> torch.Tensor:
     """

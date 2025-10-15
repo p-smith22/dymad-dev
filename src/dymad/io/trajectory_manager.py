@@ -63,7 +63,11 @@ def _process_data(data, x, label, base_dim=1, offset=0):
                 raise ValueError(msg)
         else:
             logging.info(f"Detected {label} as list of arrays. Converting all to np.ndarray.")
-            _data = [np.array(_u) for _u in data]
+            if data[0].ndim == _dim and _dim > 0:  # (n_traj, 1, ...)
+                logging.info(f"Detected {label} as list of {base_dim}-dim arrays. Expanding each to trajectory and broadcasting to match x.")
+                _data = [np.tile(np.array(_u), (x.shape[0],) + (1,) * base_dim) for _u, x in zip(data, x)]
+            else:  # (n_traj, n_steps, ...)
+                _data = [np.array(_u) for _u in data]
 
     else:
         logging.error(f"{label} must be a np.ndarray or list of np.ndarrays")
@@ -648,11 +652,11 @@ class TrajectoryManagerGraph(TrajectoryManager):
         ew = data.get('ew', None)
         ea = data.get('ea', None)
 
-        adj = data.get('adj_mat', None)
+        adj = data.get('adj', None)
         if adj is not None:
             if self.adj is not None:
                 logging.warning("Adjacency matrix provided both externally and in data file. Using the one from data.")
-            self.adj = np.array(adj)
+            self.adj = adj
             logging.info("Loaded adjacency matrix from data file")
 
         # Process ei and ew

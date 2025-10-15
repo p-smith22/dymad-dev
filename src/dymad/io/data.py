@@ -124,7 +124,7 @@ class DynData:
                 dim=-1).unsqueeze(0)
 
             ew = torch.concatenate([b.ew for b in batch_list], dim=-1).unsqueeze(0) if batch_list[0].ew is not None else None
-            ea = torch.concatenate([b.ea for b in batch_list], dim=-1).unsqueeze(0) if batch_list[0].ea is not None else None
+            ea = torch.concatenate([b.ea for b in batch_list], dim=-2).unsqueeze(0) if batch_list[0].ea is not None else None
 
             return DynData(t=ts, x=xs, y=ys, u=us, p=ps, ei=ei, ew=ew, ea=ea, meta=ms)
 
