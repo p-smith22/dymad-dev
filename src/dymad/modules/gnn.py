@@ -90,30 +90,39 @@ class GNN(nn.Module):
         """
         Forward pass through the GNN.
 
-        `x` is of shape (n_batch, ..., n_nodes, n_features).
-        `edge_index` is of shape (n_batch, 2, n_edges).
+        - `x` (..., n_nodes, n_features).
+        - `edge_index` (..., 2, n_edges).
+        - Returns (..., n_nodes, n_new_features).
 
-        The code returns a tensor of shape (n_batch, ..., n_nodes * n_features).
-
-        If n_batch=1, we can process the entire batch in one go.
-        Otherwise, we process each edge_index sequentially, which would incur
-        a severe performance degradation.
-
-        Fortunately, the inputs are assumed to come from DynData, which
-        collates batch data into a single large graph, so that here we always
-        have n_batch=1.
+        If ...=1, we can process the entire batch in one go.
+        Otherwise, we aggregate the graph on the fly so the shapes are reduced
+        to the first case.  The aggregation takes a bit more time.
         """
-        if edge_index.shape[0] == 1:
+        if edge_index.ndim == 3 and edge_index.shape[0] == 1:
             # The usual case, where we have a single edge_index
             return self._forward_single(x, edge_index[0], **kwargs)
         else:
-            # The slow case, where we process multiple edge_indices sequentially
-            assert len(x) == len(edge_index), \
-                "Batch size of x and edge_index must match. Got {} and {}.".format(x.shape, edge_index.shape)
-            tmp = []
-            for _x, _e in zip(x, edge_index):
-                tmp.append(self._forward_single(_x, _e, **kwargs))
-            return torch.stack(tmp, dim=0)
+            # The slower case, where we aggregate graph on the fly
+            _x_batch, _x_shape = x.shape[:-2], x.shape[-2:]
+            _e_batch, _e_shape = edge_index.shape[:-2], edge_index.shape[-2:]
+            assert _x_batch == _e_batch, \
+                f"Batch shape of x and edge_index must match. Got {_x_batch} and {_e_batch}."
+
+            # Aggregate graph by shifting node indices
+            _ei = edge_index.reshape(-1, *_e_shape)
+            _tmp = 1
+            for d in _x_batch:
+                _tmp *= d
+            _n_nodes = [0] + [_x_shape[0]] * (_tmp - 1)
+            _offset = torch.tensor(_n_nodes).cumsum(dim=0)
+            _ei_cat = torch.concatenate([
+                b + _offset[i] for i, b in enumerate(_ei)],
+                dim=-1)
+
+            # Process node features
+            _x_cat = x.reshape(1, -1, _x_shape[1])
+            _out = self._forward_single(_x_cat, _ei_cat, **kwargs)
+            return _out.reshape(*_x_batch, _x_shape[0], -1)
 
     def _forward_single(self, x, edge_index, **kwargs):
         """

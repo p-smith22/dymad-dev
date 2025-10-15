@@ -143,7 +143,7 @@ def predict_case(idx, sample, path):
     _, MDL, _, opt = cfgs[idx]
     _, prd_func = load_model(MDL, path/'ltg_model.pt', path/'ltg_model.yaml', config_mod=opt)
     with torch.no_grad():
-        prd_func(x_data, t_data, u=u_data, ei=edge_index)
+        prd_func(x_data, t_data, u=u_data, ei=torch.tensor(edge_index))
 
 @pytest.mark.parametrize("idx", range(len(cfgs)))
 def test_ltg(ltg_data, ltg_gau, env_setup, idx):

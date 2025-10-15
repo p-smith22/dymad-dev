@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 def _prepare_data(x0, ts, us, device, edge_index=None):
     is_batch = x0.ndim == 2
+    _Nb = x0.shape[0] if is_batch else 1
 
     # Initial conditions
     if is_batch:
@@ -60,11 +61,22 @@ def _prepare_data(x0, ts, us, device, edge_index=None):
     _ei = None
     if edge_index is not None:
         if edge_index.ndim == 2:
-            _ei = edge_index.clone().detach().to(device).unsqueeze(0)
+            # Expand to batches and time steps
+            # edge_index: (2, n_edges) -> (_Nb, _Nt, 2, n_edges)
+            _ei = edge_index.clone().detach().to(device)
+            _ei = _ei.unsqueeze(0).unsqueeze(0)  # (1, 1, 2, n_edges)
+            _ei = _ei.repeat(_Nb, n_steps, 1, 1)  # (_Nb, _Nt, 2, n_edges)
         elif edge_index.ndim == 3:
+            # Expand to batches
+            assert edge_index.shape[0] == _Nt, f"3D edge_index first dimension must match time steps. Got {edge_index.shape[0]} vs {_Nt}"
+            _ei = edge_index.clone().detach().to(device)
+            _ei = _ei.unsqueeze(0).repeat(_Nb, 1, 1, 1)  # (_Nb, _Nt, 2, n_edges)
+        elif edge_index.ndim == 4:
+            assert edge_index.shape[0] == _Nb and edge_index.shape[1] == _Nt, \
+                f"4D edge_index first two dimensions must match batch size and time steps. Got {edge_index.shape[:2]} vs ({_Nb}, {_Nt})"
             _ei = edge_index.clone().detach().to(device)
         else:
-            raise ValueError(f"edge_index must be 2D or 3D tensor. Got {edge_index.shape}")
+            raise ValueError(f"edge_index must be 2D or 3D or 4D tensor. Got {edge_index.shape}")
 
     return _x0, _ts, _us, n_steps, is_batch, _ei
 
@@ -113,22 +125,29 @@ def predict_continuous(
     """
     device = x0.device
     _x0, ts, _us, n_steps, is_batch, _ei = _prepare_data(x0, ts, us, device, edge_index=edge_index)
-    _data = DynData(ei=_ei)
 
     if _us is not None:
         logger.debug(f"predict_continuous: {'Batch' if is_batch else 'Single'} mode (controlled)")
         u0 = _us[:, 0, :]
-        interp = ControlInterpolator(ts, _us, order=order)
+        u_intp = ControlInterpolator(ts, _us, order=order)
     else:
         logger.debug(f"predict_continuous: {'Batch' if is_batch else 'Single'} mode (autonomous)")
         u0 = None
-        interp = ControlInterpolator(ts, None)
+        u_intp = ControlInterpolator(ts, None)
 
-    z0 = model.encoder(DynData(x=_x0, u=u0, ei=_ei))
+    if _ei is not None:
+        ei0 = _ei[:, 0, :, :]
+        e_intp = ControlInterpolator(ts, _ei, axis=-3, order='zoh')
+    else:
+        ei0 = None
+        e_intp = ControlInterpolator(ts, None)
+
+    z0 = model.encoder(DynData(x=_x0, u=u0, ei=ei0))
     def ode_func(t, z):
-        x = model.decoder(z, _data)
-        u = interp(t)
-        _, z_dot, _ = model(DynData(x=x, u=u, ei=_ei))
+        u  = u_intp(t)
+        ei = e_intp(t)
+        x  = model.decoder(z, DynData(ei=ei))
+        _, z_dot, _ = model(DynData(x=x, u=u, ei=ei))
         return z_dot
 
     logger.debug(f"predict_continuous: Starting ODE integration with shape {z0.shape}, method {method}, and interpolation order {order if _us is not None else 'N/A'}")
@@ -139,7 +158,7 @@ def predict_continuous(
         x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None).view(n_steps, z_traj.shape[1], -1)
     else:
         tmp = z_traj.permute(1, 0, 2, 3)  # (batch_size, n_steps, node, z_dim)
-        x_traj = model.decoder(tmp, _data).permute(1, 0, 2)
+        x_traj = model.decoder(tmp, DynData(ei=_ei)).permute(1, 0, 2)
     if not is_batch:
         x_traj = x_traj.squeeze(1)
 
@@ -270,26 +289,22 @@ def predict_discrete(
         ValueError: If input dimensions don't match requirements
     """
     device = x0.device
-    # Use _prepare_data for consistency
     _x0, _, _us, n_steps, is_batch, _ei = _prepare_data(x0, ts, us, device, edge_index=edge_index)
-    _data = DynData(ei=_ei)
 
     logger.debug(f"predict_discrete: {'Batch' if is_batch else 'Single'} mode")
 
-    if _us is not None:
-        # Initial state preparation
-        u0 = _us[:, 0, :]
-    else:
-        u0 = None
-    z0 = model.encoder(DynData(x=_x0, u=u0, ei=_ei))
+    u0  = None if _us is None else _us[:, 0, :]
+    ei0 = None if _ei is None else _ei[:, 0, :, :]
+    z0  = model.encoder(DynData(x=_x0, u=u0, ei=ei0))
 
     # Discrete-time forward pass
     logger.debug(f"predict_discrete: Starting forward iterations with shape {z0.shape}")
     z_traj = [z0]
     for k in range(n_steps - 1):
-        x_k = model.decoder(z_traj[-1], _data)
+        eik = None if _ei is None else _ei[:, k, :, :]
         u_k = None if _us is None else _us[:, k, :]
-        _, z_next, _ = model(DynData(x=x_k, u=u_k, ei=_ei))
+        x_k = model.decoder(z_traj[-1], DynData(ei=eik))
+        _, z_next, _ = model(DynData(x=x_k, u=u_k, ei=eik))
         z_traj.append(z_next)
 
     z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, z_dim)
@@ -300,7 +315,7 @@ def predict_discrete(
     else:
         # after stack: z_traj (n_steps, batch_size, node, z_dim)
         tmp = z_traj.permute(1, 0, 2, 3)  # (batch_size, n_steps, node, z_dim)
-        x_traj = model.decoder(tmp, _data).permute(1, 0, 2)
+        x_traj = model.decoder(tmp, DynData(ei=_ei)).permute(1, 0, 2)
 
     if not is_batch:
         x_traj = x_traj.squeeze(1)
