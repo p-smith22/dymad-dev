@@ -2,11 +2,11 @@ import numpy as np
 import torch
 from typing import Union
 
-from dymad.data import DynData, DynGeoData
+from dymad.io import DynData
 from dymad.utils import plot_trajectory
 
 def prediction_rmse(model,
-                   truth: Union[DynData, DynGeoData],
+                   truth: DynData,
                    ts: Union[np.ndarray, torch.Tensor],
                    metadata: dict,
                    model_name: str,

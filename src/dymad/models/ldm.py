@@ -1,11 +1,11 @@
 import numpy as np
 import torch
-from typing import Tuple, Dict, Union
+from typing import Dict, Union
 
-from dymad.data import DynData, DynGeoData
-from dymad.models import ModelTempUEnc, ModelTempUEncGraph
-from dymad.modules import make_autoencoder, MLP
-from dymad.utils import predict_continuous, predict_discrete, predict_graph_continuous, predict_graph_discrete
+from dymad.io import DynData
+from dymad.models.model_temp_uenc import ModelTempUEnc, ModelTempUEncGraph
+from dymad.models.prediction import predict_continuous, predict_discrete
+from dymad.modules import MLP
 
 class LDM(ModelTempUEnc):
     """Latent Dynamics Model (LDM)
@@ -100,8 +100,8 @@ class GLDM(ModelTempUEncGraph):
             **opts
         )
 
-    def predict(self, x0: torch.Tensor, w: DynGeoData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        return predict_graph_continuous(self, x0, ts, w.edge_index, us=w.u, method=method, order=self.input_order, **kwargs)
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
+        return predict_continuous(self, x0, ts, us=w.u, edge_index=w.ei, method=method, order=self.input_order, **kwargs)
 
 class DGLDM(GLDM):
     """Discrete Graph Latent Dynamics Model (DGLDM) - discrete-time version.
@@ -114,6 +114,6 @@ class DGLDM(GLDM):
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
         super(DGLDM, self).__init__(model_config, data_meta, dtype=dtype, device=device)
 
-    def predict(self, x0: torch.Tensor, w: DynGeoData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
-        return predict_graph_discrete(self, x0, ts, w.edge_index, us=w.u)
+        return predict_discrete(self, x0, ts, us=w.u, edge_index=w.ei)

@@ -2,11 +2,11 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch_geometric.utils import dense_to_sparse
 
+from dymad.io import load_model
 from dymad.models import DGLDM, DGKBF, DGKM, DGKMSK
 from dymad.training import NODETrainer, LinearTrainer
-from dymad.utils import load_model, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import adj_to_edge, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
 
 B = 128
 N = 501
@@ -53,7 +53,7 @@ cases = [
 ]
 
 # IDX = [1, 2]
-IDX = [4]
+IDX = [1]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0
@@ -87,7 +87,7 @@ if ifplt:
 
 if ifprd:
     sampler = TrajectorySampler(f, g, config='ltg_data.yaml', config_mod=config_gau)
-    edge_index = dense_to_sparse(torch.Tensor(adj))[0]
+    edge_index = adj_to_edge(adj)[0]
 
     ts, xs, us, ys = sampler.sample(t_grid, batch=1)
     x_data = np.concatenate([ys[0], ys[0], ys[0]], axis=-1)
@@ -100,7 +100,7 @@ if ifprd:
         _, prd_func = load_model(MDL, f'ltg_{mdl}.pt', f'ltg_{mdl}.yaml')
 
         with torch.no_grad():
-            pred = prd_func(x_data, u_data, t_data, ei=edge_index)
+            pred = prd_func(x_data, t_data, u=u_data, ei=edge_index)
             res.append(pred)
 
     plot_trajectory(

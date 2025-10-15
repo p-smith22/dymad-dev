@@ -4,10 +4,8 @@ import os
 import torch
 from typing import Callable, Dict, List, Optional, Union, Tuple, Type
 
-# Below avoids looped imports
-from dymad.data.data import DynDataImpl as DynData
-from dymad.data.data import DynGeoDataImpl as DynGeoData
-from dymad.data.trajectory_manager import TrajectoryManager
+from dymad.io.data import DynData
+from dymad.io.trajectory_manager import TrajectoryManager
 from dymad.transform import Autoencoder, make_transform
 from dymad.utils.misc import load_config
 
@@ -142,16 +140,21 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
 
     def _proc_x0(x0, device):
         _x0 = np.array(_data_transform_x.transform(_atleast_3d(x0)))[:,0,:]
+        if len(_x0) == 1:
+            _x0 = _x0[0]
         _x0 = torch.tensor(_x0, dtype=dtype, device=device)
         return _x0
 
-    def _proc_u(us, device):
-        _u  = np.array(_data_transform_u.transform(_atleast_3d(us)))
-        if isinstance(_u, np.ndarray):
+    if _is_autonomous:
+        def _proc_u(us, device):
+            return None
+    else:
+        def _proc_u(us, device):
+            _u = np.array(_data_transform_u.transform(_atleast_3d(us)))
+            if len(_u) == 1:
+                _u = _u[0]
             _u = torch.tensor(_u, dtype=dtype, device=device)
-        else:
-            _u = _u.clone().detach().to(device)
-        return _u
+            return _u
 
     def _proc_prd(pred):
         _prd = np.array(_data_transform_x.inverse_transform(_atleast_3d(pred))).squeeze()
@@ -160,38 +163,13 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
         return np.transpose(_prd, (1, 0, 2))
 
     # Prediction in data space
-    if model.GRAPH:
-        if _is_autonomous:
-            def predict_fn(x0, t, ei=None, device="cpu"):
-                """Predict trajectory in data space."""
-                _x0 = _proc_x0(x0, device)
-                with torch.no_grad():
-                    pred = model.predict(_x0, DynGeoData(None, None, ei), t).cpu().numpy()
-                return _proc_prd(pred)
-        else:
-            def predict_fn(x0, us, t, ei=None, device="cpu"):
-                """Predict trajectory in data space."""
-                _x0 = _proc_x0(x0, device)
-                _u  = _proc_u(us, device)
-                with torch.no_grad():
-                    pred = model.predict(_x0, DynGeoData(None, _u, ei), t).cpu().numpy()
-                return _proc_prd(pred)
-    else:
-        if _is_autonomous:
-            def predict_fn(x0, t, device="cpu"):
-                """Predict trajectory in data space."""
-                _x0 = _proc_x0(x0, device)
-                with torch.no_grad():
-                    pred = model.predict(_x0, DynData(None, None), t).cpu().numpy()
-                return _proc_prd(pred)
-        else:
-            def predict_fn(x0, us, t, device="cpu"):
-                """Predict trajectory in data space."""
-                _x0 = _proc_x0(x0, device)
-                _u  = _proc_u(us, device)
-                with torch.no_grad():
-                    pred = model.predict(_x0, DynData(None, _u), t).cpu().numpy()
-                return _proc_prd(pred)
+    def predict_fn(x0, t, u=None, ei=None, device="cpu"):
+        """Predict trajectory in data space."""
+        _x0 = _proc_x0(x0, device)
+        _u  = _proc_u(u, device)
+        with torch.no_grad():
+            pred = model.predict(_x0, DynData(u=_u, ei=ei), t).cpu().numpy()
+        return _proc_prd(pred)
 
     return model, predict_fn
 
@@ -223,7 +201,7 @@ class DataInterface:
 
         if self.has_model:
             self.model, _ = load_model(model_class, checkpoint_path)
-            encoder = lambda x: self.model.encoder(DynData(x, None))
+            encoder = lambda x: self.model.encoder(DynData(x=x))
             decoder = lambda z: self.model.decoder(z, None)
             enc = Autoencoder(self.model, encoder, decoder)
             self._trans_x.append(enc)

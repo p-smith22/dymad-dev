@@ -6,10 +6,10 @@ import torch
 import os
 from typing import Dict, List, Tuple, Type
 
-from dymad.data import TrajectoryManager, TrajectoryManagerGraph
+from dymad.io import load_checkpoint, save_checkpoint, TrajectoryManager, TrajectoryManagerGraph
 from dymad.losses import prediction_rmse
 from dymad.training.ls_update import LSUpdater
-from dymad.utils import load_checkpoint, load_config, make_scheduler, plot_hist, save_checkpoint
+from dymad.utils import load_config, make_scheduler, plot_hist
 
 logger = logging.getLogger(__name__)
 

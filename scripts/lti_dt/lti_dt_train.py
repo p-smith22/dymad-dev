@@ -3,9 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from dymad.io import load_model
 from dymad.models import DKBF, DLDM
 from dymad.training import NODETrainer, LinearTrainer
-from dymad.utils import load_model, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
 
 B = 128
 N = 501
@@ -42,7 +43,7 @@ cases = [
     {"name" : "dkbf", "model" : DKBF, "trainer": NODETrainer,   "config": 'lti_dkbf.yaml'},
     {"name" : "dkbl", "model" : DKBF, "trainer": LinearTrainer, "config": 'lti_dkbl.yaml'}
 ]
-IDX = [2]
+IDX = [1]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0
@@ -84,7 +85,7 @@ if ifprd:
         _, prd_func = load_model(MDL, f'lti_{mdl}.pt', f'lti_{mdl}.yaml')
 
         with torch.no_grad():
-            pred = prd_func(x_data, u_data, t_data)
+            pred = prd_func(x_data, t_data, u=u_data)
             res.append(pred)
 
     plot_trajectory(

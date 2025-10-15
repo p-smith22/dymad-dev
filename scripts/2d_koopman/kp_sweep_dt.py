@@ -3,9 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from dymad.io import load_model
 from dymad.models import DKBF
 from dymad.training import NODETrainer
-from dymad.utils import load_model, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
 
 B = 256
 N = 301
@@ -58,7 +59,8 @@ trn_nd3.update(trn_ref)
 trn_opts = [trn_nd1, trn_nd2, trn_nd3]
 config_path = 'kp_model.yaml'
 
-IDX = [0, 1, 2]
+# IDX = [0, 1, 2]
+IDX = [0]
 
 iftrn = 1
 ifplt = 1

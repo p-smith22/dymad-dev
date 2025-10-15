@@ -3,9 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from dymad.io import load_model
 from dymad.models import LDM, KBF
 from dymad.training import WeakFormTrainer, NODETrainer
-from dymad.utils import load_model, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
 
 B = 128
 N = 501
@@ -39,7 +40,7 @@ config_gau = {
 
 cfgs = [(LDM, 'ldm'), (KBF, 'kbf')]
 
-ifdat = 1
+ifdat = 0
 iftrn = 1
 ifplt = 1
 ifprd = 1
@@ -89,8 +90,8 @@ if ifprd:
         mdl_nd, prd_nd = load_model(MDL, f'ltd_{mdl}_node.pt', f'ltd_{mdl}_node.yaml')
 
         with torch.no_grad():
-            weak_pred = prd_wf(x_data, u_data, t_data[:-1])
-            node_pred = prd_nd(x_data, u_data, t_data[:-1])
+            weak_pred = prd_wf(x_data, t_data[:-1], u=u_data)
+            node_pred = prd_nd(x_data, t_data[:-1], u=u_data)
 
         plot_trajectory(
             np.array([x_data, weak_pred, node_pred]), t_data, "LTD",

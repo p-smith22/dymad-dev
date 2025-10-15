@@ -14,9 +14,9 @@ import os
 import pytest
 import torch
 
+from dymad.io import load_model
 from dymad.models import DGKBF, DGKM, DGKMSK, DGLDM, GKBF, GKM, GLDM
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
-from dymad.utils import load_model
 
 mdl_kb = {
     "name" : 'ltga_model',
@@ -131,7 +131,8 @@ cfgs = [
     ('dkbf_ndls', DGKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dtls}),
     ('dkbf_ln',   DGKBF, LinearTrainer,   {"model": mdl_kb, "training" : trn_ln}),
     ('dkm_ln',    DGKM,  LinearTrainer,   {"model": mdl_km, "training" : trn_l2}),
-    ('dkmsk_ln',  DGKMSK,LinearTrainer,   {"model": mdl_km, "training" : trn_l2}),]
+    ('dkmsk_ln',  DGKMSK,LinearTrainer,   {"model": mdl_km, "training" : trn_l2}),
+    ]
 
 def train_case(idx, data, path):
     _, MDL, Trainer, opt = cfgs[idx]
@@ -145,7 +146,7 @@ def predict_case(idx, sample, path):
     _, MDL, _, opt = cfgs[idx]
     _, prd_func = load_model(MDL, path/'ltga_model.pt', path/'ltg_model.yaml', config_mod=opt)
     with torch.no_grad():
-        prd_func(x_data, t_data, ei=edge_index)
+        prd_func(x_data, t_data, ei=torch.tensor(edge_index))
 
 @pytest.mark.parametrize("idx", range(len(cfgs)))
 def test_ltga(ltga_data, ltga_test, env_setup, idx):

@@ -2,11 +2,11 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch_geometric.utils import dense_to_sparse
 
+from dymad.io import load_model
 from dymad.models import GLDM, GKBF
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
-from dymad.utils import load_model, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import adj_to_edge, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
 
 B = 128
 N = 501
@@ -142,7 +142,7 @@ if ifprd:
     ts, xs, ys = sampler.sample(t_grid, batch=1)
     x_data = np.concatenate([xs[0], xs[0], xs[0]], axis=-1)
     t_data = ts[0]
-    edge_index = dense_to_sparse(torch.Tensor(adj))[0]
+    edge_index = adj_to_edge(adj)[0]
 
     res = [x_data]
     for i in IDX:

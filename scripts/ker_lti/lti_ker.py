@@ -3,9 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from dymad.io import load_model
 from dymad.models import DKM, DKMSK, KM
 from dymad.training import NODETrainer, LinearTrainer
-from dymad.utils import load_model, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_trajectory, setup_logging, TrajectorySampler
 
 B = 30
 N = 41
@@ -130,7 +131,7 @@ cfgs = [
 # IDX = [0, 1, 2, 3, 4, 5]
 # IDX = [0, 1]
 # IDX = [2, 3]
-IDX = [5]
+IDX = [4]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
@@ -165,7 +166,7 @@ if ifprd:
         mdl, MDL, _, _ = cfgs[_i]
         _, prd_func = load_model(MDL, f'ker_{mdl}.pt')
         with torch.no_grad():
-            pred = prd_func(x_data, u_data, t_data)
+            pred = prd_func(x_data, t_data, u=u_data)
         res.append(pred)
 
     plot_trajectory(

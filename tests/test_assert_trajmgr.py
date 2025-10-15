@@ -2,24 +2,27 @@ import copy
 import numpy as np
 from pathlib import Path
 
-from dymad.data import DynData, TrajectoryManager
+from dymad.io import DynData, TrajectoryManager
 from dymad.transform import make_transform
 
 HERE = Path(__file__).parent
 
 def check_data(out, ref, label=''):
     for _s, _t in zip(out, ref):
+        assert np.allclose(_s.t, _t.t), f"{label} failed: {_s.t} != {_t.t}"
         assert np.allclose(_s.x, _t.x), f"{label} failed: {_s.x} != {_t.x}"
+        assert np.allclose(_s.y, _t.y), f"{label} failed: {_s.y} != {_t.y}"
         assert np.allclose(_s.u, _t.u), f"{label} failed: {_s.u} != {_t.u}"
+        assert np.allclose(_s.p, _t.p), f"{label} failed: {_s.p} != {_t.p}"
     print(f"{label} passed.")
 
-def test_trajmgr(lti_data):
+def test_trajmgr(trj_data):
     metadata = {
         "config" : {
             "data": {
-                "path": lti_data,
-                "n_samples": 128,
-                "n_steps": 501,
+                "path": trj_data,
+                "n_samples": 8,
+                "n_steps": 21,
                 "double_precision": False},
             "transform_x": [
                 {
@@ -31,8 +34,10 @@ def test_trajmgr(lti_data):
             "transform_u": {
                 "type": "Scaler",
                 "mode" : "-11"},
-            "model": {
-                "type": "NN"},
+            # transform_y will be Identity
+            "transform_p": {
+                "type": "Scaler",
+                "mode" : "std"},
     }}
 
     # --------------------
@@ -40,33 +45,58 @@ def test_trajmgr(lti_data):
     tm = TrajectoryManager(metadata, device="cpu")
     tm.process_all()
 
-    data = np.load(lti_data, allow_pickle=True)
-    xs = data['x']
+    data = np.load(trj_data, allow_pickle=True)
     ts = data['t']
+    xs = data['x']
+    ys = data['y']
     us = data['u']
+    ps = data['p']
 
     trnx = make_transform(metadata['config']['transform_x'])
     trnu = make_transform(metadata['config']['transform_u'])
+    trnp = make_transform(metadata['config']['transform_p'])
+
+    ttst = [ts[_i] for _i in tm.test_set_index]
 
     xtrn = [xs[_i] for _i in tm.train_set_index]
     xtst = [xs[_i] for _i in tm.test_set_index]
     trnx.fit(xtrn)
     Xtst = trnx.transform(xtst)
 
+    Ytst = [ys for _ in tm.test_set_index]
+
     utrn = [us[_i] for _i in tm.train_set_index]
     utst = [us[_i] for _i in tm.test_set_index]
     trnu.fit(utrn)
     Utst = trnu.transform(utst)
 
-    Dtst = [DynData(xt, ut[2:]) for xt, ut in zip(Xtst, Utst)]
-    check_data(Dtst, tm.test_set, label='Transform X and U')
+    ptrn = [ps[_i] for _i in tm.train_set_index]
+    ptst = [ps[_i] for _i in tm.test_set_index]
+    trnp.fit(ptrn)
+    Ptst = trnp.transform(ptst)
+
+    Dtst = [
+        DynData(t=tt[2:], x=xt, y=yt[2:], u=ut[2:], p=pt)
+        for tt, xt, yt, ut, pt in zip(ttst, Xtst, Ytst, Utst, Ptst)
+        ]
+    check_data(Dtst, tm.test_set, label='Transform')
 
     Xrec = trnx.inverse_transform([_d.x for _d in Dtst])
+    Yrec = [_d.y for _d in Dtst]
     Urec = trnu.inverse_transform([_d.u for _d in Dtst])
-    Drec = [DynData(xr, ur) for xr, ur in zip(Xrec, Urec)]
-    Uref = [us[_i][2:] for _i in tm.test_set_index]
-    Dref = [DynData(xt, ur) for xt, ur in zip(xtst, Uref)]
-    check_data(Drec, Dref, label='Inverse Transform X and U')
+    Prec = trnp.inverse_transform([_d.p for _d in Dtst])
+    Drec = [
+        DynData(t=tt, x=xr, y=yr, u=ur, p=pr)
+        for tt, xr, yr, ur, pr in zip(ttst, Xrec, Yrec, Urec, Prec)
+    ]
+
+    yref = [ys[2:] for _i in tm.test_set_index]
+    uref = [us[_i][2:] for _i in tm.test_set_index]
+    Dref = [
+        DynData(t=tr, x=xr, y=yr, u=ur, p=pr)
+        for tr, xr, yr, ur, pr in zip(ttst, xtst, yref, uref, ptst)
+    ]
+    check_data(Drec, Dref, label='Inverse Transform')
 
     # --------------------
     # Second pass - reinitialize and reload

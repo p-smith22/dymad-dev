@@ -4,9 +4,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from dymad.io import load_model
 from dymad.models import KBF, DKBF, DKMSK
 from dymad.training import NODETrainer, LinearTrainer
-from dymad.utils import animate, compare_contour, load_model, plot_summary, plot_trajectory, setup_logging
+from dymad.utils import animate, compare_contour, plot_summary, setup_logging
 
 def gen_mdl_kb(e, l, k):
     return {

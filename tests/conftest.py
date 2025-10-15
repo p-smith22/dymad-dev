@@ -4,9 +4,8 @@ from pathlib import Path
 import pytest
 import shutil
 import torch
-from torch_geometric.utils import dense_to_sparse
 
-from dymad.utils import TrajectorySampler
+from dymad.utils import adj_to_edge, TrajectorySampler
 
 HERE = Path(__file__).parent
 
@@ -32,7 +31,7 @@ adj = np.array([
     [1, 0, 1],
     [1, 1, 0]
 ])
-edge_index = dense_to_sparse(torch.Tensor(adj))[0]
+edge_index = adj_to_edge(adj)[0]
 
 config_chr = {
     "control" : {
@@ -66,6 +65,32 @@ def env_setup():
     # Clean up
     shutil.rmtree(HERE/'results', ignore_errors=True)
     shutil.rmtree(HERE/'checkpoints', ignore_errors=True)
+
+@pytest.fixture(scope='session')
+def trj_data():
+    # ---- runs ONCE before any tests execute ----
+
+    # --------------------
+    # Data generation
+    B = 8
+    N = 21
+    t_grid = np.linspace(0, 0.1, N)
+
+    sampler = TrajectorySampler(f, g, config=HERE/'lti_data.yaml', config_mod=config_chr)
+    ts, xs, us, ys = sampler.sample(t_grid, batch=B)
+    ys = np.hstack([xs[0], xs[1]])    # This will be repeated
+    ps = [np.arange(4)+_i for _i in range(len(xs))]
+    np.savez_compressed(HERE/'trj.npz', t=ts, x=xs, y=ys, u=us, p=ps)
+
+    # ---- Interface to the tests ----
+    yield HERE/'trj.npz'
+
+    # ---- runs ONCE after all tests finish (even on failure) ----
+
+    # --------------------
+    # Clean up
+    if os.path.exists(HERE/'trj.npz'):
+        os.remove(HERE/'trj.npz')
 
 @pytest.fixture(scope='session')
 def lti_data():
@@ -158,7 +183,10 @@ def ltg_data():
     # Pretending a 3-node graph
     np.savez_compressed(
         HERE/'ltg.npz',
-        t=ts, x=np.concatenate([ys, ys, ys], axis=-1), u=np.concatenate([us, us, us], axis=-1),
+        t=ts,
+        x=np.concatenate([ys, ys, ys], axis=-1),
+        u=np.concatenate([us, us, us], axis=-1),
+        p=np.concatenate([us[:,0,:], us[:,0,:], us[:,0,:]], axis=-1).squeeze(),
         adj_mat=adj)
 
     # ---- Interface to the tests ----
@@ -222,7 +250,7 @@ def ltga_test():
     ts, xs, ys = sampler.sample(t_grid, batch=1)
     x_data = np.concatenate([xs[0], xs[0], xs[0]], axis=-1)
     t_data = ts[0]
-    edge_index = dense_to_sparse(torch.Tensor(adj))[0]
+    edge_index = adj_to_edge(adj)[0]
 
     # ---- Interface to the tests ----
     yield (x_data, t_data, edge_index)

@@ -1,6 +1,6 @@
 import numpy as np
 
-from dymad.utils import DataInterface
+from dymad.io import DataInterface
 
 def train_case(data, sample, path):
     x_data, t_data = sample

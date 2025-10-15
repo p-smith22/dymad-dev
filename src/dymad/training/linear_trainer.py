@@ -1,10 +1,8 @@
 import logging
-# import numpy as np
 import torch
 from typing import Dict, Type, Union
 
-from dymad.data import DynData, DynGeoData
-from dymad.training.ls_update import LSUpdater
+from dymad.io import DynData
 from dymad.training.trainer_base import TrainerBase
 
 logger = logging.getLogger(__name__)
@@ -33,7 +31,7 @@ class LinearTrainer(TrainerBase):
         logger.info(f"LinearTrainer: method {self._ls.method}, params {self._ls.params}")
         logger.info(f"Weights: Dynamics {self.dynamics_weight}, Reconstruction {self.recon_weight}")
 
-    def _process_batch(self, batch: Union[DynData, DynGeoData]) -> torch.Tensor:
+    def _process_batch(self, batch: DynData) -> torch.Tensor:
         """
         Process a batch and return predictions and ground truth states.
 

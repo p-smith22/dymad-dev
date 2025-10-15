@@ -8,9 +8,9 @@ import os
 import pytest
 import torch
 
+from dymad.io import load_model
 from dymad.models import DKM, DKMSK, KM, KMM
 from dymad.training import NODETrainer, LinearTrainer
-from dymad.utils import load_model
 
 # Options
 ## Regular kernels
@@ -135,7 +135,7 @@ def predict_case(idx, sample, path):
     _, MDL, _, opt = cfgs[idx]
     _, prd_func = load_model(MDL, path/'ker_model.pt', path/'ker_model_ctrl.yaml', config_mod=opt)
     with torch.no_grad():
-        prd_func(x_data, u_data, t_data)
+        prd_func(x_data, t_data, u=u_data)
 
 @pytest.mark.parametrize("idx", range(len(cfgs)))
 def test_ker(lti_data, lti_gau, env_setup, idx):

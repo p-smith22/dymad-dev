@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from dymad.utils import compare_contour, DataInterface, plot_contour
+from dymad.io import DataInterface
+from dymad.utils import compare_contour, plot_contour
 
 config_path = 'vor_model.yaml'
 Nx, Ny = 199, 449

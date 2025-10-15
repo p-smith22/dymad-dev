@@ -4,9 +4,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from dymad.io import load_model
 from dymad.models import DKMSK, KM, KMM
 from dymad.training import LinearTrainer
-from dymad.utils import load_model, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_trajectory, setup_logging, TrajectorySampler
 
 B = 20
 N = 101
@@ -172,7 +173,7 @@ if ifprd:
         mdl, MDL, _, _ = cfgs[_i]
         _, prd_func = load_model(MDL, f'ker_{mdl}.pt')
         with torch.no_grad():
-            pred = prd_func(x_data, u_data, t_data)
+            pred = prd_func(x_data, t_data, u=u_data)
         res.append(pred)
 
     plot_trajectory(

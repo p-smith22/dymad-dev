@@ -1,13 +1,12 @@
 import numpy as np
 import torch
-from typing import Dict, Union, Tuple
+from typing import Dict, Union
 
-from dymad.data import DynData, DynGeoData
-from dymad.models import ModelTempUCat, ModelTempUCatGraph
-from dymad.modules import FlexLinear, make_autoencoder
-from dymad.utils import predict_continuous, predict_continuous_exp, \
-    predict_discrete, predict_discrete_exp, \
-    predict_graph_continuous, predict_graph_discrete
+from dymad.io import DynData
+from dymad.models.model_temp_ucat import ModelTempUCat, ModelTempUCatGraph
+from dymad.models.prediction import predict_continuous, predict_continuous_exp, \
+    predict_discrete, predict_discrete_exp
+from dymad.modules import FlexLinear
 
 class KBF(ModelTempUCat):
     """
@@ -110,7 +109,7 @@ class GKBF(ModelTempUCatGraph):
 
         self.set_linear_weights = self.dynamics_net.set_weights
 
-    def _zu_cat_ctrl(self, z: torch.Tensor, w: DynGeoData) -> torch.Tensor:
+    def _zu_cat_ctrl(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """Concatenate state and control inputs."""
         u_reshaped = w.ug
         z_u = (z.unsqueeze(-1) * u_reshaped.unsqueeze(-2)).reshape(*z.shape[:-1], -1)
@@ -118,8 +117,8 @@ class GKBF(ModelTempUCatGraph):
             return torch.cat([z, z_u, u_reshaped], dim=-1)
         return torch.cat([z, z_u], dim=-1)
 
-    def predict(self, x0: torch.Tensor, w: DynGeoData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        return predict_graph_continuous(self, x0, ts, w.edge_index, us=w.u, method=method, order=self.input_order, **kwargs)
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
+        return predict_continuous(self, x0, ts, us=w.u, edge_index=w.ei, method=method, order=self.input_order, **kwargs)
 
 class DGKBF(GKBF):
     """Discrete Graph Koopman Bilinear Form (DGKBF) model - discrete-time version.
@@ -132,6 +131,6 @@ class DGKBF(GKBF):
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
         super(DGKBF, self).__init__(model_config, data_meta, dtype=dtype, device=device)
 
-    def predict(self, x0: torch.Tensor, w: DynGeoData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
-        return predict_graph_discrete(self, x0, ts, w.edge_index, us=w.u)
+        return predict_discrete(self, x0, ts, us=w.u, edge_index=w.ei)

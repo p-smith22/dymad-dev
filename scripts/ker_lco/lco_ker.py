@@ -4,9 +4,10 @@ import numpy as np
 import scipy.integrate as spi
 import torch
 
+from dymad.io import load_model
 from dymad.models import DKM, DKMSK, KM
 from dymad.training import LinearTrainer, NODETrainer
-from dymad.utils import load_model, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import setup_logging, TrajectorySampler
 
 B = 50
 N = 81

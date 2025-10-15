@@ -5,7 +5,7 @@ import scipy.linalg as spl
 from dymad.models import DKBF, KBF
 from dymad.numerics import complex_plot
 from dymad.sako import SpectralAnalysis
-from dymad.utils import animate, load_model, plot_contour, plot_trajectory, setup_logging
+from dymad.utils import animate, setup_logging
 
 Nx, Ny = 199, 449
 dat = np.load('data/cylinder.npz')
