@@ -187,7 +187,7 @@ def ltg_data():
         x=np.concatenate([ys, ys, ys], axis=-1),
         u=np.concatenate([us, us, us], axis=-1),
         p=np.concatenate([us[:,0,:], us[:,0,:], us[:,0,:]], axis=-1).squeeze(),
-        adj_mat=adj)
+        adj=adj)
 
     # ---- Interface to the tests ----
     yield HERE/'ltg.npz'
@@ -230,7 +230,7 @@ def ltga_data():
     np.savez_compressed(
         HERE/'ltga.npz',
         t=ts, x=np.concatenate([ys, ys, ys], axis=-1),
-        adj_mat=adj)
+        adj=adj)
 
     # ---- Interface to the tests ----
     yield HERE/'ltga.npz'

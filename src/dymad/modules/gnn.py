@@ -125,16 +125,18 @@ class GNN(nn.Module):
             _ei_cat = torch.concatenate([
                 b + _offset[i] for i, b in enumerate(_ei)],
                 dim=-1)
-            
+
             if edge_weights is None:
                 ew = None
             else:
-                ew = torch.concatenate([b.ew for b in edge_weights], dim=-1).unsqueeze(0)
+                ew = None
+                # ew = torch.concatenate(edge_weights, dim=-1).unsqueeze(0)
 
             if edge_attr is None:
                 ea = None
             else:
-                ea = torch.concatenate([b.ea for b in edge_attr], dim=-2).unsqueeze(0)
+                ea = None
+                # ea = torch.concatenate(edge_attr, dim=-2).unsqueeze(0)
 
             # Process node features
             _x_cat = x.reshape(1, -1, _x_shape[1])

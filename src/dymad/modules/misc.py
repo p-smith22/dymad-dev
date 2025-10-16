@@ -30,7 +30,7 @@ class TakeFirstGraph(TakeFirst):
     Input (..., n_nodes, n_features)
     Output (..., n_nodes*m)
     """
-    def forward(self, x: torch.Tensor, edge_index, **kwargs) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, edge_index, edge_weights, edge_attr, **kwargs) -> torch.Tensor:
         """"""
         out_shape = x.shape[:-2] + (-1,)
         return x[..., :self.m].reshape(*out_shape) if x.ndim > 1 else x[:self.m]
