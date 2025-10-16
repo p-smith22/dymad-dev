@@ -3,7 +3,7 @@ import torch
 from typing import Dict, Union
 
 from dymad.io import DynData
-from dymad.models.model_temp_uenc import ModelTempUEnc, ModelTempUEncGraph
+from dymad.models.model_temp_uenc import ModelTempUEnc, ModelTempUEncGraphAE
 from dymad.models.prediction import predict_continuous, predict_discrete
 from dymad.modules import MLP
 
@@ -66,7 +66,7 @@ class DLDM(LDM):
         """Predict trajectory using discrete-time iterations."""
         return predict_discrete(self, x0, ts, us=w.u)
 
-class GLDM(ModelTempUEncGraph):
+class GLDM(ModelTempUEncGraphAE):
     """Graph Latent Dynamics Model (GLDM).
 
     Uses GNN for encoder/decoder and MLP for dynamics.

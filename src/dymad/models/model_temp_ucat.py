@@ -161,7 +161,7 @@ class ModelTempUCat(ModelBase):
         return z_dot, z
 
 
-class ModelTempUCatGraph(ModelBase):
+class ModelTempUCatGraphAE(ModelBase):
     """Graph version of ModelTempUCat.
 
     The MLP autoencoder is replaced by GNN-based one.

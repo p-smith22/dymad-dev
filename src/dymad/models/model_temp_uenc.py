@@ -173,7 +173,7 @@ class ModelTempUEnc(ModelBase):
         raise NotImplementedError("Implement in derived class.")
 
 
-class ModelTempUEncGraph(ModelBase):
+class ModelTempUEncGraphAE(ModelBase):
     """Graph version of ModelTempUEnc.
 
     The MLP autoencoder is replaced by GNN-based one.
@@ -272,3 +272,27 @@ class ModelTempUEncGraph(ModelBase):
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
         raise NotImplementedError("Implement in derived class.")
+
+
+class ModelTempUEncGraphDyn(ModelTempUEnc):
+    """Graph version of ModelTempUEnc.
+
+    The autoencoder is still MLP, but dynamics is expected to be GNN-based.
+
+    The autoencoder is applied per node.
+
+    Since n_total_state_features etc are per node, most of ModelTempUEnc can be reused,
+    and only the encoder-dynamics-decoder interface needs to be changed.
+    """
+    GRAPH = True
+    CONT  = None
+
+    def _encoder_ctrl(self, w: DynData) -> torch.Tensor:
+        xu_cat = torch.cat([w.xg, w.ug], dim=-1)
+        return self.encoder_net(xu_cat)
+
+    def _encoder_auto(self, w: DynData) -> torch.Tensor:
+        return self.encoder_net(w.xg)
+
+    def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        return w.G(self.decoder_net(w.g(z)))

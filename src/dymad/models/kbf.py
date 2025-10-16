@@ -3,7 +3,7 @@ import torch
 from typing import Dict, Union
 
 from dymad.io import DynData
-from dymad.models.model_temp_ucat import ModelTempUCat, ModelTempUCatGraph
+from dymad.models.model_temp_ucat import ModelTempUCat, ModelTempUCatGraphAE
 from dymad.models.prediction import predict_continuous, predict_continuous_exp, \
     predict_discrete, predict_discrete_exp
 from dymad.modules import FlexLinear
@@ -78,7 +78,7 @@ class DKBF(KBF):
             return predict_discrete_exp(self, x0, ts, **kwargs)
         return predict_discrete(self, x0, ts, us=w.u)
 
-class GKBF(ModelTempUCatGraph):
+class GKBF(ModelTempUCatGraphAE):
     """Graph Koopman Bilinear Form (GKBF) model - graph-specific version.
     Uses GNN encoder/decoder and KBF operators for dynamics.
 
