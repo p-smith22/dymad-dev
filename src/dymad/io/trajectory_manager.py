@@ -665,23 +665,7 @@ class TrajectoryManagerGraph(TrajectoryManager):
                 logging.warning("Edge index provided both externally and in data file. Using the one from data.")
         else:
             logging.info("Edge index is not in data, generating from adjacency matrix")
-            if isinstance(self.adj, np.ndarray):
-                if self.adj.ndim == 3:
-                    ei, ew = [], []
-                    for i in range(self.adj.shape[0]):
-                        _ei, _ew = adj_to_edge(self.adj[i])
-                        ei.append(_ei)
-                        ew.append(_ew)
-                elif self.adj.ndim == 2:
-                    ei, ew = adj_to_edge(self.adj)
-                else:
-                    msg = f"Unsupported adjacency matrix shape: {self.adj.shape}"
-                    logging.error(msg)
-                    raise ValueError(msg)
-            else:
-                msg = f"Unsupported adjacency matrix type {type(self.adj)}."
-                logging.error(msg)
-                raise ValueError(msg)
+            ei, ew = adj_to_edge(self.adj)
         self.ei = _process_data(ei, self.x, "ei", base_dim=2, offset=0)
         self.ew = _process_data(ew, self.x, "ew", base_dim=1, offset=0)
 

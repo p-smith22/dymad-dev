@@ -1,6 +1,6 @@
 data:
   path: './data/lti.npz'
-  n_samples: 100
+  n_samples: 200
   n_steps: 100
   double_precision: true
 

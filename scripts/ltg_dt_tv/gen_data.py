@@ -15,7 +15,7 @@ kl, ku = 4., 6.            # de = 0.75
 # kl, ku = 1., 1.5           # de = 0.19
 
 # Time settings
-Ntrj   = 100               # Number of trajectories
+Ntrj   = 200               # Number of trajectories
 nStint = 10                # Number of time intervals
 Nt     = 100
 
@@ -117,8 +117,8 @@ if ifdyn:
                 tmp = trj[-1].dot(AAs[Aidx[j][i]]) / (wu*1.15)
                 trj.append(tmp)
                 aas.append(AAs[Aidx[j][i]])
-        xs.append(np.vstack(trj[1:]))    # (nStint*nTime, nStates)
-        adj.append(np.array(aas[1:]))    # (nStint*nTime, nStates, nStates)
+        xs.append(np.vstack(trj))       # (nStint*nTime, nStates)
+        adj.append(np.array(aas[:-1]))  # (nStint*nTime, nStates, nStates)
 
     np.savez_compressed(
         f'./data/data{suf}.npz', x=xs, adj=adj, Aidx=Aidx)
