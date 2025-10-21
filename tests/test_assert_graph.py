@@ -64,9 +64,3 @@ def test_a2e_nested():
         [[e1[1], e2[1]], [e1[1]]]
         )
     cmp_graph(ew, expected)
-
-if __name__ == "__main__":
-    # test_a2e_single()
-    test_a2e_list()
-    test_a2e_nested()
-

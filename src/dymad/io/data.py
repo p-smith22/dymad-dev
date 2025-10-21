@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 import torch
 from typing import List, Optional, Union
 
-def _ensure_graph_format(lst: Union[List[torch.Tensor], torch.Tensor, None], base_dim) -> torch.NestedTensor:
+def _ensure_graph_format(lst: Union[List[torch.Tensor], torch.Tensor, None], base_dim) -> torch.Tensor:
     if lst is None:
         return None
     if isinstance(lst, list):
@@ -141,17 +141,20 @@ class DynData:
     # Graph-only
     ei: Optional[torch.Tensor] = None
     """
-    edge_index (torch.NestedTensor): Edge index tensor for graph structure, shape (n_steps, n_edges, 2).
+    edge_index (torch.Tensor): Edge index tensor for graph structure, shape (n_steps, n_edges, 2).
+    Using nested tensor if n_edges varies with time.
     """
 
     ew: Optional[torch.Tensor] = None
     """
-    edge_weight (torch.NestedTensor): Edge weight tensor for graph structure, shape (n_edges, n_steps).
+    edge_weight (torch.Tensor): Edge weight tensor for graph structure, shape (n_edges, n_steps).
+    Using nested tensor if n_edges varies with time.
     """
 
     ea: Optional[torch.Tensor] = None
     """
-    edge_attr (torch.NestedTensor): Edge attribute tensor for graph structure, shape (n_edges, n_steps, n_edge_features).
+    edge_attr (torch.Tensor): Edge attribute tensor for graph structure, shape (n_edges, n_steps, n_edge_features).
+    Using nested tensor if n_edges varies with time.
     """
 
     n_nodes: int = 0

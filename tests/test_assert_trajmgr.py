@@ -1,6 +1,7 @@
 import copy
 import numpy as np
 from pathlib import Path
+import torch
 
 from dymad.io import DynData, TrajectoryManager
 from dymad.transform import make_transform
@@ -15,6 +16,38 @@ def check_data(out, ref, label=''):
         assert np.allclose(_s.u, _t.u), f"{label} failed: {_s.u} != {_t.u}"
         assert np.allclose(_s.p, _t.p), f"{label} failed: {_s.p} != {_t.p}"
     print(f"{label} passed.")
+
+def test_dyndata(trj_data):
+    data = np.load(trj_data, allow_pickle=True)
+    ts = torch.tensor(data['t'])
+    xs = torch.tensor(data['x'])
+    ys = torch.tensor(np.tile(data['y'], (8, 1, 1)))
+    us = torch.tensor(data['u'])
+    ps = torch.tensor(data['p'])
+
+    Dlist = [
+        DynData(t=t, x=x, y=y, u=u, p=p)
+        for t, x, y, u, p in zip(ts, xs, ys, us, ps)
+    ]
+    data = DynData.collate(Dlist)
+    dref = DynData(t=ts, x=xs, y=ys, u=us, p=ps)
+    check_data([data], [dref], label='DynData collate')
+
+    N = 5
+    trun = data.truncate(N)
+    dref = DynData(t=ts[:,:N], x=xs[:,:N], y=ys[:,:N], u=us[:,:N], p=ps)
+    check_data([trun], [dref], label='DynData truncate')
+
+    W, S = 5, 10
+    ufld = data.unfold(W, S)
+    dref = DynData(
+        t = ts.unfold(1, W, S).reshape(-1, W),
+        x = xs.unfold(1, W, S).reshape(-1, xs.size(-1), W).permute(0, 2, 1),
+        y = ys.unfold(1, W, S).reshape(-1, ys.size(-1), W).permute(0, 2, 1),
+        u = us.unfold(1, W, S).reshape(-1, us.size(-1), W).permute(0, 2, 1),
+        p = ps.repeat_interleave(((xs.size(1)-W)//S +1), dim=0)
+    )
+    check_data([ufld], [dref], label='DynData unfold')
 
 def test_trajmgr(trj_data):
     metadata = {
