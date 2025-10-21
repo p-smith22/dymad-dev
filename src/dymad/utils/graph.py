@@ -22,6 +22,8 @@ def adj_to_edge(adj: Batch) -> Tuple[Batch, Batch]:
 
     dense_to_sparse is not directly used, because it aggregates all graphs into one big graph.
     But in our framework, we want to keep them separate.
+
+    Lastly, for the ease of later processing in DynData, the edge_index is transposed to shape (num_edges, 2).
     """
     if isinstance(adj, list):
         ei, ew = [], []
@@ -42,4 +44,4 @@ def adj_to_edge(adj: Batch) -> Tuple[Batch, Batch]:
 
     adj = torch.tensor(adj)
     edge_index, edge_weights = dense_to_sparse(adj)
-    return edge_index.numpy(), edge_weights.numpy()
+    return edge_index.numpy().T, edge_weights.numpy()
