@@ -2,46 +2,101 @@ from dataclasses import dataclass, field
 import torch
 from typing import List, Optional, Union
 
-def _ensure_graph_format(lst: Union[List[torch.Tensor], torch.Tensor, None], base_dim) -> torch.Tensor:
+def _process_graph_format_single(lst: Union[List[torch.Tensor], torch.Tensor, None], base_dim) -> torch.Tensor:
+    """
+    Considering the following cases:
+
+    - None: return None
+    - Single trajectory:
+
+        - List of tensors of shape (n_edges, ...) -> convert to NestedTensor
+        - 3D tensor of shape (n_steps, n_edges, ...) -> convert to NestedTensor
+    """
     if lst is None:
         return None
-    if isinstance(lst, list):
-        _need_nested = False
-        for item in lst:
-            if item.shape != lst[0].shape:
-                _need_nested = True
-                break
-        if _need_nested:
-            nt = torch.nested.nested_tensor(lst, dtype=lst[0].dtype, layout=torch.jagged)
-        else:
-            nt = torch.tensor(lst)
-    elif isinstance(lst, torch.Tensor):
-        if lst.ndim == base_dim:
-            nt = lst.unsqueeze(0)
-        elif lst.ndim > base_dim + 1:
-            raise ValueError(f"Invalid tensor shape for graph data: {lst.shape}. Expected shape with base dim {base_dim} or {base_dim+1}.")
-        else:
-            nt = lst
-    else:
-        raise ValueError(f"Invalid type for graph data: {type(lst)}. Expected list or torch.Tensor.")
-    return nt
 
-def _collate_nested_tensor(lst: List[torch.Tensor]) -> torch.Tensor:
+    if isinstance(lst, list):
+        assert isinstance(lst[0], torch.Tensor), "List items must be torch.Tensor"
+        assert lst[0].ndim == base_dim, f"List items must have {base_dim} dimensions"
+        return torch.nested.nested_tensor(lst, dtype=lst[0].dtype, layout=torch.jagged)
+
+    if isinstance(lst, torch.Tensor):
+        if lst.ndim != base_dim + 1:
+            raise ValueError(f"Invalid tensor shape for graph data: {lst.shape}. Expected shape with base dim {base_dim} or {base_dim+1}.")
+        return torch.nested.nested_tensor(lst.unbind(), dtype=lst.dtype, layout=torch.jagged)
+
+    raise ValueError(f"Invalid type for graph data: {type(lst)}. Expected list or torch.Tensor.")
+
+def _collate_nested_tensor(lst: Union[List[torch.Tensor], torch.Tensor], offset: Union[List[int], bool] = False) -> torch.Tensor:
     """
     lst is (n_batch,) list of tensors with shape (n_steps, n_edges, ...),
     where n_edges can be jagged.  The method collates the edge dimension over the batch,
     resulting in shape (n_steps, n_total_edges, ...).
+
+    Offset is need for edge indices to shift the node indices accordingly.
     """
+    if offset is not False:  # But can be a given list
+        # Offset is needed
+        if offset is True:
+            # Need to compute offsets
+            n_nodes = [0] + [l.values().max().item() + 1 for l in lst[:-1]]
+            offset = torch.tensor(n_nodes).cumsum(dim=0)
+        lst = [l + offset[i] for i, l in enumerate(lst)]
     cache = [l.unbind() for l in lst]  # list of (n_steps,) lists of (n_edges, ...)
+
     collated = []
     for step_items in zip(*cache):  # step_items is (n_batch,) tuple of (n_edges, ...)
         collated.append(torch.concatenate(step_items, dim=0))
-    return torch.nested.nested_tensor(collated, layout=torch.jagged)
+    return torch.nested.nested_tensor(collated, layout=torch.jagged, dtype=lst[0].dtype)
+
+def _ensure_one_batch(tensor: torch.Tensor) -> torch.Tensor:
+    if tensor is None:
+        return None
+    if tensor.ndim == 3:
+        # (n_batch, n_steps, ...)
+        if tensor.size(0) != 1:
+            # Swap batch and time dimensions, then flatten
+            tensor = tensor.permute(1, 0, 2)
+            return tensor.reshape(1, tensor.shape[0], -1)
+        # Already batch size 1
+        return tensor
+    elif tensor.ndim == 2:
+        # (n_steps, ...)
+        return tensor.unsqueeze(0)
+    else:
+        raise ValueError(f"Invalid tensor shape for DynData in graph mode: {tensor.shape}. " \
+                         f"Expected shape with 2D or 3D.")
+
+def _ensure_graph_format(
+        lst: Union[List[List[torch.Tensor]], List[torch.Tensor], torch.Tensor, None],
+        base_dim, need_offset: bool = False) -> torch.Tensor:
+    """
+    Considering the following cases:
+
+    - None or Single trajectory: back to _process_graph_format_single
+    - Batch of trajectories -> collate into NestedTensor
+
+        - 4D tensor of shape (n_batch, n_steps, n_edges, ...)
+        - List of tensors of shape (n_steps, n_edges, ...)
+        - List of lists of tensors of shape (n_edges, ...)
+    """
+    # Batch cases
+    if isinstance(lst, torch.Tensor) and lst.ndim == base_dim + 2:
+        return _collate_nested_tensor(lst, need_offset)
+
+    if isinstance(lst, list):
+        if isinstance(lst[0], torch.Tensor) and lst[0].ndim == base_dim + 1:
+            return _collate_nested_tensor(lst, need_offset)
+        elif isinstance(lst[0], list) and isinstance(lst[0][0], torch.Tensor) and lst[0][0].ndim == base_dim:
+            tmp = [_process_graph_format_single(sublist, base_dim) for sublist in lst]
+            return _collate_nested_tensor(tmp, need_offset)
+
+    # Else:
+    return _process_graph_format_single(lst, base_dim)
 
 def _slice(tensor: torch.Tensor, start: int, end: int) -> torch.Tensor:
     """
     Slice a NestedTensor along the first dimension (time steps).
-    Works for regular tensor as well.
 
     Args:
         tensor (torch.Tensor): Input NestedTensor of shape (n_steps, ...).
@@ -51,21 +106,17 @@ def _slice(tensor: torch.Tensor, start: int, end: int) -> torch.Tensor:
     Returns:
         torch.Tensor: Sliced NestedTensor of shape (end - start, ...).
     """
-    if tensor.is_nested:
-        offsets = tensor.offsets()
-        offset_0 = offsets[start]
-        offset_1 = offsets[end]
-        sliced_values = tensor.values()[offset_0:offset_1]
-        return torch.nested.nested_tensor_from_jagged(
-            sliced_values,
-            offsets[start:end + 1] - offsets[start],
-        )
-    return tensor[start:end]
+    offsets = tensor.offsets()
+    offset_0 = offsets[start]
+    offset_1 = offsets[end]
+    sliced_values = tensor.values()[offset_0:offset_1]
+    return torch.nested.nested_tensor_from_jagged(
+        sliced_values,
+        offsets[start:end + 1] - offsets[start])
 
 def _unfold(tensor: torch.Tensor, window: int, stride: int, offset: int = 0) -> torch.Tensor:
     """
     Unfold a NestedTensor along the first dimension (time steps).
-    Works for regular tensor as well.
 
     In this specialized unfolding, the graph size is expanded by n_windows times.
 
@@ -80,17 +131,21 @@ def _unfold(tensor: torch.Tensor, window: int, stride: int, offset: int = 0) -> 
     """
     if tensor is None:
         return None
+
+    n_window = (tensor.size(0) - window) // stride + 1
     data = tensor.unbind()
     buffer = []
-    for i in range(window):
-        buffer.append(torch.cat(data[i::stride], dim=0) + i*offset)
-    if tensor.is_nested:
-        offsets = [len(b) for b in buffer]
-        return torch.nested.nested_tensor_from_jagged(
-            buffer,
-            [0] + torch.tensor(offsets).cumsum(dim=0).tolist()
-        )
-    return torch.tensor(buffer)
+    for i in range(n_window):
+        # Loop over windows, the ith window is the ith expansion of the graph
+        # so the indices need to add i*offset
+        I, J = i*stride, i*stride + window
+        buffer.append([data[j]+i*offset for j in range(I, J)])
+
+    # Same operation as collate
+    collated = []
+    for step_items in zip(*buffer):
+        collated.append(torch.concatenate(step_items, dim=0))
+    return torch.nested.nested_tensor(collated, layout=torch.jagged, dtype=buffer[0][0].dtype)
 
 @dataclass
 class DynData:
@@ -171,12 +226,32 @@ class DynData:
         if self.ei is not None:
             # There is graph structure
             self._has_graph = True
+            # Ensure batch size 1
+            ## Assuming inputs either follow normal mode, (n_batch, n_steps, ...) {more natural to user}
+            ## or graph mode, (1, n_steps, ...) {typically from collate}
+            if self.t is not None:
+                if self.t.ndim == 1:
+                    # Assuming input is (n_steps,) (natural to user for single traj)
+                    self.t = self.t.unsqueeze(0)
+                elif self.t.ndim == 2:
+                    # Assuming input is (n_batch, n_steps) (natural to user for multiple trajs)
+                    self.t = self.t.transpose(1, 0).unsqueeze(0)
+                elif self.t.ndim == 3:
+                    # (1, n_steps, n_batch)
+                    # This typically happens after collate
+                    assert self.t.size(0) == 1, "In graph mode, batch size must be 1."
+                else:
+                    raise ValueError(f"Invalid tensor shape for DynData.t in graph mode: {self.t.shape}.")
+            self.x = _ensure_one_batch(self.x)
+            self.y = _ensure_one_batch(self.y)
+            self.u = _ensure_one_batch(self.u)
+            self.p = self.p.reshape(1, -1) if self.p is not None else None
             # Ensure NestedTensor
-            self.ei = _ensure_graph_format(self.ei, base_dim=2)
-            self.ew = _ensure_graph_format(self.ew, base_dim=1)
-            self.ea = _ensure_graph_format(self.ea, base_dim=2)
+            self.ei = _ensure_graph_format(self.ei, base_dim=2, need_offset=True)
+            self.ew = _ensure_graph_format(self.ew, base_dim=1, need_offset=False)
+            self.ea = _ensure_graph_format(self.ea, base_dim=2, need_offset=False)
 
-            self.n_nodes = self.ei.max().item() + 1
+            self.n_nodes = self.ei.values().max().item() + 1
             self.x_reshape = self.x.shape[:-1] + (self.n_nodes, -1) if self.x is not None else None
             self.y_reshape = self.y.shape[:-1] + (self.n_nodes, -1) if self.y is not None else None
             self.u_reshape = self.u.shape[:-1] + (self.n_nodes, -1) if self.u is not None else None
@@ -227,19 +302,18 @@ class DynData:
             ms += b.meta
 
         if batch_list[0]._has_graph:
-            ts = torch.concatenate([b.t for b in batch_list], dim=-1).unsqueeze(0) if batch_list[0].t is not None else None
-            xs = torch.concatenate([b.x for b in batch_list], dim=-1).unsqueeze(0)
-            ys = torch.concatenate([b.y for b in batch_list], dim=-1).unsqueeze(0) if batch_list[0].y is not None else None
-            us = torch.concatenate([b.u for b in batch_list], dim=-1).unsqueeze(0) if batch_list[0].u is not None else None
-            ps = torch.concatenate([b.p for b in batch_list], dim=-1).unsqueeze(0) if batch_list[0].p is not None else None
+            ts = torch.concatenate([b.t for b in batch_list], dim=0).transpose(0, 1).unsqueeze(0) if batch_list[0].t is not None else None
+            xs = torch.concatenate([b.x for b in batch_list], dim=-1)
+            ys = torch.concatenate([b.y for b in batch_list], dim=-1) if batch_list[0].y is not None else None
+            us = torch.concatenate([b.u for b in batch_list], dim=-1) if batch_list[0].u is not None else None
+            ps = torch.concatenate([b.p for b in batch_list], dim=-1) if batch_list[0].p is not None else None
 
             n_nodes = [0] + [b.n_nodes for b in batch_list[:-1]]
             offset = torch.tensor(n_nodes).cumsum(dim=0)
-            tmp = [b.ei + offset[i] for i, b in enumerate(batch_list)]
 
-            ei = _collate_nested_tensor(tmp)
-            ew = _collate_nested_tensor([b.ew for b in batch_list]) if batch_list[0].ew is not None else None
-            ea = _collate_nested_tensor([b.ea for b in batch_list]) if batch_list[0].ea is not None else None
+            ei = _collate_nested_tensor([b.ei for b in batch_list], offset)
+            ew = _collate_nested_tensor([b.ew for b in batch_list], False) if batch_list[0].ew is not None else None
+            ea = _collate_nested_tensor([b.ea for b in batch_list], False) if batch_list[0].ea is not None else None
 
             return DynData(t=ts, x=xs, y=ys, u=us, p=ps, ei=ei, ew=ew, ea=ea, meta=ms)
 
@@ -253,9 +327,9 @@ class DynData:
     def truncate(self, num_step):
         return DynData(
             t = self.t[:, :num_step] if self.t is not None else None,
-            x = self.x[:, :num_step, :],
-            y = self.y[:, :num_step, :] if self.y is not None else None,
-            u = self.u[:, :num_step, :] if self.u is not None else None,
+            x = self.x[:, :num_step],
+            y = self.y[:, :num_step] if self.y is not None else None,
+            u = self.u[:, :num_step] if self.u is not None else None,
             p = self.p,
             ei = _slice(self.ei, 0, num_step) if self._has_graph else None,
             ew = _slice(self.ew, 0, num_step) if self.ew is not None else None,
@@ -289,7 +363,7 @@ class DynData:
         if self._has_graph:
             # Graph mode:
             _unf = lambda z: z.unfold(1, window, stride).permute(0, 3, 1, 2).reshape(1, window, -1) if z is not None else None
-            t_unfolded = self.t.unfold(1, window, stride).reshape(-1, window).transpose(1, 0) if self.t is not None else None
+            t_unfolded = self.t.unfold(1, window, stride).reshape(-1, window).transpose(1, 0).unsqueeze(0) if self.t is not None else None
             x_unfolded = _unf(self.x)
             y_unfolded = _unf(self.y)
             u_unfolded = _unf(self.u)

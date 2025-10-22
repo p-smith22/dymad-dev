@@ -11,14 +11,62 @@ def check_data(out, ref, label=''):
         assert np.allclose(_s.t, _t.t), f"{label} failed: {_s.t} != {_t.t}"
         assert np.allclose(_s.x, _t.x), f"{label} failed: {_s.x} != {_t.x}"
         assert _s.y is None
+        assert _t.y is None
         assert np.allclose(_s.u, _t.u), f"{label} failed: {_s.u} != {_t.u}"
         assert np.allclose(_s.p, _t.p), f"{label} failed: {_s.p} != {_t.p}"
-        assert np.allclose(_s.ei, _t.ei), f"{label} failed: {_s.ei} != {_t.ei}"
-        assert np.allclose(_s.ew, _t.ew), f"{label} failed: {_s.ew} != {_t.ew}"
+        for _s_ei, _t_ei in zip(_s.ei, _t.ei):
+            assert np.allclose(_s_ei, _t_ei), f"{label} failed: {_s_ei} != {_t_ei}"
+        for _s_ew, _t_ew in zip(_s.ew, _t.ew):
+            assert np.allclose(_s_ew, _t_ew), f"{label} failed: {_s_ew} != {_t_ew}"
         assert _s.ea is None
+        assert _t.ea is None
     print(f"{label} passed.")
 
-def test_trajmgr(ltg_data):
+def test_dyndata_graph(ltg_data):
+    data = np.load(ltg_data, allow_pickle=True)
+    ts = torch.tensor(data['t'][:2, :4])
+    xs = torch.tensor(data['x'][:2, :4])
+    us = torch.tensor(data['u'][:2, :4])
+    ps = torch.tensor(data['p'][:2])
+
+    e1 = torch.tensor([[0,1,2],[1,0,0]]).transpose(0,1)
+    w1 = torch.tensor([1.0, 1.0, 1.0])
+    e2 = torch.tensor([[0,2],[1,0]])
+    w2 = torch.tensor([1.0, 3.0])
+    es = [[e1, e2, e2, e1],
+          [e2, e1, e2, e1]]
+    ws = [[w1, w2, w2, w1],
+          [w2, w1, w2, w1]]
+
+    Dlist = [
+        DynData(t=t, x=x, u=u, p=p, ei=e, ew=w)
+        for t, x, u, p, e, w in zip(ts, xs, us, ps, es, ws)
+    ]
+    data = DynData.collate(Dlist)
+    dref = DynData(t=ts, x=xs, u=us, p=ps, ei=es, ew=ws)
+    check_data([data], [dref], label='DynData graph collate')
+
+    N = 3
+    trun = data.truncate(N)
+    dref = DynData(
+        t=ts[:,:N], x=xs[:,:N], u=us[:,:N], p=ps,
+        ei=[_e[:N] for _e in es], ew=[_w[:N] for _w in ws])
+    check_data([trun], [dref], label='DynData truncate')
+
+    W, S = 3, 1
+    ufld = data.unfold(W, S)
+    dref = DynData(
+        t = torch.vstack([ts[:,:3], ts[:,1:]]),
+        x = torch.vstack([xs[:,:3], xs[:,1:]]),
+        u = torch.vstack([us[:,:3], us[:,1:]]),
+        p = torch.vstack([ps, ps]),
+        ei = [es[0][:3], es[1][:3], es[0][1:], es[1][1:]],
+        ew = [ws[0][:3], ws[1][:3], ws[0][1:], ws[1][1:]]
+    )
+
+    check_data([ufld], [dref], label='DynData unfold')
+
+def test_trajmgr_graph(ltg_data):
     metadata = {
         "config" : {
             "data": {
