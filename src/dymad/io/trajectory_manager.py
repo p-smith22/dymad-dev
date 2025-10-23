@@ -19,6 +19,8 @@ def _process_data(data, x, label, base_dim=1, offset=0):
     Expecting to return a list of `n_traj` arrays:
     _data = [... d_i ...]
     where d_i has shape (n_steps, ...) and ndim(d_i) = base_dim + 1
+
+    d_i itself can be an array or a list, depending on the input data type.
     """
     _dim = base_dim - offset
     if data is None:
@@ -29,9 +31,26 @@ def _process_data(data, x, label, base_dim=1, offset=0):
             _data = [np.empty((0,)) for _ in x]
 
     elif isinstance(data, np.ndarray):
+        # t,y,u,p should always go through here, by converting to np.ndarray beforehand.
+        # ei/ew/ea could go through this branch too, if they are in np.ndarray form;
+        # this would mean their shapes are uniform throughout the dataset.
+        #
+        # The possibilities here:
+        # - np.ndarray of shape (n_traj, n_steps, ...)  - full data for multiple trajs
+        # - np.ndarray of shape (1, n_steps, ...) - Broadcast to all trajs if needed
+        # - np.ndarray of shape (n_traj, 1, ...)  - Broadcast to all steps
+        # - np.ndarray of shape (n_steps, ...)    - single traj data, broadcast to all trajs if needed
+        # - np.ndarray of shape (...,)            - Broadcast to all steps and trajs
         if data.ndim == _dim + 2:  # (n_traj, n_steps, ...)
-            logging.info(f"Detected {label} as np.ndarray (n_traj, n_steps, ...): {data.shape}. Splitting into list of arrays.")
-            _data = [np.array(_u) for _u in data]
+            if data.shape[0] == 1 and len(x) > 1:
+                logging.info(f"Detected {label} as np.ndarray (1, n_steps, ...): {data.shape} for multiple x. Broadcasting to all trajectories.")
+                _data = [np.array(data[0]) for _ in x]
+            elif data.shape[1] == 1:
+                logging.info(f"Detected {label} as np.ndarray (n_traj, 1, ...): {data.shape}. Expanding to trajectory for each x and broadcasting to all time steps.")
+                _data = [np.tile(data[_i], (_x.shape[0],) + (1,) * base_dim) for _i, _x in enumerate(x)]
+            else:
+                logging.info(f"Detected {label} as np.ndarray (n_traj, n_steps, ...): {data.shape}. Splitting into list of arrays.")
+                _data = [np.array(_u) for _u in data]
         elif data.ndim == _dim + 1:  # (n_steps, ...)
             if len(x) > 1:
                 logging.info(f"Detected {label} as np.ndarray (n_steps, ...): {data.shape} but x is multi-traj ({len(x)}). Broadcasting {label} to all trajectories.")
@@ -48,26 +67,38 @@ def _process_data(data, x, label, base_dim=1, offset=0):
             raise ValueError(msg)
 
     elif isinstance(data, list):
-        if len(data) == 1 and len(x) > 1:
-            # Single data for multiple x, broadcast
-            u0 = np.array(data[0])
-            if u0.ndim == _dim and _dim > 0:
-                logging.info(f"Detected {label} as single {base_dim}-dim array in list for multiple x. Tiling and broadcasting to all trajectories.")
-                _data = [np.tile(u0, (x.shape[0],) + (1,) * base_dim) for x in x]
-            elif u0.ndim == _dim + 1:
-                logging.info(f"Detected {label} as single {base_dim+1}-dim array in list for multiple x. Broadcasting to all trajectories.")
-                _data = [np.array(u0) for _ in x]
-            else:
-                msg = f"Unsupported {label} shape in list: {u0.shape}"
-                logging.error(msg)
-                raise ValueError(msg)
-        else:
-            logging.info(f"Detected {label} as list of arrays. Converting all to np.ndarray.")
-            if data[0].ndim == _dim and _dim > 0:  # (n_traj, 1, ...)
-                logging.info(f"Detected {label} as list of {base_dim}-dim arrays. Expanding each to trajectory and broadcasting to match x.")
-                _data = [np.tile(np.array(_u), (x.shape[0],) + (1,) * base_dim) for _u, x in zip(data, x)]
-            else:  # (n_traj, n_steps, ...)
-                _data = [np.array(_u) for _u in data]
+        # This branch should be ei/ew/ea that are in lists.
+        # an element of np.ndarray is considered one sample at one step in one trajectory,
+        # so its ndim should be base_dim.
+        #
+        # The possibilities here:
+        # - list of lists of arrays    - (n_traj, n_steps, ...) - already full data
+        # - list of one list of arrays - (1, n_steps, ...) - broadcast to all trajs
+        # - list of lists of one array - (n_traj, 1, ...)  - broadcast to all steps
+        # - list of arrays             - (n_steps, ...)    - single traj data, broadcast to all trajs
+        if isinstance(data[0], np.ndarray):
+            if data[0].ndim == _dim:   # (n_steps, ...)
+                if len(x) > 1:
+                    logging.info(f"Detected {label} as lists (n_steps, ...): {data[0].shape} but x is multi-traj ({len(x)})." \
+                                 f"Broadcasting {label} to all trajectories.")
+                    _data = [data for _ in x]
+                else:
+                    logging.info(f"Detected {label} as lists (n_steps, ...): {data[0].shape}. Wrapping as single-element list.")
+                    _data = [np.array(data[0])]
+        elif isinstance(data[0], list):
+            if len(data) == 1:         # (1, n_steps, ...)
+                if len(x) > 1:
+                    logging.info(f"Detected {label} as lists (1, n_steps, ...): {data[0][0].shape} for multiple x. Broadcasting to all trajectories.")
+                    _data = [data[0] for _ in x]
+                else:
+                    logging.info(f"Detected {label} as lists (n_traj, n_steps, ...): {data[0][0].shape}. Return as is.")
+                    _data = data
+            elif len(data[0]) == 1:    # (n_traj, 1, ...)
+                logging.info(f"Detected {label} as lists (n_traj, 1, ...): {data[0][0].shape}. Expanding to trajectory for each x and broadcasting to all time steps.")
+                _data = [[data[_i][0] for _ in range(x[_i].shape[0])] for _i in range(len(x))]
+            else:                      # (n_traj, n_steps, ...)
+                logging.info(f"Detected {label} as lists (n_traj, n_steps, ...): {data[0][0].shape}. Return as is.")
+                _data = data
 
     else:
         logging.error(f"{label} must be a np.ndarray or list of np.ndarrays")
@@ -243,21 +274,22 @@ class TrajectoryManager:
             logging.error("x must be a np.ndarray or list of np.ndarrays")
             raise TypeError("x must be a np.ndarray or list of np.ndarrays")
 
+        # In the processing below, the raw data is converted to arrays, as they are supposed to be regular.
         # Process t
-        self.t = _process_data(vals[0], self.x, "t", base_dim=0, offset=0)
+        self.t = _process_data(np.array(vals[0]), self.x, "t", base_dim=0, offset=0)
         if self.t[0].size == 0:
             self.t = [np.arange(_x.shape[0]) for _x in self.x]
         self.dt = [ti[1] - ti[0] for ti in self.t]
 
         # Process y
-        self.y = _process_data(vals[2], self.x, "y", base_dim=1, offset=0)
+        self.y = _process_data(np.array(vals[2]), self.x, "y", base_dim=1, offset=0)
 
         # Process u
-        self.u = _process_data(vals[3], self.x, "u", base_dim=1, offset=0)
+        self.u = _process_data(np.array(vals[3]), self.x, "u", base_dim=1, offset=0)
         self._is_autonomous = self.u[0].size == 0
 
         # Process p
-        self.p = _process_data(vals[4], self.x, "p", base_dim=1, offset=1)
+        self.p = _process_data(np.array(vals[4]), self.x, "p", base_dim=1, offset=1)
 
     def data_truncation(self) -> None:
         """
@@ -614,6 +646,8 @@ class TrajectoryManagerGraph(TrajectoryManager):
     The graph data is assumed to be homogeneous, that each node has the same number of features.
     Hence the normalization, if done, is applied globally to all nodes.
 
+    However, the number of edges can vary over time, and hence other quantities defined on edges.
+
     In the raw data, the nodal state features are expected to be concatenated sequentially.
     For example, for N nodes with M features each, the raw data for states at a time step is
     
@@ -671,6 +705,15 @@ class TrajectoryManagerGraph(TrajectoryManager):
 
         # Process ea
         self.ea = _process_data(ea, self.x, "ea", base_dim=2, offset=0)
+
+        # Count nodes
+        _n = []
+        for _e in self.ei:
+            for _ee in _e:
+                _n.append(np.max(_ee) + 1)
+        self.n_nodes = int(np.max(_n))
+        self.metadata["n_nodes"] = self.n_nodes
+        logging.info(f"Number of nodes detected: {self.n_nodes}")
 
     def data_truncation(self) -> None:
         super().data_truncation()
@@ -731,15 +774,16 @@ class TrajectoryManagerGraph(TrajectoryManager):
                 self._data_transform_p.fit(np.vstack(P))
                 self.metadata["transform_p_state"] = self._data_transform_p.state_dict()
 
+            # For edges, stack all edges and fit the transformations.
             if self.metadata["n_edge_weights"] > 0:
                 logging.info("Fitting transformation for edge weights.")
-                E = [self.ew[i] for i in self.train_set_index]
+                E = [np.hstack(self.ew[i]).reshape(-1,1) for i in self.train_set_index]
                 self._data_transform_ew.fit(E)
                 self.metadata["transform_ew_state"] = self._data_transform_ew.state_dict()
 
             if self.metadata["n_edge_features"] > 0:
                 logging.info("Fitting transformation for edge features.")
-                E = [self.ea[i] for i in self.train_set_index]
+                E = [np.vstack(self.ea[i]) for i in self.train_set_index]
                 self._data_transform_ea.fit(E)
                 self.metadata["transform_ea_state"] = self._data_transform_ea.state_dict()
         else:
@@ -803,7 +847,10 @@ class TrajectoryManagerGraph(TrajectoryManager):
         _Ei = [self.ei[i] for i in indices]
 
         if self.metadata["n_edge_weights"] > 0:
-            _Ew = [self._data_transform_ew.transform(self.ew[i]) for i in indices]
+            _Ew = []
+            for i in indices:
+                _tmp = self._data_transform_ew.transform(self.ew[i].reshape(-1,1))
+                _Ew.append([_t.reshape(-1) for _t in _tmp])
         else:
             _Ew = [None for _ in _X]
 
@@ -821,9 +868,9 @@ class TrajectoryManagerGraph(TrajectoryManager):
                 y=torch.tensor(self._graph_data_reshape(_y, forward=False), dtype=self.dtype, device=self.device) if _y is not None else None,
                 u=torch.tensor(self._graph_data_reshape(_u, forward=False), dtype=self.dtype, device=self.device) if _u is not None else None,
                 p=torch.tensor(self._graph_data_reshape(_p, forward=False).squeeze(-2), dtype=self.dtype, device=self.device) if _p is not None else None,
-                ei=torch.tensor(_ei, dtype=torch.int64, device=self.device),
-                ew=torch.tensor(_ew, dtype=self.dtype, device=self.device) if _ew is not None else None,
-                ea=torch.tensor(_ea, dtype=self.dtype, device=self.device) if _ea is not None else None,
+                ei=_ei,
+                ew=_ew,
+                ea=_ea,
             ))
         return dataset
 
@@ -835,8 +882,7 @@ class TrajectoryManagerGraph(TrajectoryManager):
         """
         if forward:
             # Reshape from [T, n_nodes * n_features] to [n_nodes, T, n_features]
-            n_nodes = self.adj.shape[-1]
-            tmp = data.reshape(data.shape[0], n_nodes, -1)  # [T, n_nodes, n_features_per_node]
+            tmp = data.reshape(data.shape[0], self.n_nodes, -1)  # [T, n_nodes, n_features_per_node]
             return np.swapaxes(tmp, 0, 1)  # [n_nodes, T, n_features_per_node]
 
         # Reshape from [n_nodes, T, n_features] to [T, n_nodes * n_features]
