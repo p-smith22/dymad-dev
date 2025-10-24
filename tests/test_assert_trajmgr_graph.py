@@ -42,16 +42,35 @@ def test_dyndata_graph(ltg_data):
         DynData(t=t, x=x, u=u, p=p, ei=e, ew=w)
         for t, x, u, p, e, w in zip(ts, xs, us, ps, es, ws)
     ]
+    assert Dlist[0].n_steps == ts.size(1), "n_steps in single traj"
+    assert Dlist[0].batch_size == 1, "batch_size in single traj"
+
     data = DynData.collate(Dlist)
     dref = DynData(t=ts, x=xs, u=us, p=ps, ei=es, ew=ws)
     check_data([data], [dref], label='DynData graph collate')
+    assert data.n_steps == ts.size(1), "n_steps in collated traj"
+    assert data.batch_size == ts.size(0), "batch_size in collated traj"
+    assert dref.n_steps == ts.size(1), "n_steps in batched traj"
+    assert dref.batch_size == ts.size(0), "batch_size in batched traj"
 
-    N = 3
+    N = 2
     trun = data.truncate(N)
     dref = DynData(
         t=ts[:,:N], x=xs[:,:N], u=us[:,:N], p=ps,
         ei=[_e[:N] for _e in es], ew=[_w[:N] for _w in ws])
-    check_data([trun], [dref], label='DynData truncate')
+    check_data([trun], [dref], label='DynData graph truncate')
+
+    trun = data.get_step(N,N+2)
+    dref = DynData(
+        t=ts[:,N:N+2], x=xs[:,N:N+2], u=us[:,N:N+2], p=ps,
+        ei=[_e[N:N+2] for _e in es], ew=[_w[N:N+2] for _w in ws])
+    check_data([trun], [dref], label='DynData graph get_step two steps')
+
+    trun = data.get_step(N)
+    dref = DynData(
+        t=ts[:,N:N+1], x=xs[:,N:N+1], u=us[:,N:N+1], p=ps,
+        ei=[[_e[N]] for _e in es], ew=[[_w[N]] for _w in ws])
+    check_data([trun], [dref], label='DynData graph get_step one step')
 
     W, S = 3, 1
     ufld = data.unfold(W, S)
@@ -64,7 +83,7 @@ def test_dyndata_graph(ltg_data):
         ew = [ws[0][:3], ws[1][:3], ws[0][1:], ws[1][1:]]
     )
 
-    check_data([ufld], [dref], label='DynData unfold')
+    check_data([ufld], [dref], label='DynData graph unfold')
 
 def test_trajmgr_graph(ltg_data):
     DLY = 2
@@ -182,9 +201,9 @@ def test_trajmgr_graph(ltg_data):
             t=torch.tensor(tt),
             x=torch.tensor(xr),
             u=torch.tensor(ur),
-            p=torch.tensor(pr),
+            p=pr.clone().detach(),
             ei=[torch.tensor(e) for e in ei],
-            ew=[torch.tensor(e) for e in ew])
+            ew=[e.clone().detach() for e in ew])
         for tt, xr, ur, pr, ei, ew in zip(ttst, Xrec, Urec, Prec, itst, Erec)
     ]
 

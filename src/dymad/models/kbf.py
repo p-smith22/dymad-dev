@@ -76,7 +76,7 @@ class DKBF(KBF):
         """Predict trajectory using discrete-time iterations."""
         if self._predictor_type == "exp":
             return predict_discrete_exp(self, x0, ts, **kwargs)
-        return predict_discrete(self, x0, ts, us=w.u)
+        return predict_discrete(self, x0, ts, w, **kwargs)
 
 class GKBF(ModelTempUCatGraphAE):
     """Graph Koopman Bilinear Form (GKBF) model - graph-specific version.
@@ -136,6 +136,4 @@ class DGKBF(GKBF):
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
-        return predict_discrete(
-            self, x0, ts,
-            us=w.u, edge_index=w.ei, edge_weights=w.ew, edge_attr=w.ea)
+        return predict_discrete(self, x0, ts, w, **kwargs)

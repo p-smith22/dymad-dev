@@ -94,7 +94,7 @@ class GNN(nn.Module):
         Forward pass through the GNN.
 
         - `x` (..., n_nodes, n_features).
-        - `edge_index` (..., 2, n_edges).
+        - `edge_index` (..., n_edges, 2).
         - `edge_weights` (..., n_edges).
         - `edge_attr` (..., n_edges, n_edge_features).
         - Returns (..., n_nodes*n_new_features).
@@ -103,11 +103,12 @@ class GNN(nn.Module):
         Otherwise, we aggregate the graph on the fly so the shapes are reduced
         to the first case.  The aggregation takes a bit more time.
         """
-        if edge_index.ndim == 3 and edge_index.shape[0] == 1:
+        assert edge_index.ndim == 3, "edge_index must have shape (..., n_edges, 2)"
+        if edge_index.shape[0] == 1:
             # The usual case, where we have a single edge_index
             ew = None if edge_weights is None else edge_weights[0]
             ea = None if edge_attr is None else edge_attr[0]
-            return self._forward_single(x, edge_index[0], ew, ea, **kwargs)
+            return self._forward_single(x, edge_index[0].transpose(0, 1), ew, ea, **kwargs)
         else:
             # The slower case, where we aggregate graph on the fly
             _x_batch, _x_shape = x.shape[:-2], x.shape[-2:]
@@ -116,7 +117,7 @@ class GNN(nn.Module):
                 f"Batch shape of x and edge_index must match. Got {_x_batch} and {_e_batch}."
 
             # Aggregate graph by shifting node indices
-            _ei = edge_index.reshape(-1, *_e_shape)
+            _ei = edge_index.unbind()
             _tmp = 1
             for d in _x_batch:
                 _tmp *= d
@@ -124,19 +125,17 @@ class GNN(nn.Module):
             _offset = torch.tensor(_n_nodes).cumsum(dim=0)
             _ei_cat = torch.concatenate([
                 b + _offset[i] for i, b in enumerate(_ei)],
-                dim=-1)
+                dim=-2).transpose(0, 1)
 
             if edge_weights is None:
                 ew = None
             else:
-                ew = None
-                # ew = torch.concatenate(edge_weights, dim=-1).unsqueeze(0)
+                ew = edge_weights.values()
 
             if edge_attr is None:
                 ea = None
             else:
-                ea = None
-                # ea = torch.concatenate(edge_attr, dim=-2).unsqueeze(0)
+                ea = edge_attr.values()
 
             # Process node features
             _x_cat = x.reshape(1, -1, _x_shape[1])
