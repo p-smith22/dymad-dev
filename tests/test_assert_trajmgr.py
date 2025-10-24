@@ -22,7 +22,7 @@ def test_dyndata(trj_data):
     ts = torch.tensor(data['t'])
     xs = torch.tensor(data['x'])
     ys = torch.tensor(np.tile(data['y'], (8, 1, 1)))
-    us = torch.tensor(data['u'])
+    us = torch.tensor(np.tile(data['u'], (1, 21, 1)))
     ps = torch.tensor(data['p'])
 
     Dlist = [
@@ -82,7 +82,7 @@ def test_trajmgr(trj_data):
     ts = data['t']
     xs = data['x']
     ys = data['y']
-    us = data['u']
+    us = np.tile(data['u'], (1, 21, 1))
     ps = data['p']
 
     trnx = make_transform(metadata['config']['transform_x'])

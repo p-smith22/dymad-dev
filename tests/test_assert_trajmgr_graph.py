@@ -67,6 +67,7 @@ def test_dyndata_graph(ltg_data):
     check_data([ufld], [dref], label='DynData unfold')
 
 def test_trajmgr_graph(ltg_data):
+    DLY = 2
     metadata = {
         "config" : {
             "data": {
@@ -80,7 +81,7 @@ def test_trajmgr_graph(ltg_data):
                 "mode" : "01"},
                 {
                 "type": "delay",
-                "delay": 2}],
+                "delay": DLY}],
             "transform_u": {
                 "type": "Scaler",
                 "mode" : "-11"},
@@ -89,13 +90,13 @@ def test_trajmgr_graph(ltg_data):
                 "mode" : "std"},
             "transform_ew": {
                 "type": "Scaler",
-                "mode" : "01"},
+                "mode" : "-11"},
     }}
 
     adj = np.array([
-        [0, 1, 1],
+        [0, 1, 2],
         [1, 0, 1],
-        [1, 1, 0]
+        [1, 2, 0]
     ])
     edge_index, edge_weights = adj_to_edge(adj)
 
@@ -140,15 +141,24 @@ def test_trajmgr_graph(ltg_data):
     Ptst = trnp.transform(ptst)
     Ptst = [np.concatenate([pt, pt, pt], axis=-1) for pt in Ptst]
 
-    itst = [np.tile(edge_index, (len(xs[_i]), 1, 1)).astype(np.int64) for _i in tm.test_set_index]
+    itst = [[edge_index for _ in range(len(xs[_i]))] for _i in tm.test_set_index]
 
-    etrn = [edge_weights for _ in tm.train_set_index]
-    etst = [edge_weights for _ in tm.test_set_index]
-    trne.fit(etrn)
-    Etst = trne.transform(etst)
+    etrn = [[edge_weights for _ in range(len(xs[_i]))] for _i in tm.train_set_index]
+    etst = [[edge_weights for _ in range(len(xs[_i]))] for _i in tm.test_set_index]
+    trne.fit([np.hstack(e).reshape(-1,1) for e in etrn])
+    Etst = []
+    for e in etst:
+        ew = trne.transform([_e.reshape(-1,1) for _e in e])
+        Etst.append([e.reshape(-1) for e in ew])
 
     Dtst = [
-        DynData(t=tt[2:], x=xt, u=ut[2:], p=pt, ei=ei, ew=ew)
+        DynData(
+            t=torch.tensor(tt[DLY:]),
+            x=torch.tensor(xt),
+            u=torch.tensor(ut[DLY:]),
+            p=torch.tensor(pt),
+            ei=[torch.tensor(e) for e in ei[DLY:]],
+            ew=[torch.tensor(e) for e in ew[DLY:]])
         for tt, xt, ut, pt, ei, ew in zip(ttst, Xtst, Utst, Ptst, itst, Etst)
         ]
     check_data(Dtst, tm.test_set, label='Graph Transform')
@@ -158,23 +168,38 @@ def test_trajmgr_graph(ltg_data):
     # ---
     # Again manually inverse transform data
     # Inverse transform only one node, and then replicate it for all nodes
-    Xrec = trnx.inverse_transform([_d.x[:,:6] for _d in Dtst])
+    Xrec = trnx.inverse_transform([_d.x[0,:,:2*(DLY+1)] for _d in Dtst])
     Xrec = [np.concatenate([xr, xr, xr], axis=-1) for xr in Xrec]
-    Urec = trnu.inverse_transform([_d.u[:,0].reshape(-1,1) for _d in Dtst])
+    Urec = trnu.inverse_transform([_d.u[0,:,0].reshape(-1,1) for _d in Dtst])
     Urec = [np.concatenate([ur, ur, ur], axis=-1) for ur in Urec]
-    Prec = trnp.inverse_transform([_d.p[:4] for _d in Dtst])
-    Erec = trne.inverse_transform([_d.ew for _d in Dtst])
+    Prec = trnp.inverse_transform([_d.p[0,:4] for _d in Dtst])
+    Erec = []
+    for _d in Dtst:
+        ew = trne.inverse_transform([_e.reshape(-1,1) for _e in _d.ew])
+        Erec.append([e.reshape(-1) for e in ew])
     Drec = [
-        DynData(t=tt, x=xr, u=ur, p=pr, ei=ei, ew=ew)
+        DynData(
+            t=torch.tensor(tt),
+            x=torch.tensor(xr),
+            u=torch.tensor(ur),
+            p=torch.tensor(pr),
+            ei=[torch.tensor(e) for e in ei],
+            ew=[torch.tensor(e) for e in ew])
         for tt, xr, ur, pr, ei, ew in zip(ttst, Xrec, Urec, Prec, itst, Erec)
     ]
 
     Xref = [xs[_i] for _i in tm.test_set_index]
-    Uref = [us[_i][2:] for _i in tm.test_set_index]
+    Uref = [us[_i][DLY:] for _i in tm.test_set_index]
     Pref = [ps[_i] for _i in tm.test_set_index]
-    Eref = [edge_weights for _ in tm.test_set_index]
+    Eref = [[edge_weights for _ in range(len(xs[_i]))] for _i in tm.test_set_index]
     Dref = [
-        DynData(t=tr, x=xr, u=ur, p=pr, ei=ei, ew=ew)
+        DynData(
+            t=torch.tensor(tr),
+            x=torch.tensor(xr),
+            u=torch.tensor(ur),
+            p=torch.tensor(pr),
+            ei=[torch.tensor(e) for e in ei[DLY:]],
+            ew=[torch.tensor(e) for e in ew[DLY:]])
         for tr, xr, ur, pr, ei, ew in zip(ttst, Xref, Uref, Pref, itst, Eref)
         ]
     check_data(Drec, Dref, label='Graph Inverse Transform')

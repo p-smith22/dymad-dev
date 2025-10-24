@@ -85,6 +85,10 @@ def _process_data(data, x, label, base_dim=1, offset=0):
                 else:
                     logging.info(f"Detected {label} as lists (n_steps, ...): {data[0].shape}. Wrapping as single-element list.")
                     _data = [np.array(data[0])]
+            else:
+                msg = f"Unsupported {label} array shape in list: {data[0].shape}"
+                logging.error(msg)
+                raise ValueError(msg)
         elif isinstance(data[0], list):
             if len(data) == 1:         # (1, n_steps, ...)
                 if len(x) > 1:
@@ -276,20 +280,28 @@ class TrajectoryManager:
 
         # In the processing below, the raw data is converted to arrays, as they are supposed to be regular.
         # Process t
-        self.t = _process_data(np.array(vals[0]), self.x, "t", base_dim=0, offset=0)
+        self.t = _process_data(
+            None if vals[0] is None else np.array(vals[0]),
+            self.x, "t", base_dim=0, offset=0)
         if self.t[0].size == 0:
             self.t = [np.arange(_x.shape[0]) for _x in self.x]
         self.dt = [ti[1] - ti[0] for ti in self.t]
 
         # Process y
-        self.y = _process_data(np.array(vals[2]), self.x, "y", base_dim=1, offset=0)
+        self.y = _process_data(
+            None if vals[2] is None else np.array(vals[2]),
+            self.x, "y", base_dim=1, offset=0)
 
         # Process u
-        self.u = _process_data(np.array(vals[3]), self.x, "u", base_dim=1, offset=0)
+        self.u = _process_data(
+            None if vals[3] is None else np.array(vals[3]),
+            self.x, "u", base_dim=1, offset=0)
         self._is_autonomous = self.u[0].size == 0
 
         # Process p
-        self.p = _process_data(np.array(vals[4]), self.x, "p", base_dim=1, offset=1)
+        self.p = _process_data(
+            None if vals[4] is None else np.array(vals[4]),
+            self.x, "p", base_dim=1, offset=1)
 
     def data_truncation(self) -> None:
         """
@@ -668,7 +680,15 @@ class TrajectoryManagerGraph(TrajectoryManager):
         self.adj = adj  # Store the adjacency matrix if provided externally
 
         self._data_transform_ew = make_transform(self.metadata['config'].get('transform_ew', None))
+        if self._data_transform_ew.delay > 0:
+            msg = "Edge weight transformations with delay embedding are not supported."
+            logging.error(msg)
+            raise ValueError(msg)
         self._data_transform_ea = make_transform(self.metadata['config'].get('transform_ea', None))
+        if self._data_transform_ea.delay > 0:
+            msg = "Edge attribute transformations with delay embedding are not supported."
+            logging.error(msg)
+            raise ValueError(msg)
 
         if "train_set_index" in metadata:
             if "transform_ew_state" in metadata:
@@ -849,13 +869,13 @@ class TrajectoryManagerGraph(TrajectoryManager):
         if self.metadata["n_edge_weights"] > 0:
             _Ew = []
             for i in indices:
-                _tmp = self._data_transform_ew.transform(self.ew[i].reshape(-1,1))
+                _tmp = self._data_transform_ew.transform([e.reshape(-1,1) for e in self.ew[i][_d:]])
                 _Ew.append([_t.reshape(-1) for _t in _tmp])
         else:
             _Ew = [None for _ in _X]
 
         if self.metadata["n_edge_features"] > 0:
-            _Ea = [self._data_transform_ea.transform(self.ea[i]) for i in indices]
+            _Ea = [self._data_transform_ea.transform(self.ea[i][_d:]) for i in indices]
         else:
             _Ea = [None for _ in _X]
 
@@ -868,9 +888,9 @@ class TrajectoryManagerGraph(TrajectoryManager):
                 y=torch.tensor(self._graph_data_reshape(_y, forward=False), dtype=self.dtype, device=self.device) if _y is not None else None,
                 u=torch.tensor(self._graph_data_reshape(_u, forward=False), dtype=self.dtype, device=self.device) if _u is not None else None,
                 p=torch.tensor(self._graph_data_reshape(_p, forward=False).squeeze(-2), dtype=self.dtype, device=self.device) if _p is not None else None,
-                ei=_ei,
-                ew=_ew,
-                ea=_ea,
+                ei=[torch.tensor(_e) for _e in _ei],
+                ew=[torch.tensor(_e) for _e in _ew] if _ew is not None else None,
+                ea=[torch.tensor(_a) for _a in _ea] if _ea is not None else None,
             ))
         return dataset
 
