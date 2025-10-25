@@ -55,10 +55,9 @@ def _collate_nested_tensor(lst: Union[List[torch.Tensor], torch.Tensor], offset:
             n_nodes = [0] + [l.values().max().item() + 1 for l in lst[:-1]]
             offset = torch.tensor(n_nodes).cumsum(dim=0)
         lst = [l + offset[i] for i, l in enumerate(lst)]
-    cache = [l.unbind() for l in lst]  # list of (n_steps,) lists of (n_edges, ...)
 
     collated = []
-    for step_items in zip(*cache):  # step_items is (batch_size,) tuple of (n_edges, ...)
+    for step_items in zip(*lst):  # step_items is (batch_size,) tuple of (n_edges, ...)
         collated.append(torch.concatenate(step_items, dim=0))
     return torch.nested.nested_tensor(collated, layout=torch.jagged, dtype=lst[0].dtype)
 
@@ -279,10 +278,10 @@ class DynData:
             self.n_steps = self.ei.size(0)
 
             self.n_nodes = self.ei.values().max().item() + 1
-            self.x_reshape = self.x.shape[1:-1] + (self.n_nodes, -1) if self.x is not None else None
-            self.y_reshape = self.y.shape[1:-1] + (self.n_nodes, -1) if self.y is not None else None
-            self.u_reshape = self.u.shape[1:-1] + (self.n_nodes, -1) if self.u is not None else None
-            self.p_reshape = self.p.shape[1:-1] + (self.n_nodes, -1) if self.p is not None else None
+            self.x_reshape = self.x.shape[:-1] + (self.n_nodes, -1) if self.x is not None else None
+            self.y_reshape = self.y.shape[:-1] + (self.n_nodes, -1) if self.y is not None else None
+            self.u_reshape = self.u.shape[:-1] + (self.n_nodes, -1) if self.u is not None else None
+            self.p_reshape = self.p.shape[:-1] + (self.n_nodes, -1) if self.p is not None else None
         else:
             self._has_graph = False
 
@@ -341,6 +340,9 @@ class DynData:
         Returns:
             DynData: A single DynData instance with stacked data tensors.
         """
+        if len(batch_list) == 1:
+            return batch_list[0]    # No need to collate
+
         ms = []
         for b in batch_list:
             ms += b.meta

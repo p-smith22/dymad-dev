@@ -908,3 +908,12 @@ class TrajectoryManagerGraph(TrajectoryManager):
         # Reshape from [n_nodes, T, n_features] to [T, n_nodes * n_features]
         tmp = np.swapaxes(data, 0, 1)  # [T, n_nodes, n_features_per_node]
         return tmp.reshape(tmp.shape[0], -1)
+
+    def create_dataloaders(self) -> None:
+        """
+        For graph data, we aggregate the trajectories into batches of graphs.
+        """
+        logging.info(f"Creating dataloaders for model with batch size 1 for graph data.")
+        self.train_loader = DataLoader([DynData.collate(self.train_set)], batch_size=1, shuffle=True,  collate_fn=DynData.collate)
+        self.valid_loader = DataLoader([DynData.collate(self.valid_set)], batch_size=1, shuffle=False, collate_fn=DynData.collate)
+        self.test_loader  = DataLoader([DynData.collate(self.test_set)],  batch_size=1, shuffle=False, collate_fn=DynData.collate)

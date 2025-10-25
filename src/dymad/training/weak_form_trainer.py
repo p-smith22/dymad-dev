@@ -59,7 +59,7 @@ class WeakFormTrainer(TrainerBase):
 
         if self.recon_weight > 0:
             # Add reconstruction loss
-            recon_loss = self.criterion(B.x, x_hat)
+            recon_loss = self.criterion(B.x, x_hat.view(*B.x.shape))
             return self.dynamics_weight * weak_loss + self.recon_weight * recon_loss
         else:
             return weak_loss
