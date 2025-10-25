@@ -128,22 +128,22 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
     model.load_state_dict(chkpt['model_state_dict'])
 
     # Data transformations
-    _data_transform_x = Compose()
+    _data_transform_x = make_transform(md['config'].get('transform_x', None))
     _data_transform_x.load_state_dict(md["transform_x_state"])
 
-    _has_u = md.get('transform_u_state', None) is not None
+    _has_u = md['config'].get('transform_u', None) is not None
     if _has_u:
-        _data_transform_u = Compose()
+        _data_transform_u = make_transform(md['config'].get('transform_u', None))
         _data_transform_u.load_state_dict(md["transform_u_state"])
 
-    _has_ew = md.get('transform_ew_state', None) is not None
+    _has_ew = md['config'].get('transform_ew', None) is not None
     if _has_ew:
-        _data_transform_ew = Compose()
+        _data_transform_ew = make_transform(md['config'].get('transform_ew', None))
         _data_transform_ew.load_state_dict(md["transform_ew_state"])
 
-    _has_ea = md.get('transform_ea_state', None) is not None
+    _has_ea = md['config'].get('transform_ea', None) is not None
     if _has_ea:
-        _data_transform_ea = Compose()
+        _data_transform_ea = make_transform(md['config'].get('transform_ea', None))
         _data_transform_ea.load_state_dict(md["transform_ea_state"])
 
     # Data processing
@@ -205,9 +205,16 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
             _data = DynData()
         else:
             _u  = _proc_u(u, device)
+            _ei = ei
+            if ei is not None:
+                if isinstance(ei, (np.ndarray, torch.Tensor)):
+                    ei = torch.as_tensor(ei).to(device=device)
+                    _ei = [ei for _ in range(t.shape[-1])]
+                elif not isinstance(ei, list):
+                    raise ValueError("Edge index format not recognized.")
             _ew = _proc_ew(ew, device)
             _ea = _proc_ea(ea, device)
-            _data = DynData(u=_u, ei=ei, ew=_ew, ea=_ea)
+            _data = DynData(u=_u, ei=_ei, ew=_ew, ea=_ea)
         with torch.no_grad():
             pred = model.predict(_x0, _data, t).cpu().numpy()
         return _proc_prd(pred)
