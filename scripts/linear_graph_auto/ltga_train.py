@@ -30,7 +30,7 @@ mdl_kb = {
     "encoder_layers" : 1,
     "decoder_layers" : 1,
     "latent_dimension" : 32,
-    "koopman_dimension" : 2,
+    "koopman_dimension" : 4,
     "activation" : "none",
     "gcl" : "sage",
     "weight_init" : "xavier_uniform"}
@@ -75,7 +75,7 @@ trn_nd = {
     "decay_rate": 0.999,
     "reconstruction_weight": 1.0,
     "dynamics_weight": 1.0,
-    "sweep_lengths": [50, 100, 200, 300, 501],
+    "sweep_lengths": [2, 5, 10, 50, 100],
     "sweep_epoch_step": 100,
     "ode_method": "dopri5",
     "ode_args": {
@@ -119,7 +119,7 @@ if ifdat:
     np.savez_compressed(
         './data/ltga.npz',
         t=ts, x=np.concatenate([ys, ys, ys], axis=-1),
-        adj_mat=adj)
+        adj=adj)
 
 if iftrn:
     for i in IDX:

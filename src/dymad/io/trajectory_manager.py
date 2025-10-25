@@ -913,7 +913,15 @@ class TrajectoryManagerGraph(TrajectoryManager):
         """
         For graph data, we aggregate the trajectories into batches of graphs.
         """
-        logging.info(f"Creating dataloaders for model with batch size 1 for graph data.")
-        self.train_loader = DataLoader([DynData.collate(self.train_set)], batch_size=1, shuffle=True,  collate_fn=DynData.collate)
+        dl_cfg = self.metadata['config'].get("dataloader", {})
+        batch_size: int = dl_cfg.get("batch_size", 1)
+
+        n_batch = int(np.ceil(len(self.train_set) / batch_size))
+        _train = []
+        for i in range(n_batch):
+            _train.append(DynData.collate(self.train_set[i*batch_size:(i+1)*batch_size]))
+
+        logging.info(f"Creating dataloaders with batch size 1 for graph data, training aggregated from {batch_size} samples.")
+        self.train_loader = DataLoader(_train, batch_size=1, shuffle=True,  collate_fn=DynData.collate)
         self.valid_loader = DataLoader([DynData.collate(self.valid_set)], batch_size=1, shuffle=False, collate_fn=DynData.collate)
         self.test_loader  = DataLoader([DynData.collate(self.test_set)],  batch_size=1, shuffle=False, collate_fn=DynData.collate)

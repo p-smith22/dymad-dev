@@ -131,7 +131,7 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
     _data_transform_x = make_transform(md['config'].get('transform_x', None))
     _data_transform_x.load_state_dict(md["transform_x_state"])
 
-    _has_u = md['config'].get('transform_u', None) is not None
+    _has_u = md.get('transform_u_state', None) is not None
     if _has_u:
         _data_transform_u = make_transform(md['config'].get('transform_u', None))
         _data_transform_u.load_state_dict(md["transform_u_state"])
