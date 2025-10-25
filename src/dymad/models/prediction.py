@@ -274,7 +274,7 @@ def predict_discrete(
     **kwargs
 ) -> torch.Tensor:
     """
-    Predict trajectory(ies) for regular (non-graph) models with batch support.
+    Predict trajectory(ies) for discrete-time models with batch support.
 
     Args:
         model: Model with encoder, decoder, and dynamics methods
@@ -292,33 +292,20 @@ def predict_discrete(
 
             - Single: (n_steps, n_features)
             - Batch: (batch_size, n_steps, n_features)
-
-    Raises:
-        ValueError: If input dimensions don't match requirements
     """
     _x0, _, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
 
-    z0 = model.encoder(_ws.get_step(0).set_x(_x0))
+    wtmp = _ws.get_step(0).set_x(_x0)
+    ztmp = model.encoder(wtmp)            # The initial condition for dynamics
+    x0   = model.decoder(ztmp, wtmp)      # The first decoded observation
 
-    # Discrete-time forward pass
-    logger.debug(f"predict_discrete: Starting forward iterations with shape {z0.shape}")
-    z_traj = [z0]
+    x_traj = [x0]
     for k in range(n_steps - 1):
-        tmp = _ws.get_step(k)
-        x_k = model.decoder(z_traj[-1], tmp)
-        _, z_next, _ = model(tmp.set_x(x_k))
-        z_traj.append(z_next)
-
-    z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, z_dim)
-    logger.debug(f"predict_discrete: Completed integration, trajectory shape: {z_traj.shape}")
-
-    if _ws._has_graph:
-        # after stack: z_traj (n_steps, batch_size, node, z_dim)
-        tmp = z_traj.permute(1, 0, 2, 3)  # (batch_size, n_steps, node, z_dim)
-        x_traj = model.decoder(tmp, _ws)
-    else:
-        x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None)
-        x_traj = x_traj.view(n_steps, z_traj.shape[1], -1).transpose(0, 1)
+        wtmp = _ws.get_step(k).set_x(x_traj[-1])
+        _, ztmp, _ = model(wtmp)
+        x_k  = model.decoder(ztmp, wtmp)
+        x_traj.append(x_k)
+    x_traj = torch.stack(x_traj, dim=1)   # (batch_size, n_steps, z_dim)
 
     if not is_batch:
         x_traj = x_traj.squeeze(0)
@@ -330,40 +317,44 @@ def predict_discrete_exp(
     model,
     x0: torch.Tensor,
     ts: Union[np.ndarray, torch.Tensor],
+    ws: DynData = None,
     **kwargs
 ) -> torch.Tensor:
     """
-    Predict trajectory(ies) for regular (non-graph) models with batch support.
+    Predict trajectory(ies) for discrete-time models with batch support.
 
-    Autonomous case using matrix exponential.  In discrete-time, this is equivalent to
+    Autonomous case.  In discrete-time, this is equivalent to
     repeated application of the dynamics.
-
-    Currently only for KBF-type models with linear dynamics.
-
-    Raises:
-        ValueError: If input dimensions don't match requirements
     """
-    device = x0.device
-    # Use _prepare_data for consistency
-    _x0, _, _, n_steps, is_batch, _, _, _ = _prepare_data(x0, ts, None, device)
+    _x0, _, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
+    if _ws is not None:
+        assert _ws.u is None, "predict_discrete_exp only supports autonomous case."
 
     logger.debug(f"predict_discrete: {'Batch' if is_batch else 'Single'} mode")
 
     # Initial state preparation
-    z0 = model.encoder(DynData(x=_x0))
+    z0 = model.encoder(_ws.get_step(0).set_x(_x0))
 
     # Discrete-time forward pass
     logger.debug(f"predict_discrete_exp: Starting forward iterations with shape {z0.shape}")
     z_traj = [z0]
     for k in range(n_steps - 1):
-        z_next = model.dynamics(z_traj[-1], None)
+        tmp = _ws.get_step(k)
+        z_next = model.dynamics(z_traj[-1], tmp)
         z_traj.append(z_next)
     z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, z_dim)
     logger.debug(f"predict_discrete_exp: Completed integration, trajectory shape: {z_traj.shape}")
 
-    x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None).view(n_steps, z_traj.shape[1], -1)
+    if _ws._has_graph:
+        # after stack: z_traj (n_steps, batch_size, node, z_dim)
+        tmp = z_traj.permute(1, 0, 2, 3)  # (batch_size, n_steps, node, z_dim)
+        x_traj = model.decoder(tmp, _ws)
+    else:
+        x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None)
+        x_traj = x_traj.view(n_steps, z_traj.shape[1], -1).transpose(0, 1)
+
     if not is_batch:
-        x_traj = x_traj.squeeze(1)
+        x_traj = x_traj.squeeze(0)
 
     logger.debug(f"predict_discrete_exp: Final trajectory shape {x_traj.shape}")
     return x_traj

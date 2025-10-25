@@ -4,7 +4,7 @@ from typing import Dict, Union
 
 from dymad.io import DynData
 from dymad.models.model_temp_uenc import ModelTempUEnc, ModelTempUEncGraphAE
-from dymad.models.prediction import predict_continuous, predict_discrete
+from dymad.models.prediction import predict_continuous, predict_discrete, predict_discrete_exp
 from dymad.modules import MLP
 
 class LDM(ModelTempUEnc):
@@ -43,7 +43,7 @@ class LDM(ModelTempUEnc):
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],
                 method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        return predict_continuous(self, x0, ts, us=w.u, method=method, order=self.input_order, **kwargs)
+        return predict_continuous(self, x0, ts, w, method=method, order=self.input_order, **kwargs)
 
 class DLDM(LDM):
     """Discrete Latent Dynamics Model (DLDM) - discrete-time version.
@@ -62,9 +62,16 @@ class DLDM(LDM):
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
         super(DLDM, self).__init__(model_config, data_meta, dtype=dtype, device=device)
 
+        self._predictor_type = model_config.get('predictor_type', 'ode')
+        if self.n_total_control_features > 0:
+            if self._predictor_type == "exp":
+                raise ValueError("Exponential predictor is not supported for model with control inputs.")
+
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
-        return predict_discrete(self, x0, ts, us=w.u)
+        if self._predictor_type == "exp":
+            return predict_discrete_exp(self, x0, ts, w, **kwargs)
+        return predict_discrete(self, x0, ts, w, **kwargs)
 
 class GLDM(ModelTempUEncGraphAE):
     """Graph Latent Dynamics Model (GLDM).
@@ -102,8 +109,7 @@ class GLDM(ModelTempUEncGraphAE):
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
         return predict_continuous(
-            self, x0, ts,
-            us=w.u, edge_index=w.ei, edge_weights=w.ew, edge_attr=w.ea,
+            self, x0, ts, w,
             method=method, order=self.input_order, **kwargs)
 
 class DGLDM(GLDM):
@@ -117,8 +123,13 @@ class DGLDM(GLDM):
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
         super(DGLDM, self).__init__(model_config, data_meta, dtype=dtype, device=device)
 
+        self._predictor_type = model_config.get('predictor_type', 'ode')
+        if self.n_total_control_features > 0:
+            if self._predictor_type == "exp":
+                raise ValueError("Exponential predictor is not supported for model with control inputs.")
+
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
-        return predict_discrete(
-            self, x0, ts,
-            us=w.u, edge_index=w.ei, edge_weights=w.ew, edge_attr=w.ea)
+        if self._predictor_type == "exp":
+            return predict_discrete_exp(self, x0, ts, w, **kwargs)
+        return predict_discrete(self, x0, ts, w, **kwargs)

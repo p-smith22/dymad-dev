@@ -104,7 +104,7 @@ class GNN(nn.Module):
         to the first case.  The aggregation takes a bit more time.
         """
         assert edge_index.ndim == 3, "edge_index must have shape (..., n_edges, 2)"
-        if edge_index.shape[0] == 1:
+        if x.shape[0] == 1:
             # The usual case, where we have a single edge_index
             ew = None if edge_weights is None else edge_weights[0]
             ea = None if edge_attr is None else edge_attr[0]
