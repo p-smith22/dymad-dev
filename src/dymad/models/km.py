@@ -259,8 +259,7 @@ class GKM(ModelTempUCatGraphAE):
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
         return predict_continuous(
-            self, x0, ts,
-            us=w.u, edge_index=w.ei, edge_weights=w.ew, edge_attr=w.ea,
+            self, x0, ts, w,
             method=method, order=self.input_order, **kwargs)
 
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:

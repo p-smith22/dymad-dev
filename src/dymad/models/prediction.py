@@ -61,6 +61,8 @@ def _prepare_data(x0, ts, ws, device):
             _ws = ws
         _ws = _ws.to(device)
         _Nw = _ws.n_steps
+    else:
+        _ws = DynData().to(device)
 
     # Check step consistency
     if _Nt is None:

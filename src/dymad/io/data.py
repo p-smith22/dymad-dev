@@ -396,6 +396,11 @@ class DynData:
         self.x = self.x.squeeze(1) if self.x is not None else None
         self.y = self.y.squeeze(1) if self.y is not None else None
         self.u = self.u.squeeze(1) if self.u is not None else None
+        if self._has_graph:
+            self.x_reshape = self.x.shape[:-1] + (self.n_nodes, -1) if self.x is not None else None
+            self.y_reshape = self.y.shape[:-1] + (self.n_nodes, -1) if self.y is not None else None
+            self.u_reshape = self.u.shape[:-1] + (self.n_nodes, -1) if self.u is not None else None
+            self.p_reshape = self.p.shape[:-1] + (self.n_nodes, -1) if self.p is not None else None
         return self
 
     def truncate(self, num_step):
