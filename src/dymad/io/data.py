@@ -456,7 +456,9 @@ class DynData:
             self.x_reshape = self.x.shape[:-1] + (self.n_nodes, -1)
         return self
 
-    def set_u(self, value: torch.Tensor) -> None:
+    def set_u(self, value: Optional[torch.Tensor] = None) -> None:
+        if value is None:
+            return self
         self.u = value
         if self._has_graph:
             self.u_reshape = self.u.shape[:-1] + (self.n_nodes, -1)

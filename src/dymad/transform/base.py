@@ -179,14 +179,14 @@ class Autoencoder(Transform):
     def transform(self, X: Array) -> Array:
         """"""
         with torch.no_grad():
-            _X = torch.tensor(X, dtype=self.dtype).to(self.device)
+            _X = torch.tensor(np.array(X), dtype=self.dtype).to(self.device)
             _Z = self.encoder(_X).cpu().detach().numpy()
         return _Z
 
     def inverse_transform(self, X: Array) -> Array:
         """"""
         with torch.no_grad():
-            _X = torch.tensor(X, dtype=self.dtype).to(self.device)
+            _X = torch.tensor(np.array(X), dtype=self.dtype).to(self.device)
             _Z = self.decoder(_X).cpu().detach().numpy()
         return _Z
 
@@ -377,10 +377,20 @@ class Lift(Transform):
             self._C = None
 
     def transform(self, X: Array) -> Array:
-        return [self._fobs(_X.reshape(-1,self._inp_dim), **self._fargs) for _X in X]
+        tmp = []
+        for _X in X:
+            _x_shape = _X.shape[:-1]
+            _Z = self._fobs(_X.reshape(-1,self._inp_dim), **self._fargs)
+            tmp.append(_Z.reshape(*_x_shape, -1))
+        return tmp
 
     def inverse_transform(self, X: Array) -> Array:
-        return [self._finv(_X.reshape(-1,self._out_dim), **self._fargs) for _X in X]
+        tmp = []
+        for _X in X:
+            _x_shape = _X.shape[:-1]
+            _Z = self._finv(_X.reshape(-1,self._out_dim), **self._fargs)
+            tmp.append(_Z.reshape(*_x_shape, -1))
+        return tmp
 
     def _pseudo_inv(self, Z):
         return Z.dot(self._C)

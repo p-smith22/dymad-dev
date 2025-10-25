@@ -36,6 +36,7 @@ def _prepare_data(x0, ts, ws, device):
         else:
             if _ts.ndim != 1:
                 raise ValueError(f"Single mode: ts must be 1D. Got ts: {_ts.shape}")
+            _ts = _ts.unsqueeze(0)
         _ts = _ts.to(device)
         _Nt = _ts.shape[-1]
 
@@ -55,7 +56,7 @@ def _prepare_data(x0, ts, ws, device):
                 # Need to flatten x0
                 _x0 = _x0.view(1, -1)
         else:
-            if ws.batch_size != 1:
+            if ws.batch_size is not None and ws.batch_size != 1:
                 raise ValueError(f"Single mode: ws batch size must be 1. Got ws: {ws.batch_size}")
             _ws = ws
         _ws = _ws.to(device)
