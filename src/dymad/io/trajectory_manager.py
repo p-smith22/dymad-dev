@@ -888,9 +888,9 @@ class TrajectoryManagerGraph(TrajectoryManager):
                 y=torch.tensor(self._graph_data_reshape(_y, forward=False), dtype=self.dtype, device=self.device) if _y is not None else None,
                 u=torch.tensor(self._graph_data_reshape(_u, forward=False), dtype=self.dtype, device=self.device) if _u is not None else None,
                 p=torch.tensor(self._graph_data_reshape(_p, forward=False).squeeze(-2), dtype=self.dtype, device=self.device) if _p is not None else None,
-                ei=[torch.tensor(_e) for _e in _ei],
-                ew=[torch.tensor(_e) for _e in _ew] if _ew is not None else None,
-                ea=[torch.tensor(_a) for _a in _ea] if _ea is not None else None,
+                ei=[torch.tensor(_e, dtype=torch.long) for _e in _ei],
+                ew=[torch.tensor(_e, dtype=self.dtype) for _e in _ew] if _ew is not None else None,
+                ea=[torch.tensor(_a, dtype=self.dtype) for _a in _ea] if _ea is not None else None,
             ))
         return dataset
 

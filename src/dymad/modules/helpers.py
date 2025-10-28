@@ -3,10 +3,10 @@ import torch
 import torch.nn as nn
 try:
     from torch_geometric.nn.conv import MessagePassing
-    from torch_geometric.nn import ChebConv, SAGEConv
+    from torch_geometric.nn import ChebConv, GATConv, SAGEConv
 except:
     MessagePassing = None
-    ChebConv, SAGEConv = None, None
+    ChebConv, GATConv, SAGEConv = None, None, None
 from typing import Callable
 
 _ACT_MAP = {
@@ -28,8 +28,9 @@ _ACT_MAP = {
 
 _GCL_MAP = {
     # common aliases -> canonical class
+    "cheb"     : ChebConv,
+    "gat"      : GATConv,
     "sage"     : SAGEConv,
-    "cheb"     : ChebConv
 }
 
 _INIT_MAP_W = {
