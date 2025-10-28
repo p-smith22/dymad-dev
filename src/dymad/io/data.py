@@ -499,13 +499,13 @@ class DynData:
 
     def g(self, z: torch.Tensor) -> torch.Tensor:
         """
-        Reshape a tensor to have shape (batch_size, n_steps, n_nodes, -1).
+        Reshape a tensor to have shape (..., n_nodes, -1).
 
         Args:
-            z (torch.Tensor): Input tensor of shape (batch_size, n_steps, n_nodes * features).
+            z (torch.Tensor): Input tensor of shape (..., n_nodes * features).
 
         Returns:
-            torch.Tensor: Reshaped tensor of shape (batch_size, n_steps, n_nodes, features).
+            torch.Tensor: Reshaped tensor of shape (..., n_nodes, features).
         """
         out_shape = z.shape[:-1] + (self.n_nodes, -1)
         return z.reshape(*out_shape)

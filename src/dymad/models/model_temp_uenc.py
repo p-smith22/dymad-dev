@@ -289,10 +289,13 @@ class ModelTempUEncGraphDyn(ModelTempUEnc):
 
     def _encoder_ctrl(self, w: DynData) -> torch.Tensor:
         xu_cat = torch.cat([w.xg, w.ug], dim=-1)
-        return self.encoder_net(xu_cat)
+        return w.G(self.encoder_net(xu_cat))  # G is needed for external data structure
 
     def _encoder_auto(self, w: DynData) -> torch.Tensor:
-        return self.encoder_net(w.xg)
+        return w.G(self.encoder_net(w.xg))    # G is needed for external data structure
 
     def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return w.G(self.decoder_net(w.g(z)))
+        return w.G(self.decoder_net(w.g(z)))  # G is needed for external data structure
+
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        return self.dynamics_net(w.g(z), w.ei, w.ew, w.ea)   # G is effectively applied in dynamics_net

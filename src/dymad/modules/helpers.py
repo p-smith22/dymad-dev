@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 try:
     from torch_geometric.nn.conv import MessagePassing
-    from torch_geometric.nn import ChebConv, GATConv, SAGEConv
+    from torch_geometric.nn import ChebConv, GATConv, GCNConv, GraphConv, SAGEConv
 except:
     MessagePassing = None
     ChebConv, GATConv, SAGEConv = None, None, None
@@ -30,6 +30,8 @@ _GCL_MAP = {
     # common aliases -> canonical class
     "cheb"     : ChebConv,
     "gat"      : GATConv,
+    "gcn"      : GCNConv,
+    "gcnv"     : GraphConv,
     "sage"     : SAGEConv,
 }
 

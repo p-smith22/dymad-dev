@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 try:
-    from torch_geometric.nn.conv import ChebConv, GATConv, MessagePassing, SAGEConv
+    from torch_geometric.nn.conv import ChebConv, GATConv, GCNConv, GraphConv, MessagePassing, SAGEConv
 except:
     MessagePassing = None
 from typing import Callable, Union
@@ -150,7 +150,7 @@ class GNN(nn.Module):
         for layer in self.layers:
             if isinstance(layer, SAGEConv):
                 x = layer(x, edge_index, **kwargs)
-            elif isinstance(layer, ChebConv):
+            elif isinstance(layer, (ChebConv, GCNConv, GraphConv)):
                 x = layer(x, edge_index, edge_weight=edge_weights, **kwargs)
             elif isinstance(layer, GATConv):
                 x = layer(x, edge_index, edge_attr=edge_attr, **kwargs)

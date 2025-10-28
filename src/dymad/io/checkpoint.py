@@ -210,7 +210,16 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
                 if isinstance(ei, (np.ndarray, torch.Tensor)):
                     ei = torch.as_tensor(ei).to(device=device)
                     _ei = [ei for _ in range(t.shape[-1])]
-                elif not isinstance(ei, list):
+                elif isinstance(ei, list):
+                    if isinstance(ei[0], (np.ndarray, torch.Tensor)):
+                        _ei = [torch.as_tensor(e).to(device=device) for e in ei]
+                    elif isinstance(ei[0], list):
+                        _ei = []
+                        for e in ei:
+                            _ei.append([torch.as_tensor(_e).to(device=device) for _e in e])
+                    else:
+                        raise ValueError("Edge index format not recognized.")
+                else:
                     raise ValueError("Edge index format not recognized.")
             _ew = _proc_ew(ew, device)
             _ea = _proc_ea(ea, device)
@@ -248,7 +257,7 @@ class DataInterface:
         self._setup_data(metadata)
 
         if self.has_model:
-            self.model, _ = load_model(model_class, checkpoint_path)
+            self.model, self.prd_func = load_model(model_class, checkpoint_path)
             def encoder(x):
                 _x_shape = x.shape[:-1]
                 _z = self.model.encoder(DynData(x=torch.atleast_2d(torch.as_tensor(x))))

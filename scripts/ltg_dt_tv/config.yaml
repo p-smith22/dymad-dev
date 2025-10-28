@@ -4,6 +4,9 @@ data:
   n_steps: 100
   double_precision: true
 
+transform_ew:
+  type: "identity"
+
 split:
   train_frac: 0.75
 

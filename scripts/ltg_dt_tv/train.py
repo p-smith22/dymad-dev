@@ -5,8 +5,8 @@ import torch
 
 from dymad.io import load_model
 from dymad.models import DLDMG
-from dymad.training import NODETrainer, LinearTrainer
-from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.training import NODETrainer
+from dymad.utils import plot_summary, plot_trajectory, setup_logging
 
 mdl_kb = {
     "name" : 'kura_model',
@@ -14,32 +14,27 @@ mdl_kb = {
     "decoder_layers" : 0,
     "processor_layers" : 1,
     "latent_dimension" : 2,
-    "gcl": "sage",
-    # "gcl": "cheb",
-    # "gcl_opts": {"K": 2},
+    "gcl": "gcnv",
+    "gcl_opts": {"bias": False},
     "activation" : "none",
     "weight_init" : "xavier_uniform"}
 
 trn_nd = {
-    "n_epochs": 2000,
+    "n_epochs": 1000,
     "save_interval": 50,
     "load_checkpoint": False,
-    "learning_rate": 5e-3,
+    "learning_rate": 1e-2,
     "decay_rate": 0.999,
     "reconstruction_weight": 1.0,
     "dynamics_weight": 1.0,
-    "sweep_lengths": [2, 4, 8, 12, 16, 20],
+    "sweep_lengths": [2, 4, 8],
     "sweep_epoch_step": 100,
     "chop_mode": "unfold",
     "chop_step": 0.5,
-    "ls_update": {
-        "method": "full",
-        "interval": 200,
-        "times": 1}
     }
 
 config_path = 'config.yaml'
-data_path = './data/data_n2_s3_k4_s10.npz'
+data_path = './data/data_n2_s3_k4_s10.pkl'
 cfgs = [
     ('dldmg', DLDMG, NODETrainer,        {"data": {"path": data_path}, "model": mdl_kb, "training" : trn_nd}),
     ]
@@ -48,7 +43,8 @@ IDX = [0]
 labels = [cfgs[i][0] for i in IDX]
 
 iftrn = 1
-ifprd = 0
+ifplt = 1
+ifprd = 1
 
 if iftrn:
     for _i in IDX:
@@ -59,25 +55,29 @@ if iftrn:
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
-# if ifprd:
-#     sampler = TrajectorySampler(f, g, config='lti_data.yaml', config_mod=config_gau)
+if ifplt:
+    npz_files = ['results/kura_model_summary.npz']
+    npzs = plot_summary(npz_files, labels = labels, ifclose=False)
 
-#     ts, xs, us, ys = sampler.sample(t_grid, batch=1)
-#     x_data = xs[0]
-#     t_data = ts[0]
-#     u_data = us[0]
+if ifprd:
+    data_path = './data/data_n2_s3_k4_s20.pkl'
+    data = np.load(data_path, allow_pickle=True)
+    tdx = 10
+    x_data = data['x'][tdx]
+    t_data = np.arange(0, x_data.shape[0])
+    ei_data = data['ei'][tdx]
+    ew_data = data['ew'][tdx]
 
-#     res = [x_data]
-#     for i in IDX:
-#         MDL, mdl = cases[i]['model'], cases[i]['name']
-#         _, prd_func = load_model(MDL, f'lti_{mdl}.pt', f'lti_{mdl}.yaml')
+    res = [x_data]
+    for _i in IDX:
+        with torch.no_grad():
+            mdl, MDL, Trainer, opt = cfgs[_i]
+            _, prd_func = load_model(MDL, 'kura_model.pt', config_path, config_mod=opt)
+            pred = prd_func(x_data, t_data, ei=ei_data, ew=ew_data)
+            res.append(pred)
 
-#         with torch.no_grad():
-#             pred = prd_func(x_data, t_data, u=u_data)
-#             res.append(pred)
-
-#     plot_trajectory(
-#         np.array(res), t_data, "LTI",
-#         us=u_data, labels=['Truth']+labels, ifclose=False)
+    plot_trajectory(
+        np.array(res), t_data, "LTGV",
+        labels=['Truth']+labels, ifclose=False)
 
 plt.show()

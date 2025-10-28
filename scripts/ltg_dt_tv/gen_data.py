@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pickle
-from scipy.integrate import solve_ivp
+
+from dymad.utils import adj_to_edge
 
 #------------------------
 # Parameters for users
@@ -15,8 +16,11 @@ kl, ku = 4., 6.            # de = 0.75
 # kl, ku = 1., 1.5           # de = 0.19
 
 # Time settings
-Ntrj   = 200               # Number of trajectories
-nStint = 10                # Number of time intervals
+# Ntrj   = 200               # Number of trajectories
+# nStint = 10                # Number of time intervals
+# Nt     = 100
+Ntrj   = 20                # Number of trajectories
+nStint = 20                # Number of time intervals
 Nt     = 100
 
 # Model size
@@ -101,32 +105,34 @@ if iftop:
 if ifdyn:
     topo = np.load(f'./data/topology{suf}.npz', allow_pickle=True)
     AAs = topo['AAs']
+    EIs, EWs = adj_to_edge(AAs)
     Aidx = np.random.randint(0, nSubSys, size=(Ntrj, nStint))
 
     SEED = np.arange(0,20*Ntrj,20)
-    xs, adj = [], []
+    xs, e1, e2 = [], [], []
     for j in range(Ntrj):
         np.random.seed(SEED[j])
 
         # Initialize randomly and solve for multiple intervals
         # The IC is discarded later
         X0 = np.random.rand(nStates).reshape(1,-1)*2 - 1
-        trj, aas = [X0], []
+        trj, eis, ews = [X0], [], []
         for i in range(nStint):
             for k in range(Nt // nStint):
                 tmp = trj[-1].dot(AAs[Aidx[j][i]]) / (wu*1.15)
                 trj.append(tmp)
-                aas.append(AAs[Aidx[j][i]])
-        xs.append(np.vstack(trj))       # (nStint*nTime, nStates)
-        adj.append(np.array(aas[:-1]))  # (nStint*nTime, nStates, nStates)
+                eis.append(EIs[Aidx[j][i]])
+                ews.append(EWs[Aidx[j][i]])
+        xs.append(np.vstack(trj[:-1]))   # (nStint*nTime, nStates)
+        e1.append(eis)                   # (nStint*nTime, nEdges, ...)
+        e2.append(ews)                   # (nStint*nTime, nEdges, ...)
 
-    np.savez_compressed(
-        f'./data/data{suf}.npz', x=xs, adj=adj, Aidx=Aidx)
+    with open(f'./data/data{suf}.pkl', 'wb') as f:
+        pickle.dump({'x': xs, 'ei': e1, 'ew': e2, 'Aidx': Aidx}, f)
 
 if ifplt:
-    data = np.load(f'./data/data{suf}.npz', allow_pickle=True)
+    data = np.load(f'./data/data{suf}.pkl', allow_pickle=True)
     xs = data['x']
-    adj = data['adj']
     Aidx = data['Aidx']
 
     Ntrj = len(xs)

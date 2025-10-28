@@ -110,10 +110,10 @@ def _process_data(data, x, label, base_dim=1, offset=0):
 
     # Data validation
     assert len(_data) == len(x), f"{label} list length ({len(_data)}) must match x list length ({len(x)})"
-    if _data[0].size > 0 and offset == 0:
+    if len(_data[0]) > 0 and offset == 0:
         for xi, ui in zip(x, _data):
-            if xi.shape[0] != ui.shape[0]:
-                msg = f"Each trajectory in x ({xi.shape[0]}) and {label} ({ui.shape[0]}) must have the same number of time steps"
+            if len(xi) != len(ui):
+                msg = f"Each trajectory in x ({len(xi)}) and {label} ({len(ui)}) must have the same number of time steps"
                 logging.error(msg)
                 raise ValueError(msg)
     return _data
@@ -755,8 +755,8 @@ class TrajectoryManagerGraph(TrajectoryManager):
             self.ea = [_ea[:n_steps] for _ea in self.ea]
 
         # Complete metadata
-        self.metadata["n_edge_weights"] = 1 if self.ew[0].size > 0 else 0
-        self.metadata["n_edge_features"] = int(self.ea[0].shape[-1])
+        self.metadata["n_edge_weights"] = 1 if self.ew[0][0].size > 0 else 0
+        self.metadata["n_edge_features"] = int(self.ea[0][0].shape[-1])
         logging.info(f"Number of edge features: {self.metadata['n_edge_features']}")
         logging.info(f"Number of edge weights: {self.metadata['n_edge_weights']}")
 
