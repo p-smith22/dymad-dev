@@ -6,7 +6,7 @@ try:
     from torch_geometric.nn import ChebConv, GATConv, GCNConv, GraphConv, SAGEConv
 except:
     MessagePassing = None
-    ChebConv, GATConv, SAGEConv = None, None, None
+    ChebConv, GATConv, GCNConv, GraphConv, SAGEConv = None, None, None, None, None
 from typing import Callable
 
 _ACT_MAP = {

@@ -455,13 +455,13 @@ class DynData:
         p_unfolded = self.p.repeat_interleave(n_windows, dim=0) if self.p is not None else None
         return DynData(t=t_unfolded, x=x_unfolded, y=y_unfolded, u=u_unfolded, p=p_unfolded, meta=self.meta)
 
-    def set_x(self, value: torch.Tensor) -> None:
+    def set_x(self, value: torch.Tensor) -> "DynData":
         self.x = value
         if self._has_graph:
             self.x_reshape = self.x.shape[:-1] + (self.n_nodes, -1)
         return self
 
-    def set_u(self, value: Optional[torch.Tensor] = None) -> None:
+    def set_u(self, value: Optional[torch.Tensor] = None) -> "DynData":
         if value is None:
             return self
         self.u = value
