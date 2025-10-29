@@ -11,7 +11,8 @@ Examples
    examples/2d_koopman/part1
    examples/2d_koopman/part2
    examples/2d_koopman/part3
-   examples/linear_graph/main
+   examples/linear_graph/part1
+   examples/linear_graph/part2
    examples/kernel_s1/main
    examples/sa_lco/part1
    examples/sa_lco/part2

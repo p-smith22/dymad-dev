@@ -53,7 +53,7 @@ Comment:
     esp. when :math:`\mathrm{dim}(x)` and :math:`\mathrm{dim}(z)` are drastically different.
 
 
-When are these problems relevant?
+When are these Problems relevant?
 ---------------------------------
 
 Besides generic dynamical systems, that some purely data-driven methods are applicable,
@@ -96,8 +96,8 @@ Comment:
     The scope of applications continues to expand as we explore more problems and methods at the `APUS Lab at Penn State <https://apus-lab.github.io/>`_.
 
 
-How do we solve
----------------
+How do we Solve?
+----------------
 
 Modeling
 ^^^^^^^^
@@ -188,7 +188,8 @@ So far we consider a range of models and optimizers.  For models,
 - Koopman Bilinear Form (KBF) replaces :math:`g` with a bilinear model, :math:`A z + \sum_i B(u_i)z + B_0 z`.
 - Recurrent Neural Network (RNN) includes standard architectures, e.g., LSTM and GRU.
 - Kernel methods include standard kernels, and diffusion map, etc.
-- Lastly, LDM/KBF/RNN can work with data on graphs.
+- Graph Neural Networks (GNN) accounts for graph structure in the data. 
+- Lastly, LDM/KBF/RNN/Kernel can work with data on graphs.
 
 For optimizers, a brief list is already provided above, and here we note that,
 
@@ -198,7 +199,7 @@ For optimizers, a brief list is already provided above, and here we note that,
 The details are provided below.
 
 .. list-table::
-   :widths: 30 20 25 25 25 25 25
+   :widths: 15 25 25 25 25 25 25
 
    * - 
      - CT
@@ -214,27 +215,34 @@ The details are provided below.
      - Linear
      - Single-step
      - Multi-step
-   * - (Graph) LDM
+   * - LDM
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:notepad_spiral:|
      - |:notepad_spiral:|
      - |:white_check_mark:|
      - |:white_check_mark:|
-   * - (Graph) KBF
+   * - KBF
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:notepad_spiral:|
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
-   * - (Graph) RNN
+   * - RNN
      - |:heavy_multiplication_x:|
      - |:heavy_multiplication_x:|
      - |:notepad_spiral:|
      - |:notepad_spiral:|
      - |:building_construction:|
      - |:building_construction:|
+   * - GNN
+     - |:white_check_mark:|
+     - |:white_check_mark:|
+     - |:notepad_spiral:|
+     - |:notepad_spiral:|
+     - |:white_check_mark:|
+     - |:white_check_mark:|
    * - Kernel
      - |:white_check_mark:|
      - |:white_check_mark:|
@@ -242,6 +250,41 @@ The details are provided below.
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
+
+The currently available models of each category are listed below.  In the header, MLP/GNN refer to the autoencoder architecture.
+
+.. list-table::
+
+   * - 
+     - MLP, CT
+     - MLP, DT
+     - GNN, CT
+     - GNN, DT
+   * - LDM
+     - :class:`~dymad.models.LDM`
+     - :class:`~dymad.models.DLDM`
+     - :class:`~dymad.models.GLDM`
+     - :class:`~dymad.models.DGLDM`
+   * - KBF
+     - :class:`~dymad.models.KBF`
+     - :class:`~dymad.models.DKBF`
+     - :class:`~dymad.models.GKBF`
+     - :class:`~dymad.models.DGKBF`
+   * - RNN
+     - |:building_construction:|
+     - |:building_construction:|
+     - |:building_construction:|
+     - |:building_construction:|
+   * - GNN
+     - :class:`~dymad.models.LDMG`
+     - :class:`~dymad.models.DLDMG`
+     - |:notepad_spiral:|
+     - |:notepad_spiral:|
+   * - Kernel
+     - :class:`~dymad.models.KM` :class:`~dymad.models.KMM`
+     - :class:`~dymad.models.DKM` :class:`~dymad.models.DKMSK`
+     - :class:`~dymad.models.GKM`
+     - :class:`~dymad.models.DGKM` :class:`~dymad.models.DGKMSK`
 
 Model Analysis
 ^^^^^^^^^^^^^^
@@ -255,7 +298,7 @@ As explained above, we can also leverage the model structure to perform more ref
 The details are provided below.
 
 .. list-table::
-   :widths: 25 25 15 35 25
+   :widths: 15 25 25 35 25
 
    * -
      - Spectrum/Stability
@@ -267,17 +310,22 @@ The details are provided below.
      - |:white_check_mark:|
      - |:o:|
      - |:notepad_spiral:|
-   * - (Graph) LDM
+   * - LDM
      - |:notepad_spiral:|
      - |:notepad_spiral:|
      - |:notepad_spiral:|
      - |:notepad_spiral:|
-   * - (Graph) KBF
+   * - KBF
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:notepad_spiral:|
      - |:notepad_spiral:|
-   * - (Graph) RNN
+   * - RNN
+     - |:notepad_spiral:|
+     - |:notepad_spiral:|
+     - |:notepad_spiral:|
+     - |:notepad_spiral:|
+   * - GNN
      - |:notepad_spiral:|
      - |:notepad_spiral:|
      - |:notepad_spiral:|
