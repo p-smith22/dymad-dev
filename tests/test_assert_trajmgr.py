@@ -1,6 +1,7 @@
 import copy
 import numpy as np
 from pathlib import Path
+import torch
 
 from dymad.io import DynData, TrajectoryManager
 from dymad.transform import make_transform
@@ -15,6 +16,53 @@ def check_data(out, ref, label=''):
         assert np.allclose(_s.u, _t.u), f"{label} failed: {_s.u} != {_t.u}"
         assert np.allclose(_s.p, _t.p), f"{label} failed: {_s.p} != {_t.p}"
     print(f"{label} passed.")
+
+def test_dyndata(trj_data):
+    data = np.load(trj_data, allow_pickle=True)
+    ts = torch.tensor(data['t'])
+    xs = torch.tensor(data['x'])
+    ys = torch.tensor(np.tile(data['y'], (8, 1, 1)))
+    us = torch.tensor(np.tile(data['u'], (1, 21, 1)))
+    ps = torch.tensor(data['p'])
+
+    Dlist = [
+        DynData(t=t, x=x, y=y, u=u, p=p)
+        for t, x, y, u, p in zip(ts, xs, ys, us, ps)
+    ]
+    assert Dlist[0].n_steps == ts.size(1), "n_steps in single traj"
+    assert Dlist[0].batch_size == 1, "batch_size in single traj"
+
+    data = DynData.collate(Dlist)
+    dref = DynData(t=ts, x=xs, y=ys, u=us, p=ps)
+    check_data([data], [dref], label='DynData collate')
+    assert data.n_steps == ts.size(1), "n_steps in collated traj"
+    assert data.batch_size == ts.size(0), "batch_size in collated traj"
+    assert dref.n_steps == ts.size(1), "n_steps in batched traj"
+    assert dref.batch_size == ts.size(0), "batch_size in batched traj"
+
+    N = 5
+    trun = data.truncate(N)
+    dref = DynData(t=ts[:,:N], x=xs[:,:N], y=ys[:,:N], u=us[:,:N], p=ps)
+    check_data([trun], [dref], label='DynData truncate')
+
+    trun = data.get_step(N,N+2)
+    dref = DynData(t=ts[:,N:N+2], x=xs[:,N:N+2], y=ys[:,N:N+2], u=us[:,N:N+2], p=ps)
+    check_data([trun], [dref], label='DynData get_step two steps')
+
+    trun = data.get_step(N)
+    dref = DynData(t=ts[:,N:N+1], x=xs[:,N], y=ys[:,N], u=us[:,N], p=ps)
+    check_data([trun], [dref], label='DynData get_step one step')
+
+    W, S = 5, 10
+    ufld = data.unfold(W, S)
+    dref = DynData(
+        t = ts.unfold(1, W, S).reshape(-1, W),
+        x = xs.unfold(1, W, S).reshape(-1, xs.size(-1), W).permute(0, 2, 1),
+        y = ys.unfold(1, W, S).reshape(-1, ys.size(-1), W).permute(0, 2, 1),
+        u = us.unfold(1, W, S).reshape(-1, us.size(-1), W).permute(0, 2, 1),
+        p = ps.repeat_interleave(((xs.size(1)-W)//S +1), dim=0)
+    )
+    check_data([ufld], [dref], label='DynData unfold')
 
 def test_trajmgr(trj_data):
     metadata = {
@@ -49,7 +97,7 @@ def test_trajmgr(trj_data):
     ts = data['t']
     xs = data['x']
     ys = data['y']
-    us = data['u']
+    us = np.tile(data['u'], (1, 21, 1))
     ps = data['p']
 
     trnx = make_transform(metadata['config']['transform_x'])
@@ -81,9 +129,9 @@ def test_trajmgr(trj_data):
         ]
     check_data(Dtst, tm.test_set, label='Transform')
 
-    Xrec = trnx.inverse_transform([_d.x for _d in Dtst])
-    Yrec = [_d.y for _d in Dtst]
-    Urec = trnu.inverse_transform([_d.u for _d in Dtst])
+    Xrec = trnx.inverse_transform([_d.x[0] for _d in Dtst])
+    Yrec = [_d.y[0] for _d in Dtst]
+    Urec = trnu.inverse_transform([_d.u[0] for _d in Dtst])
     Prec = trnp.inverse_transform([_d.p for _d in Dtst])
     Drec = [
         DynData(t=tt, x=xr, y=yr, u=ur, p=pr)

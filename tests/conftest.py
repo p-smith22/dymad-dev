@@ -27,9 +27,9 @@ def f_kp(t, x):
     return _d
 
 adj = np.array([
-    [0, 1, 1],
+    [0, 1, 2],
     [1, 0, 1],
-    [1, 1, 0]
+    [1, 2, 0]
 ])
 edge_index = adj_to_edge(adj)[0]
 
@@ -78,7 +78,8 @@ def trj_data():
 
     sampler = TrajectorySampler(f, g, config=HERE/'lti_data.yaml', config_mod=config_chr)
     ts, xs, us, ys = sampler.sample(t_grid, batch=B)
-    ys = np.hstack([xs[0], xs[1]])    # This will be repeated
+    ys = np.hstack([xs[0], xs[1]])      # This will be repeated along batch
+    us = us[:, 0, :].reshape(B, 1, -1)  # This will be repeated along time
     ps = [np.arange(4)+_i for _i in range(len(xs))]
     np.savez_compressed(HERE/'trj.npz', t=ts, x=xs, y=ys, u=us, p=ps)
 
@@ -187,7 +188,7 @@ def ltg_data():
         x=np.concatenate([ys, ys, ys], axis=-1),
         u=np.concatenate([us, us, us], axis=-1),
         p=np.concatenate([us[:,0,:], us[:,0,:], us[:,0,:]], axis=-1).squeeze(),
-        adj_mat=adj)
+        adj=adj)
 
     # ---- Interface to the tests ----
     yield HERE/'ltg.npz'
@@ -230,7 +231,7 @@ def ltga_data():
     np.savez_compressed(
         HERE/'ltga.npz',
         t=ts, x=np.concatenate([ys, ys, ys], axis=-1),
-        adj_mat=adj)
+        adj=adj)
 
     # ---- Interface to the tests ----
     yield HERE/'ltga.npz'

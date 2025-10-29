@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 try:
-    from torch_geometric.nn.conv import MessagePassing
+    from torch_geometric.nn.conv import ChebConv, GATConv, GCNConv, GraphConv, MessagePassing, SAGEConv
 except:
     MessagePassing = None
 from typing import Callable, Union
@@ -24,6 +24,7 @@ class GNN(nn.Module):
         output_dim (int): Dimension of output node features.
         n_layers (int): Number of GCL layers.
         gcl (str | nn.Module | type, default='sage'): Graph convolution layer type or instance.
+        gcl_opts (dict, default={}): Options passed to the GCL constructor.
         activation (str | nn.Module | type, default='prelu'): Activation function.
         weight_init (str | callable, default='xavier_uniform'): Weight initializer.
         bias_init (str | callable, default='zeros'): Bias initializer.
@@ -38,6 +39,7 @@ class GNN(nn.Module):
         n_layers: int,
         *,
         gcl: Union[str, nn.Module, type] = 'sage',
+        gcl_opts: dict = {},
         activation: Union[str, nn.Module, Callable[[], nn.Module]] = 'prelu',
         weight_init: Union[str, Callable[[torch.Tensor, float], None]] = 'xavier_uniform',
         bias_init: Union[str, Callable[[torch.Tensor], None]] = 'zeros',
@@ -47,7 +49,7 @@ class GNN(nn.Module):
     ):
         super().__init__()
 
-        _gcl = _resolve_gcl(gcl)
+        _gcl = _resolve_gcl(gcl, gcl_opts)
         _act = _resolve_activation(activation, dtype, device)
         self._weight_init = _resolve_init(weight_init, _INIT_MAP_W)
         self._bias_init = _resolve_init(bias_init, _INIT_MAP_B)
@@ -82,25 +84,31 @@ class GNN(nn.Module):
     def _init_gcl(self, m: nn.Module) -> None:
         # Only initialize GCL layers with weight/bias
         if hasattr(m, 'weight') and m.weight is not None:
-            self._weight_init(m.weight, self._gain)
+            if m.weight.ndim >= 2:
+                self._weight_init(m.weight, self._gain)
         if hasattr(m, 'bias') and m.bias is not None:
             self._bias_init(m.bias)
 
-    def forward(self, x, edge_index, **kwargs):
+    def forward(self, x, edge_index, edge_weights, edge_attr, **kwargs):
         """
         Forward pass through the GNN.
 
         - `x` (..., n_nodes, n_features).
-        - `edge_index` (..., 2, n_edges).
+        - `edge_index` (..., n_edges, 2).
+        - `edge_weights` (..., n_edges).
+        - `edge_attr` (..., n_edges, n_edge_features).
         - Returns (..., n_nodes*n_new_features).
 
         If ...=1, we can process the entire batch in one go.
         Otherwise, we aggregate the graph on the fly so the shapes are reduced
         to the first case.  The aggregation takes a bit more time.
         """
-        if edge_index.ndim == 3 and edge_index.shape[0] == 1:
+        assert edge_index.ndim == 3, "edge_index must have shape (..., n_edges, 2)"
+        if x.shape[0] == 1:
             # The usual case, where we have a single edge_index
-            return self._forward_single(x, edge_index[0], **kwargs)
+            ew = None if edge_weights is None else edge_weights[0]
+            ea = None if edge_attr is None else edge_attr[0]
+            return self._forward_single(x, edge_index[0].transpose(0, 1), ew, ea, **kwargs)
         else:
             # The slower case, where we aggregate graph on the fly
             _x_batch, _x_shape = x.shape[:-2], x.shape[-2:]
@@ -109,7 +117,7 @@ class GNN(nn.Module):
                 f"Batch shape of x and edge_index must match. Got {_x_batch} and {_e_batch}."
 
             # Aggregate graph by shifting node indices
-            _ei = edge_index.reshape(-1, *_e_shape)
+            _ei = edge_index.unbind()
             _tmp = 1
             for d in _x_batch:
                 _tmp *= d
@@ -117,21 +125,37 @@ class GNN(nn.Module):
             _offset = torch.tensor(_n_nodes).cumsum(dim=0)
             _ei_cat = torch.concatenate([
                 b + _offset[i] for i, b in enumerate(_ei)],
-                dim=-1)
+                dim=-2).transpose(0, 1)
+
+            if edge_weights is None:
+                ew = None
+            else:
+                ew = edge_weights.values()
+
+            if edge_attr is None:
+                ea = None
+            else:
+                ea = edge_attr.values()
 
             # Process node features
             _x_cat = x.reshape(1, -1, _x_shape[1])
-            _out = self._forward_single(_x_cat, _ei_cat, **kwargs)
+            _out = self._forward_single(_x_cat, _ei_cat, ew, ea, **kwargs)
             return _out.reshape(*_x_batch, -1)
 
-    def _forward_single(self, x, edge_index, **kwargs):
+    def _forward_single(self, x, edge_index, edge_weights, edge_attr, **kwargs):
         """
         Forward pass for one edge_index.
         """
         out_shape = x.shape[:-2] + (-1,)
         for layer in self.layers:
-            if isinstance(layer, MessagePassing):
+            if isinstance(layer, SAGEConv):
                 x = layer(x, edge_index, **kwargs)
+            elif isinstance(layer, (ChebConv, GCNConv, GraphConv)):
+                x = layer(x, edge_index, edge_weight=edge_weights, **kwargs)
+            elif isinstance(layer, GATConv):
+                x = layer(x, edge_index, edge_attr=edge_attr, **kwargs)
+            elif isinstance(layer, MessagePassing):
+                x = layer(x, edge_index, edge_weight=edge_weights, edge_attr=edge_attr, **kwargs)
             else:
                 x = layer(x)
         return x.reshape(*out_shape)
@@ -145,6 +169,7 @@ class ResBlockGNN(GNN):
     def __init__(self, input_dim: int, latent_dim: int, output_dim: int,
                  n_layers: int,
                  gcl: Union[str, nn.Module, type] = 'sage',
+                 gcl_opts: dict = {},
                  activation: Union[str, nn.Module, Callable[[], nn.Module]] = 'prelu',
                  weight_init: Union[str, Callable[[torch.Tensor, float], None]] = 'xavier_uniform',
                  bias_init: Callable[[torch.Tensor], None] = 'zeros',
@@ -155,6 +180,7 @@ class ResBlockGNN(GNN):
         super().__init__(input_dim, latent_dim, output_dim,
                          n_layers=n_layers,
                          gcl=gcl,
+                         gcl_opts=gcl_opts,
                          activation=activation,
                          weight_init=weight_init,
                          bias_init=bias_init,
@@ -163,10 +189,10 @@ class ResBlockGNN(GNN):
                          dtype=dtype,
                          device=device)
 
-    def forward(self, x, edge_index, **kwargs):
+    def forward(self, x, edge_index, edge_weights, edge_attr, **kwargs):
         inp_shape = x.shape[:-1] + (-1,)
         out_shape = x.shape[:-2] + (-1,)
-        res = x + super().forward(x, edge_index, **kwargs).reshape(*inp_shape)
+        res = x + super().forward(x, edge_index, edge_weights, edge_attr, **kwargs).reshape(*inp_shape)
         return res.reshape(*out_shape)
 
 class IdenCatGNN(GNN):
@@ -183,6 +209,7 @@ class IdenCatGNN(GNN):
     def __init__(self, input_dim: int, latent_dim: int, output_dim: int,
                  n_layers: int,
                  gcl: Union[str, nn.Module, type] = 'sage',
+                 gcl_opts: dict = {},
                  activation: Union[str, nn.Module, Callable[[], nn.Module]] = 'prelu',
                  weight_init: Union[str, Callable[[torch.Tensor, float], None]] = 'xavier_uniform',
                  bias_init: Callable[[torch.Tensor], None] = 'zeros',
@@ -193,6 +220,7 @@ class IdenCatGNN(GNN):
         super().__init__(input_dim, latent_dim, output_dim-input_dim,
                          n_layers=n_layers,
                          gcl=gcl,
+                         gcl_opts=gcl_opts,
                          activation=activation,
                          weight_init=weight_init,
                          bias_init=bias_init,
@@ -201,9 +229,9 @@ class IdenCatGNN(GNN):
                          dtype=dtype,
                          device=device)
 
-    def forward(self, x, edge_index, **kwargs):
+    def forward(self, x, edge_index, edge_weights, edge_attr, **kwargs):
         inp_shape = x.shape[:-1] + (-1,)
         out_shape = x.shape[:-2] + (-1,)
-        tmp = super().forward(x, edge_index, **kwargs).reshape(*inp_shape)
+        tmp = super().forward(x, edge_index, edge_weights, edge_attr, **kwargs).reshape(*inp_shape)
         out = torch.cat([x, tmp], dim=-1)
         return out.reshape(*out_shape)

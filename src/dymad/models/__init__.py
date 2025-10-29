@@ -1,11 +1,11 @@
-# Import all models
+from dymad.models.gdyn import DLDMG, LDMG
 from dymad.models.kbf import DGKBF, DKBF, KBF, GKBF
 from dymad.models.km import DGKM, DGKMSK, DKM, DKMSK, GKM, KM, KMM
 from dymad.models.ldm import DGLDM, DLDM, GLDM, LDM
 from dymad.models.lstm import LSTM
 from dymad.models.model_base import ModelBase
-from dymad.models.model_temp_ucat import ModelTempUCat, ModelTempUCatGraph
-from dymad.models.model_temp_uenc import ModelTempUEnc, ModelTempUEncGraph
+from dymad.models.model_temp_ucat import ModelTempUCat, ModelTempUCatGraphAE
+from dymad.models.model_temp_uenc import ModelTempUEnc, ModelTempUEncGraphAE, ModelTempUEncGraphDyn
 from dymad.models.prediction import predict_continuous, predict_continuous_exp, predict_continuous_fenc, \
     predict_discrete, predict_discrete_exp
 
@@ -18,6 +18,7 @@ __all__ = [
     "DKM",
     "DKMSK",
     "DLDM",
+    "DLDMG",
     "GKBF",
     "GKM",
     "GLDM",
@@ -25,12 +26,14 @@ __all__ = [
     "KM",
     "KMM",
     "LDM",
+    "LDMG",
     "LSTM",
     "ModelBase",
     "ModelTempUCat",
-    "ModelTempUCatGraph",
+    "ModelTempUCatGraphAE",
     "ModelTempUEnc",
-    "ModelTempUEncGraph",
+    "ModelTempUEncGraphAE",
+    "ModelTempUEncGraphDyn",
     "predict_continuous",
     "predict_continuous_exp",
     "predict_continuous_fenc",

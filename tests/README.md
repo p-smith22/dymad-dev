@@ -6,6 +6,7 @@ Organization of the test cases:
   - `di`: The DataInterface class
   - `dm`: Diffusion map
   - `grad`: Gradients
+  - `graph`: Graph-related utilities
   - `krr`: Kernel ridge regression
   - `krr_tan`: Kernel ridge regression for the manifold case, also includes DMF besides the KRR classes.
   - `linalg`: Linear algebra

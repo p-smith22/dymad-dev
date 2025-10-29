@@ -69,7 +69,7 @@ if ifdat:
     np.savez_compressed(
         './data/ltg.npz',
         t=ts, x=np.concatenate([ys, ys, ys], axis=-1), u=np.concatenate([us, us, us], axis=-1),
-        adj_mat=adj)
+        adj=adj)
 
 if iftrn:
     for _i in IDX:

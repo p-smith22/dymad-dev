@@ -10,77 +10,85 @@ from dymad.utils import ControlInterpolator
 
 logger = logging.getLogger(__name__)
 
-def _prepare_data(x0, ts, us, device, edge_index=None):
-    is_batch = x0.ndim == 2
-    _Nb = x0.shape[0] if is_batch else 1
-
+def _prepare_data(x0, ts, ws, device):
     # Initial conditions
-    if is_batch:
-        if x0.ndim != 2:
-            raise ValueError(f"Batch mode: x0 must be 2D. Got x0: {x0.shape}")
-        _x0 = x0.clone().detach().to(device)
-    else:
-        if x0.ndim != 1:
-            raise ValueError(f"Single mode: x0 must be 1D. Got x0: {x0.shape}")
-        _x0 = x0.clone().detach().to(device).unsqueeze(0)
+    # Determines batch size
+    is_batch = x0.ndim == 2
+    _x0 = x0.clone().detach().to(device)
+    if not is_batch:
+        _x0 = _x0.unsqueeze(0)
+    _Nb = _x0.shape[0]
 
     # Time stations
     _ts, _Nt = None, None
     if ts is not None:
         if isinstance(ts, np.ndarray):
-            _ts = torch.from_numpy(ts).float().to(device)
+            _ts = torch.from_numpy(ts).float()
         else:
-            _ts = ts.float().to(device)
-        _Nt = _ts.shape[0]
+            _ts = ts.float()
+        if is_batch:
+            if _ts.ndim == 1:
+                _ts = _ts.unsqueeze(0).repeat(_Nb, 1)  # (batch_size, n_steps)
+            elif _ts.ndim != 2:
+                raise ValueError(f"Batch mode: ts must be 1D or 2D. Got ts: {_ts.shape}")
+            if _ts.shape[0] != _Nb:
+                raise ValueError(f"Batch mode: ts first dimension must match batch size. Got ts: {_ts.shape}, x0: {_x0.shape}")
+        else:
+            if _ts.ndim != 1:
+                raise ValueError(f"Single mode: ts must be 1D. Got ts: {_ts.shape}")
+            _ts = _ts.unsqueeze(0)
+        _ts = _ts.to(device)
+        _Nt = _ts.shape[-1]
 
     # Inputs
-    _us, _Nu = None, None
-    if us is not None:
+    _ws, _Nw = None, None
+    if ws is not None:
         if is_batch:
-            if us.ndim != 3:
-                raise ValueError(f"Batch mode: us must be 3D. Got us: {us.shape}")
-            _us = us.clone().detach().to(device)
+            if ws.batch_size == 1 and _Nb > 1:
+                _ws = DynData.collate([ws for _ in range(_Nb)])
+            elif ws.batch_size == _Nb:
+                _ws = ws
+            else:
+                raise ValueError(f"Batch mode: ws batch size must be 1 or match x0. Got ws: {ws.batch_size}, x0: {_Nb}")
+
+            if _ws._has_graph:
+                # Graph mode, batch always 1
+                # Need to flatten x0
+                _x0 = _x0.view(1, -1)
         else:
-            if us.ndim != 2:
-                raise ValueError(f"Single mode: us must be 2D. Got us: {us.shape}")
-            _us = us.clone().detach().to(device).unsqueeze(0)
-        _Nu = _us.shape[1]  # Time steps from us
+            if ws.batch_size is not None and ws.batch_size != 1:
+                raise ValueError(f"Single mode: ws batch size must be 1. Got ws: {ws.batch_size}")
+            _ws = ws
+        _ws = _ws.to(device)
+        _Nw = _ws.n_steps
+    else:
+        _ws = DynData().to(device)
 
     # Check step consistency
     if _Nt is None:
-        if _Nu is None:
-            raise ValueError("Either ts or us must be provided to determine time steps.")
-        n_steps = _Nu
+        if _Nw is None:
+            raise ValueError("Either ts or ws must be provided to determine time steps.")
+        n_steps = _Nw
     else:
-        if _Nu is not None:
-            if _Nt != _Nu:
-                raise ValueError(f"ts and us must have the same number of time steps. Got ts: {_Nt}, us: {_Nu}")
+        if _Nw is not None:
+            if _Nt != _Nw:
+                raise ValueError(f"ts and ws must have the same number of time steps. Got ts: {_Nt}, ws: {_Nw}")
         n_steps = _Nt
 
-    # Edge indices
-    _ei = None
-    if edge_index is not None:
-        if isinstance(edge_index, np.ndarray):
-            edge_index = torch.from_numpy(edge_index).long()
-        if edge_index.ndim == 2:
-            # Expand to batches and time steps
-            # edge_index: (2, n_edges) -> (_Nb, _Nt, 2, n_edges)
-            _ei = edge_index.clone().detach().to(device)
-            _ei = _ei.unsqueeze(0).unsqueeze(0)  # (1, 1, 2, n_edges)
-            _ei = _ei.repeat(_Nb, n_steps, 1, 1)  # (_Nb, _Nt, 2, n_edges)
-        elif edge_index.ndim == 3:
-            # Expand to batches
-            assert edge_index.shape[0] == _Nt, f"3D edge_index first dimension must match time steps. Got {edge_index.shape[0]} vs {_Nt}"
-            _ei = edge_index.clone().detach().to(device)
-            _ei = _ei.unsqueeze(0).repeat(_Nb, 1, 1, 1)  # (_Nb, _Nt, 2, n_edges)
-        elif edge_index.ndim == 4:
-            assert edge_index.shape[0] == _Nb and edge_index.shape[1] == _Nt, \
-                f"4D edge_index first two dimensions must match batch size and time steps. Got {edge_index.shape[:2]} vs ({_Nb}, {_Nt})"
-            _ei = edge_index.clone().detach().to(device)
-        else:
-            raise ValueError(f"edge_index must be 2D or 3D or 4D tensor. Got {edge_index.shape}")
+    return _x0, _ts, _ws, n_steps, is_batch
 
-    return _x0, _ts, _us, n_steps, is_batch, _ei
+def _proc_ztraj(z_traj, model, ws, n_steps, is_batch):
+    if ws._has_graph:
+        # after stack: z_traj (n_steps, batch_size, node, z_dim)
+        tmp = z_traj.permute(1, 0, 2, 3)  # (batch_size, n_steps, node, z_dim)
+        x_traj = model.decoder(tmp, ws)
+    else:
+        x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None)
+        x_traj = x_traj.view(n_steps, z_traj.shape[1], -1).transpose(0, 1)
+
+    if not is_batch:
+        x_traj = x_traj.squeeze(0)
+    return x_traj
 
 # ------------------
 # Continuous-time case
@@ -90,14 +98,13 @@ def predict_continuous(
     model,
     x0: torch.Tensor,
     ts: Union[np.ndarray, torch.Tensor],
-    us: torch.Tensor = None,
-    edge_index: torch.Tensor = None,
+    ws: DynData = None,
     method: str = 'dopri5',
     order: str = 'cubic',
     **kwargs
 ) -> torch.Tensor:
     """
-    Predict trajectory(ies) for regular (non-graph) models with batch support.
+    Predict trajectory(ies) for continuous-time models with batch support.
 
     Args:
         model: Model with encoder, decoder, and dynamics methods.
@@ -107,12 +114,7 @@ def predict_continuous(
             - Batch: shape (batch_size, n_features)
 
         ts (Union[np.ndarray, torch.Tensor]): Time points (n_steps,).
-        us (torch.Tensor, optional): Control trajectory(ies).
-
-            - Single: shape (n_steps, n_controls)
-            - Batch: shape (batch_size, n_steps, n_controls)
-
-        edge_index (torch.Tensor, optional): Edge indices for the graph.
+        ws: Dataclass containing additional information, e.g., u, p, ei, ew, etc.
         method (str): ODE solver method (default: 'dopri5').
         order (str): Interpolation method for control inputs ('zoh', 'linear', or 'cubic').
 
@@ -120,49 +122,35 @@ def predict_continuous(
         torch.Tensor: Predicted trajectory(ies).
 
             - Single: shape (n_steps, n_features)
-            - Batch: shape (n_steps, batch_size, n_features)
-
-    Raises:
-        ValueError: If input dimensions do not match requirements.
+            - Batch: shape (batch_size, n_steps, n_features)
     """
-    device = x0.device
-    _x0, ts, _us, n_steps, is_batch, _ei = _prepare_data(x0, ts, us, device, edge_index=edge_index)
+    _x0, _ts, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
+    _ts = _ts[0]
 
-    if _us is not None:
+    def bucket(t):
+        return torch.searchsorted(_ts, t).clamp(1, _ts.numel()-1)
+
+    _has_u = _ws.u is not None
+    if _has_u:
         logger.debug(f"predict_continuous: {'Batch' if is_batch else 'Single'} mode (controlled)")
-        u0 = _us[:, 0, :]
-        u_intp = ControlInterpolator(ts, _us, order=order)
+        u_intp = ControlInterpolator(_ts, _ws.u, order=order)
     else:
         logger.debug(f"predict_continuous: {'Batch' if is_batch else 'Single'} mode (autonomous)")
-        u0 = None
-        u_intp = ControlInterpolator(ts, None)
 
-    if _ei is not None:
-        ei0 = _ei[:, 0, :, :]
-        e_intp = ControlInterpolator(ts, _ei, axis=-3, order='zoh')
-    else:
-        ei0 = None
-        e_intp = ControlInterpolator(ts, None)
-
-    z0 = model.encoder(DynData(x=_x0, u=u0, ei=ei0))
+    z0 = model.encoder(_ws.get_step(0).set_x(_x0))
     def ode_func(t, z):
-        u  = u_intp(t)
-        ei = e_intp(t)
-        x  = model.decoder(z, DynData(ei=ei))
-        _, z_dot, _ = model(DynData(x=x, u=u, ei=ei))
+        _tk  = bucket(t)
+        wtmp = _ws.get_step(_tk)
+        u    = u_intp(t) if _has_u else None
+        x    = model.decoder(z, wtmp.set_u(u))
+        _, z_dot, _ = model(wtmp.set_x(x))
         return z_dot
 
-    logger.debug(f"predict_continuous: Starting ODE integration with shape {z0.shape}, method {method}, and interpolation order {order if _us is not None else 'N/A'}")
-    z_traj = odeint(ode_func, z0, ts, method=method, **kwargs)
+    logger.debug(f"predict_continuous: Starting ODE integration with shape {z0.shape}, method {method}, and interpolation order {order if _has_u else 'N/A'}")
+    z_traj = odeint(ode_func, z0, _ts, method=method, **kwargs)
     logger.debug(f"predict_continuous: Completed integration, trajectory shape: {z_traj.shape}")
 
-    if _ei is None:
-        x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None).view(n_steps, z_traj.shape[1], -1)
-    else:
-        tmp = z_traj.permute(1, 0, 2, 3)  # (batch_size, n_steps, node, z_dim)
-        x_traj = model.decoder(tmp, DynData(ei=_ei)).permute(1, 0, 2)
-    if not is_batch:
-        x_traj = x_traj.squeeze(1)
+    x_traj = _proc_ztraj(z_traj, model, _ws, n_steps, is_batch)
 
     logger.debug(f"predict_continuous: Final trajectory shape {x_traj.shape}")
     return x_traj
@@ -171,20 +159,19 @@ def predict_continuous_exp(
     model,
     x0: torch.Tensor,
     ts: Union[np.ndarray, torch.Tensor],
+    ws: DynData = None,
     **kwargs
 ) -> torch.Tensor:
     """
-    Predict trajectory(ies) for regular (non-graph) models with batch support.
+    Predict trajectory(ies) for continuous-time models with batch support.
 
     Autonomous case using matrix exponential.  In continuous-time, we compute exp(A*dt).
 
     Currently only for KBF-type models with linear dynamics.
-
-    Raises:
-        ValueError: If input dimensions do not match requirements.
     """
-    device = x0.device
-    _x0, ts, _, n_steps, is_batch, _ = _prepare_data(x0, ts, None, device)
+    _x0, _, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
+    if _ws is not None:
+        assert _ws.u is None, "predict_discrete_exp only supports autonomous case."
 
     # Get the system matrix
     if model.dynamics_net.mode == "full":
@@ -195,7 +182,7 @@ def predict_continuous_exp(
         W = (U, V)
 
     logger.debug(f"predict_continuous_exp: {'Batch' if is_batch else 'Single'} mode (autonomous)")
-    z0 = model.encoder(DynData(x=_x0))
+    z0 = model.encoder(_ws.get_step(0).set_x(_x0))
 
     logger.debug(f"predict_continuous_exp: Starting ODE integration with shape {z0.shape}")
     dt = ts - ts[0]  # (n_steps,)
@@ -206,9 +193,7 @@ def predict_continuous_exp(
         z_traj = expm_low_rank(W[1], W[0], dt, z0)
     logger.debug(f"predict_continuous_exp: Completed integration, trajectory shape: {z_traj.shape}")
 
-    x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None).view(n_steps, z_traj.shape[1], -1)
-    if not is_batch:
-        x_traj = x_traj.squeeze(1)
+    x_traj = _proc_ztraj(z_traj, model, _ws, n_steps, is_batch)
 
     logger.debug(f"predict_continuous_exp: Final trajectory shape {x_traj.shape}")
     return x_traj
@@ -217,35 +202,32 @@ def predict_continuous_fenc(
     model,
     x0: torch.Tensor,
     ts: Union[np.ndarray, torch.Tensor],
-    us: torch.Tensor = None,
+    ws: DynData = None,
     **kwargs
 ) -> torch.Tensor:
-    device = x0.device
-    _x0, ts, _us, n_steps, is_batch, _ = _prepare_data(x0, ts, us, device)
+    """
+    Predict trajectory(ies) using First-order Euler with Normal Correction (FENC).
+
+    Currently only for kernel machine with tangent kernel.
+    """
+    _x0, _, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
 
     logger.debug(f"predict_continuous_fenc: {'Batch' if is_batch else 'Single'} mode")
 
-    if _us is not None:
-        # Initial state preparation
-        u0 = _us[:, 0, :]
-    else:
-        u0 = None
-    z0 = model.encoder(DynData(x=_x0, u=u0))
+    z0 = model.encoder(_ws.get_step(0).set_x(_x0))
 
     # Discrete-time forward pass
     logger.debug(f"predict_continuous_fenc: Starting forward iterations with shape {z0.shape}")
     z_traj = [z0]
     for k in range(n_steps - 1):
-        u_k = None if _us is None else _us[:, k, :]
-        z_next = model.fenc_step(z_traj[-1], DynData(u=u_k), ts[k+1]-ts[k])
+        wtmp = _ws.get_step(k)
+        z_next = model.fenc_step(z_traj[-1], wtmp, ts[k+1]-ts[k])
         z_traj.append(z_next)
 
     z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, z_dim)
     logger.debug(f"predict_continuous_fenc: Completed integration, trajectory shape: {z_traj.shape}")
 
-    x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None).view(n_steps, z_traj.shape[1], -1)
-    if not is_batch:
-        x_traj = x_traj.squeeze(1)
+    x_traj = _proc_ztraj(z_traj, model, _ws, n_steps, is_batch)
 
     logger.debug(f"predict_continuous_fenc: Final trajectory shape {x_traj.shape}")
     return x_traj
@@ -258,12 +240,11 @@ def predict_discrete(
     model,
     x0: torch.Tensor,
     ts: Union[np.ndarray, torch.Tensor],
-    us: torch.Tensor = None,
-    edge_index: torch.Tensor = None,
+    ws: DynData = None,
     **kwargs
 ) -> torch.Tensor:
     """
-    Predict trajectory(ies) for regular (non-graph) models with batch support.
+    Predict trajectory(ies) for discrete-time models with batch support.
 
     Args:
         model: Model with encoder, decoder, and dynamics methods
@@ -273,54 +254,31 @@ def predict_discrete(
             - Batch: (batch_size, n_features)
 
         ts (Union[np.ndarray, torch.Tensor]): Time points (n_steps,).
-        us: Control trajectory(ies):
-
-            - Single: (n_steps, n_controls)
-            - Batch: (batch_size, n_steps, n_controls)
-
-        edge_index (torch.Tensor): Edge indices for the graph.
+        ws: Dataclass containing additional information, e.g., u, p, ei, ew, etc.
 
     Returns:
         torch.Tensor:
             Predicted trajectory(ies)
 
             - Single: (n_steps, n_features)
-            - Batch: (n_steps, batch_size, n_features)
-
-    Raises:
-        ValueError: If input dimensions don't match requirements
+            - Batch: (batch_size, n_steps, n_features)
     """
-    device = x0.device
-    _x0, _, _us, n_steps, is_batch, _ei = _prepare_data(x0, ts, us, device, edge_index=edge_index)
+    _x0, _, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
 
-    logger.debug(f"predict_discrete: {'Batch' if is_batch else 'Single'} mode")
+    wtmp = _ws.get_step(0).set_x(_x0)
+    ztmp = model.encoder(wtmp)            # The initial condition for dynamics
+    x0   = model.decoder(ztmp, wtmp)      # The first decoded observation
 
-    u0  = None if _us is None else _us[:, 0, :]
-    ei0 = None if _ei is None else _ei[:, 0, :, :]
-    z0  = model.encoder(DynData(x=_x0, u=u0, ei=ei0))
-
-    # Discrete-time forward pass
-    logger.debug(f"predict_discrete: Starting forward iterations with shape {z0.shape}")
-    z_traj = [z0]
+    x_traj = [x0]
     for k in range(n_steps - 1):
-        eik = None if _ei is None else _ei[:, k, :, :]
-        u_k = None if _us is None else _us[:, k, :]
-        x_k = model.decoder(z_traj[-1], DynData(ei=eik))
-        _, z_next, _ = model(DynData(x=x_k, u=u_k, ei=eik))
-        z_traj.append(z_next)
-
-    z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, z_dim)
-    logger.debug(f"predict_discrete: Completed integration, trajectory shape: {z_traj.shape}")
-
-    if _ei is None:
-        x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None).view(n_steps, z_traj.shape[1], -1)
-    else:
-        # after stack: z_traj (n_steps, batch_size, node, z_dim)
-        tmp = z_traj.permute(1, 0, 2, 3)  # (batch_size, n_steps, node, z_dim)
-        x_traj = model.decoder(tmp, DynData(ei=_ei)).permute(1, 0, 2)
+        wtmp = _ws.get_step(k).set_x(x_traj[-1])
+        _, ztmp, _ = model(wtmp)
+        x_k  = model.decoder(ztmp, wtmp)
+        x_traj.append(x_k)
+    x_traj = torch.stack(x_traj, dim=1)   # (batch_size, n_steps, z_dim)
 
     if not is_batch:
-        x_traj = x_traj.squeeze(1)
+        x_traj = x_traj.squeeze(0)
 
     logger.debug(f"predict_discrete: Final trajectory shape {x_traj.shape}")
     return x_traj
@@ -329,40 +287,35 @@ def predict_discrete_exp(
     model,
     x0: torch.Tensor,
     ts: Union[np.ndarray, torch.Tensor],
+    ws: DynData = None,
     **kwargs
 ) -> torch.Tensor:
     """
-    Predict trajectory(ies) for regular (non-graph) models with batch support.
+    Predict trajectory(ies) for discrete-time models with batch support.
 
-    Autonomous case using matrix exponential.  In discrete-time, this is equivalent to
+    Autonomous case.  In discrete-time, this is equivalent to
     repeated application of the dynamics.
-
-    Currently only for KBF-type models with linear dynamics.
-
-    Raises:
-        ValueError: If input dimensions don't match requirements
     """
-    device = x0.device
-    # Use _prepare_data for consistency
-    _x0, _, _, n_steps, is_batch, _ = _prepare_data(x0, ts, None, device)
+    _x0, _, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
+    if _ws is not None:
+        assert _ws.u is None, "predict_discrete_exp only supports autonomous case."
 
     logger.debug(f"predict_discrete: {'Batch' if is_batch else 'Single'} mode")
 
     # Initial state preparation
-    z0 = model.encoder(DynData(x=_x0))
+    z0 = model.encoder(_ws.get_step(0).set_x(_x0))
 
     # Discrete-time forward pass
     logger.debug(f"predict_discrete_exp: Starting forward iterations with shape {z0.shape}")
     z_traj = [z0]
     for k in range(n_steps - 1):
-        z_next = model.dynamics(z_traj[-1], None)
+        tmp = _ws.get_step(k)
+        z_next = model.dynamics(z_traj[-1], tmp)
         z_traj.append(z_next)
     z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, z_dim)
     logger.debug(f"predict_discrete_exp: Completed integration, trajectory shape: {z_traj.shape}")
 
-    x_traj = model.decoder(z_traj.view(-1, z_traj.shape[-1]), None).view(n_steps, z_traj.shape[1], -1)
-    if not is_batch:
-        x_traj = x_traj.squeeze(1)
+    x_traj = _proc_ztraj(z_traj, model, _ws, n_steps, is_batch)
 
     logger.debug(f"predict_discrete_exp: Final trajectory shape {x_traj.shape}")
     return x_traj

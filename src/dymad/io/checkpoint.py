@@ -6,7 +6,7 @@ from typing import Callable, Dict, List, Optional, Union, Tuple, Type
 
 from dymad.io.data import DynData
 from dymad.io.trajectory_manager import TrajectoryManager
-from dymad.transform import Autoencoder, make_transform
+from dymad.transform import Autoencoder, Compose, make_transform
 from dymad.utils.misc import load_config
 
 logger = logging.getLogger(__name__)
@@ -127,17 +127,26 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
     model = model_class(model_config, md, dtype=dtype)
     model.load_state_dict(chkpt['model_state_dict'])
 
-    # Check if autonomous
-    _is_autonomous = md.get('transform_u_state', None) is None
-
     # Data transformations
     _data_transform_x = make_transform(md['config'].get('transform_x', None))
     _data_transform_x.load_state_dict(md["transform_x_state"])
 
-    if not _is_autonomous:
+    _has_u = md.get('transform_u_state', None) is not None
+    if _has_u:
         _data_transform_u = make_transform(md['config'].get('transform_u', None))
         _data_transform_u.load_state_dict(md["transform_u_state"])
 
+    _has_ew = md['config'].get('transform_ew', None) is not None
+    if _has_ew:
+        _data_transform_ew = make_transform(md['config'].get('transform_ew', None))
+        _data_transform_ew.load_state_dict(md["transform_ew_state"])
+
+    _has_ea = md['config'].get('transform_ea', None) is not None
+    if _has_ea:
+        _data_transform_ea = make_transform(md['config'].get('transform_ea', None))
+        _data_transform_ea.load_state_dict(md["transform_ea_state"])
+
+    # Data processing
     def _proc_x0(x0, device):
         _x0 = np.array(_data_transform_x.transform(_atleast_3d(x0)))[:,0,:]
         if len(_x0) == 1:
@@ -145,30 +154,78 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
         _x0 = torch.tensor(_x0, dtype=dtype, device=device)
         return _x0
 
-    if _is_autonomous:
-        def _proc_u(us, device):
-            return None
-    else:
+    _proc_u = lambda us, device: None
+    if _has_u:
         def _proc_u(us, device):
             _u = np.array(_data_transform_u.transform(_atleast_3d(us)))
             if len(_u) == 1:
                 _u = _u[0]
-            _u = torch.tensor(_u, dtype=dtype, device=device)
-            return _u
+            return torch.tensor(_u, dtype=dtype, device=device)
+
+    _proc_ew = lambda ew, device: None
+    if _has_ew:
+        def _proc_ew(ew, device):
+            if isinstance(ew, list) and not isinstance(ew[0], list):
+                _tmp = _data_transform_ew.transform([_e.reshape(-1,1) for _e in ew])
+                return [torch.tensor(_e.reshape(-1), dtype=dtype, device=device) for _e in _tmp]
+            elif isinstance(ew[0], list):
+                _ew = []
+                for e in ew:
+                    _tmp = _data_transform_ew.transform([_e.reshape(-1,1) for _e in e])
+                    _ew.append([torch.tensor(_e.reshape(-1), dtype=dtype, device=device) for _e in _tmp])
+            else:
+                raise ValueError("Edge weights format not recognized.")
+            return _ew
+
+    _proc_ea = lambda ea, device: None
+    if _has_ea:
+        def _proc_ea(ea, device):
+            if isinstance(ea, list) and not isinstance(ea[0], list):
+                _tmp = _data_transform_ea.transform([_e for _e in ea])
+                return [torch.tensor(_e, dtype=dtype, device=device) for _e in _tmp]
+            elif isinstance(ea[0], list):
+                _ea = []
+                for e in ea:
+                    _tmp = _data_transform_ea.transform([_e for _e in e])
+                    _ea.append([torch.tensor(_e, dtype=dtype, device=device) for _e in _tmp])
+            else:
+                raise ValueError("Edge attributes format not recognized.")
+            return _ea
 
     def _proc_prd(pred):
-        _prd = np.array(_data_transform_x.inverse_transform(_atleast_3d(pred))).squeeze()
-        if _prd.ndim == 2:
-            return _prd
-        return np.transpose(_prd, (1, 0, 2))
+        return np.array(_data_transform_x.inverse_transform(_atleast_3d(pred))).squeeze()
 
     # Prediction in data space
-    def predict_fn(x0, t, u=None, ei=None, device="cpu"):
+    def predict_fn(x0, t, u=None, ei=None, ew=None, ea=None, device="cpu"):
         """Predict trajectory in data space."""
         _x0 = _proc_x0(x0, device)
-        _u  = _proc_u(u, device)
+        if isinstance(t, np.ndarray):
+            t = torch.from_numpy(t).to(device=device)
+        if u is None and ei is None:
+            _data = DynData()
+        else:
+            _u  = _proc_u(u, device)
+            _ei = ei
+            if ei is not None:
+                if isinstance(ei, (np.ndarray, torch.Tensor)):
+                    ei = torch.as_tensor(ei).to(device=device)
+                    _ei = [ei for _ in range(t.shape[-1])]
+                elif isinstance(ei, list):
+                    if isinstance(ei[0], (np.ndarray, torch.Tensor)):
+                        _ei = [torch.as_tensor(e).to(device=device) for e in ei]
+                    elif isinstance(ei[0], list):
+                        _ei = []
+                        for e in ei:
+                            _ei.append([torch.as_tensor(_e).to(device=device) for _e in e])
+                    else:
+                        raise ValueError("Edge index format not recognized.")
+                else:
+                    raise ValueError("Edge index format not recognized.")
+            _ew = _proc_ew(ew, device)
+            _ea = _proc_ea(ea, device)
+            _data = DynData(u=_u, ei=_ei, ew=_ew, ea=_ea)
         with torch.no_grad():
-            pred = model.predict(_x0, DynData(u=_u, ei=ei), t).cpu().numpy()
+            pred = model.predict(_x0, _data, t).cpu().numpy()
         return _proc_prd(pred)
 
     return model, predict_fn
@@ -200,9 +257,13 @@ class DataInterface:
         self._setup_data(metadata)
 
         if self.has_model:
-            self.model, _ = load_model(model_class, checkpoint_path)
-            encoder = lambda x: self.model.encoder(DynData(x=x))
-            decoder = lambda z: self.model.decoder(z, None)
+            self.model, self.prd_func = load_model(model_class, checkpoint_path)
+            def encoder(x):
+                _x_shape = x.shape[:-1]
+                _z = self.model.encoder(DynData(x=torch.atleast_2d(torch.as_tensor(x))))
+                return _z.reshape(*_x_shape, -1)
+            def decoder(z):
+                return self.model.decoder(z, None)
             enc = Autoencoder(self.model, encoder, decoder)
             self._trans_x.append(enc)
 

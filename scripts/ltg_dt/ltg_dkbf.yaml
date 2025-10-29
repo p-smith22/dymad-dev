@@ -24,7 +24,9 @@ model:
   koopman_dimension: 3
   const_term: true
   autoencoder_type: "cat"
-  gcl: "sage"
+  gcl: "cheb"
+  gcl_opts:
+    K: 1
   activation: "none"
   weight_init: "xavier_uniform"
   input_order: "cubic"

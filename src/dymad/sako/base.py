@@ -162,7 +162,7 @@ class SpectralAnalysis:
         # vr (n_dim, n_modes)
         _pt = np.einsum("ij,jk,jl->kli", self._vr, _b, _ls)  # (n_batch, n_steps, n_dim)
         # Decode each trajectory
-        _xt = self._ctx.decode(_pt).squeeze()
+        _xt = self._ctx.decode(_pt.real).squeeze()
 
         if return_obs:
             return _xt, _pt.squeeze()

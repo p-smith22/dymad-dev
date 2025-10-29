@@ -77,16 +77,13 @@ class NODETrainer(TrainerBase):
         ts = self.t[:num_steps].to(self.device)
         # Use native batch prediction
         predictions = self.model.predict(init_states, B, ts, method=self.ode_method, **self.ode_args)
-        # predictions shape: (time_steps, batch_size, n_total_state_features)
-        # We need: (batch_size, time_steps, n_total_state_features)
-        predictions = predictions.permute(1, 0, 2)
         # Dynamics loss
         dynamics_loss = self.criterion(predictions, B.x)
 
         if self.recon_weight > 0:
             # Add reconstruction loss
             _, _, x_hat = self.model(B)
-            recon_loss = self.criterion(B.x, x_hat)
+            recon_loss = self.criterion(B.x, x_hat.view(*B.x.shape))
             return self.dynamics_weight * dynamics_loss + self.recon_weight * recon_loss
         else:
             return dynamics_loss

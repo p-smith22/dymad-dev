@@ -161,7 +161,7 @@ class ModelTempUCat(ModelBase):
         return z_dot, z
 
 
-class ModelTempUCatGraph(ModelBase):
+class ModelTempUCatGraphAE(ModelBase):
     """Graph version of ModelTempUCat.
 
     The MLP autoencoder is replaced by GNN-based one.
@@ -201,6 +201,7 @@ class ModelTempUCatGraph(ModelBase):
         # Determine other options for GNN layers
         opts = {
             'gcl'            : model_config.get('gcl', 'sage'),
+            'gcl_opts'       : model_config.get('gcl_opts', {}),
             'activation'     : model_config.get('activation', 'prelu'),
             'weight_init'    : model_config.get('weight_init', 'xavier_uniform'),
             'bias_init'      : model_config.get('bias_init', 'zeros'),
@@ -235,13 +236,13 @@ class ModelTempUCatGraph(ModelBase):
         # The GNN implementation outputs flattened features
         # Here internal dynamics are node-wise, so we need to reshape
         # the features to node*features_per_node again
-        return w.g(self.encoder_net(w.xg, w.ei))
+        return w.g(self.encoder_net(w.xg, w.ei, w.ew, w.ea))
 
     def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         # Since the decoder outputs to the original space,
         # which is assumed to be flattened, we can use the GNN decoder directly
         # Note: the input, though, is still node-wise
-        return self.decoder_net(z, w.ei)
+        return self.decoder_net(z, w.ei, w.ew, w.ea)
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """Compute dynamics in Koopman space using bilinear form."""

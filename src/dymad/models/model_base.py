@@ -1,9 +1,10 @@
 from abc import ABC
 import torch
 import torch.nn as nn
-from typing import Tuple
+from typing import Tuple, Union
+import numpy as np
 
-from dymad.io import DynData as Data
+from dymad.io import DynData
 
 class ModelBase(nn.Module, ABC):
     r"""
@@ -47,25 +48,25 @@ class ModelBase(nn.Module, ABC):
         """
         return f"Model parameters: {sum(p.numel() for p in self.parameters())}\n"
 
-    def encoder(self, w: Data) -> torch.Tensor:
+    def encoder(self, w: DynData) -> torch.Tensor:
         raise NotImplementedError("This is the base class.")
 
-    def decoder(self, z: torch.Tensor, w: Data) -> torch.Tensor:
+    def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         raise NotImplementedError("This is the base class.")
 
-    def dynamics(self, z: torch.Tensor, w: Data) -> torch.Tensor:
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         raise NotImplementedError("This is the base class.")
 
-    def predict(self, x0: torch.Tensor, us: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError("This is the base class.")
 
-    def forward(self, w: Data) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         raise NotImplementedError("This is the base class.")
 
-    def linear_eval(self, w: Data) -> Tuple[torch.Tensor, torch.Tensor]:
+    def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError("This is the base class.")
 
-    def linear_features(self, w: Data) -> Tuple[torch.Tensor, torch.Tensor]:
+    def linear_features(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError("This is the base class.")
 
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:

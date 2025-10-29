@@ -3,10 +3,10 @@ import torch
 import torch.nn as nn
 try:
     from torch_geometric.nn.conv import MessagePassing
-    from torch_geometric.nn import ChebConv, SAGEConv
+    from torch_geometric.nn import ChebConv, GATConv, GCNConv, GraphConv, SAGEConv
 except:
     MessagePassing = None
-    ChebConv, SAGEConv = None, None
+    ChebConv, GATConv, GCNConv, GraphConv, SAGEConv = None, None, None, None, None
 from typing import Callable
 
 _ACT_MAP = {
@@ -28,8 +28,11 @@ _ACT_MAP = {
 
 _GCL_MAP = {
     # common aliases -> canonical class
+    "cheb"     : ChebConv,
+    "gat"      : GATConv,
+    "gcn"      : GCNConv,
+    "gcnv"     : GraphConv,
     "sage"     : SAGEConv,
-    "cheb"     : ChebConv
 }
 
 _INIT_MAP_W = {
@@ -77,7 +80,7 @@ def _resolve_activation(spec, dtype, device) -> nn.Module:
     raise TypeError("activation must be str, nn.Module subclass, "
                     f"or nn.Module instance, got {type(spec)}")
 
-def _resolve_gcl(spec) -> nn.Module:
+def _resolve_gcl(spec, opts) -> nn.Module:
     """
     Turn a user-supplied graph convolutional layer *specification* into an nn.Module.
     `spec` can be a string, a GCL class, or a constructed module.
@@ -88,7 +91,7 @@ def _resolve_gcl(spec) -> nn.Module:
         if key not in _GCL_MAP:
             raise ValueError(f"Unknown GCL string '{spec}'. "
                              f"Valid keys are {sorted(_GCL_MAP.keys())}.")
-        return _GCL_MAP[key]
+        return lambda in_dim, out_dim: _GCL_MAP[key](in_dim, out_dim, **opts)
 
     # case 2 ─ GCL *class* (subclass of MessagePassing)
     if isinstance(spec, type) and issubclass(spec, MessagePassing):

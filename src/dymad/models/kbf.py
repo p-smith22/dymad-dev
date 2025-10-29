@@ -3,7 +3,7 @@ import torch
 from typing import Dict, Union
 
 from dymad.io import DynData
-from dymad.models.model_temp_ucat import ModelTempUCat, ModelTempUCatGraph
+from dymad.models.model_temp_ucat import ModelTempUCat, ModelTempUCatGraphAE
 from dymad.models.prediction import predict_continuous, predict_continuous_exp, \
     predict_discrete, predict_discrete_exp
 from dymad.modules import FlexLinear
@@ -52,8 +52,8 @@ class KBF(ModelTempUCat):
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],
                 method: str = 'dopri5', **kwargs) -> torch.Tensor:
         if self._predictor_type == "exp":
-            return predict_continuous_exp(self, x0, ts, **kwargs)
-        return predict_continuous(self, x0, ts, us=w.u, method=method, order=self.input_order, **kwargs)
+            return predict_continuous_exp(self, x0, ts, w, **kwargs)
+        return predict_continuous(self, x0, ts, w, method=method, order=self.input_order, **kwargs)
 
 class DKBF(KBF):
     """Discrete Koopman Bilinear Form (DKBF) model - discrete-time version.
@@ -70,15 +70,15 @@ class DKBF(KBF):
     CONT  = False
 
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
-        super(DKBF, self).__init__(model_config, data_meta, dtype=dtype, device=device)
+        super().__init__(model_config, data_meta, dtype=dtype, device=device)
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
         if self._predictor_type == "exp":
-            return predict_discrete_exp(self, x0, ts, **kwargs)
-        return predict_discrete(self, x0, ts, us=w.u)
+            return predict_discrete_exp(self, x0, ts, w, **kwargs)
+        return predict_discrete(self, x0, ts, w, **kwargs)
 
-class GKBF(ModelTempUCatGraph):
+class GKBF(ModelTempUCatGraphAE):
     """Graph Koopman Bilinear Form (GKBF) model - graph-specific version.
     Uses GNN encoder/decoder and KBF operators for dynamics.
 
@@ -91,6 +91,11 @@ class GKBF(ModelTempUCatGraph):
         super().__init__(model_config, data_meta, dtype=dtype, device=device)
         self.koopman_dimension = model_config.get('koopman_dimension', 16)
         self.const_term = model_config.get('const_term', True)
+
+        self._predictor_type = model_config.get('predictor_type', 'ode')
+        if self.n_total_control_features > 0:
+            if self._predictor_type == "exp":
+                raise ValueError("Exponential predictor is not supported for KBF with control inputs.")
 
         # Method for input handling
         self.input_order = model_config.get('input_order', 'cubic')
@@ -118,7 +123,9 @@ class GKBF(ModelTempUCatGraph):
         return torch.cat([z, z_u], dim=-1)
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        return predict_continuous(self, x0, ts, us=w.u, edge_index=w.ei, method=method, order=self.input_order, **kwargs)
+        if self._predictor_type == "exp":
+            return predict_continuous_exp(self, x0, ts, w, **kwargs)
+        return predict_continuous(self, x0, ts, w, method=method, **kwargs)
 
 class DGKBF(GKBF):
     """Discrete Graph Koopman Bilinear Form (DGKBF) model - discrete-time version.
@@ -129,8 +136,10 @@ class DGKBF(GKBF):
     CONT  = False
 
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
-        super(DGKBF, self).__init__(model_config, data_meta, dtype=dtype, device=device)
+        super().__init__(model_config, data_meta, dtype=dtype, device=device)
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
-        return predict_discrete(self, x0, ts, us=w.u, edge_index=w.ei)
+        if self._predictor_type == "exp":
+            return predict_discrete_exp(self, x0, ts, w, **kwargs)
+        return predict_discrete(self, x0, ts, w, **kwargs)

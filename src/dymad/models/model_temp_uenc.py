@@ -173,7 +173,7 @@ class ModelTempUEnc(ModelBase):
         raise NotImplementedError("Implement in derived class.")
 
 
-class ModelTempUEncGraph(ModelBase):
+class ModelTempUEncGraphAE(ModelBase):
     """Graph version of ModelTempUEnc.
 
     The MLP autoencoder is replaced by GNN-based one.
@@ -222,6 +222,7 @@ class ModelTempUEncGraph(ModelBase):
             'bias_init'      : model_config.get('bias_init', 'zeros'),
             'gain'           : model_config.get('gain', 1.0),
             'gcl'            : model_config.get('gcl', 'sage'),
+            'gcl_opts'       : model_config.get('gcl_opts', {}),
             'end_activation' : model_config.get('end_activation', True),
             'dtype'          : dtype,
             'device'         : device
@@ -252,13 +253,13 @@ class ModelTempUEncGraph(ModelBase):
 
     def _encoder_ctrl(self, w: DynData) -> torch.Tensor:
         xu_cat = torch.cat([w.xg, w.ug], dim=-1)
-        return w.g(self.encoder_net(xu_cat, w.ei))
+        return w.g(self.encoder_net(xu_cat, w.ei, w.ew, w.ea))
 
     def _encoder_auto(self, w: DynData) -> torch.Tensor:
-        return w.g(self.encoder_net(w.xg, w.ei))
+        return w.g(self.encoder_net(w.xg, w.ei, w.ew, w.ea))
 
     def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.decoder_net(z, w.ei)
+        return self.decoder_net(z, w.ei, w.ew, w.ea)
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return self.dynamics_net(z)
@@ -271,3 +272,30 @@ class ModelTempUEncGraph(ModelBase):
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
         raise NotImplementedError("Implement in derived class.")
+
+
+class ModelTempUEncGraphDyn(ModelTempUEnc):
+    """Graph version of ModelTempUEnc.
+
+    The autoencoder is still MLP, but dynamics is expected to be GNN-based.
+
+    The autoencoder is applied per node.
+
+    Since n_total_state_features etc are per node, most of ModelTempUEnc can be reused,
+    and only the encoder-dynamics-decoder interface needs to be changed.
+    """
+    GRAPH = True
+    CONT  = None
+
+    def _encoder_ctrl(self, w: DynData) -> torch.Tensor:
+        xu_cat = torch.cat([w.xg, w.ug], dim=-1)
+        return w.G(self.encoder_net(xu_cat))  # G is needed for external data structure
+
+    def _encoder_auto(self, w: DynData) -> torch.Tensor:
+        return w.G(self.encoder_net(w.xg))    # G is needed for external data structure
+
+    def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        return w.G(self.decoder_net(w.g(z)))  # G is needed for external data structure
+
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        return self.dynamics_net(w.g(z), w.ei, w.ew, w.ea)   # G is effectively applied in dynamics_net
