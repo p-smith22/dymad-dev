@@ -43,8 +43,24 @@ If there are API errors such as some files not found, try deleting the auto-gene
 
 # TODO notes
 
-- Verify the RNN-type training
 - Variable length data (Data class does allow this, but collate and training need to adapt)
 - Update the aircraft example
 - Update the double pendulum example
+
 - FTLE and CLV for nonlinear latent dynamics
+
+- Verify the RNN-type training
+- RNN plus graph
+- Demo on Kuramoto example
+
+- CV procedure by random search
+- VPT criteria
+- Demo on Lorenz
+- Demo on KS chaotic
+
+- PIROM class - residual force
+- PIROM class - hidden dynamics
+- Demo on simple pendulum
+
+- Torch-fy transform classes
+- Internal normalization in PIROM
