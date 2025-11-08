@@ -6,7 +6,7 @@ from dymad.io import DynData
 from dymad.models.model_base import ModelBase
 from dymad.modules import make_autoencoder
 
-class ModelTempUCat(ModelBase):
+class TemplateUCat(ModelBase):
     """
     Base class for state-encoding with input concatenation.
     Handles MLP-based encoder/decoder construction and common methods.
@@ -161,8 +161,8 @@ class ModelTempUCat(ModelBase):
         return z_dot, z
 
 
-class ModelTempUCatGraphAE(ModelBase):
-    """Graph version of ModelTempUCat.
+class TemplateUCatGraphAE(ModelBase):
+    """Graph version of TemplateUCat.
 
     The MLP autoencoder is replaced by GNN-based one.
 
@@ -268,7 +268,7 @@ class ModelTempUCatGraphAE(ModelBase):
     def linear_features(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute linear features, f, and outputs, dz, for the model.
 
-        Main difference with ModelTempUCat: the middle two dimensions are permuted, so that
+        Main difference with TemplateUCat: the middle two dimensions are permuted, so that
         the time dimension is the second last dimension, this is needed in
         linear trainer to match the expected shape.
         """

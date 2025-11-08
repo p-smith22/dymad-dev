@@ -3,11 +3,11 @@ import torch
 from typing import Dict, Union
 
 from dymad.io import DynData
-from dymad.models.model_temp_uenc import ModelTempUEncGraphDyn
+from dymad.models.temp_uenc import TemplateUEncGraphDyn
 from dymad.models.prediction import predict_continuous, predict_discrete, predict_discrete_exp
 from dymad.modules import GNN
 
-class LDMG(ModelTempUEncGraphDyn):
+class LDMG(TemplateUEncGraphDyn):
     """Latent Dynamics Model on Graph (LDMG).
 
     Uses MLP for node-wise encoder/decoder and GNN for dynamics.

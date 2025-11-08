@@ -6,7 +6,7 @@ from dymad.io import DynData
 from dymad.models.model_base import ModelBase
 from dymad.modules import make_autoencoder
 
-class ModelTempUEnc(ModelBase):
+class TemplateUEnc(ModelBase):
     """
     Base class for joint encoding of states and inputs.
     Handles MLP-based encoder/decoder construction and common methods.
@@ -173,8 +173,8 @@ class ModelTempUEnc(ModelBase):
         raise NotImplementedError("Implement in derived class.")
 
 
-class ModelTempUEncGraphAE(ModelBase):
-    """Graph version of ModelTempUEnc.
+class TemplateUEncGraphAE(ModelBase):
+    """Graph version of TemplateUEnc.
 
     The MLP autoencoder is replaced by GNN-based one.
 
@@ -274,14 +274,14 @@ class ModelTempUEncGraphAE(ModelBase):
         raise NotImplementedError("Implement in derived class.")
 
 
-class ModelTempUEncGraphDyn(ModelTempUEnc):
-    """Graph version of ModelTempUEnc.
+class TemplateUEncGraphDyn(TemplateUEnc):
+    """Graph version of TemplateUEnc.
 
     The autoencoder is still MLP, but dynamics is expected to be GNN-based.
 
     The autoencoder is applied per node.
 
-    Since n_total_state_features etc are per node, most of ModelTempUEnc can be reused,
+    Since n_total_state_features etc are per node, most of TemplateUEnc can be reused,
     and only the encoder-dynamics-decoder interface needs to be changed.
     """
     GRAPH = True

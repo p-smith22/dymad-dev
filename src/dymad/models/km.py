@@ -3,12 +3,12 @@ import torch
 from typing import Dict, Union, Tuple
 
 from dymad.io import DynData
-from dymad.models.model_temp_ucat import ModelTempUCat, ModelTempUCatGraphAE
+from dymad.models.temp_ucat import TemplateUCat, TemplateUCatGraphAE
 from dymad.models.prediction import predict_continuous, predict_continuous_fenc, predict_discrete, predict_discrete_exp
 from dymad.modules import make_krr
 from dymad.numerics import Manifold
 
-class KM(ModelTempUCat):
+class KM(TemplateUCat):
     """
     Kernel machine, where dynamics is given by KRR.
     """
@@ -219,7 +219,7 @@ class DKMSK(KM):
         return self.dynamics_net._alphas, residual
 
 
-class GKM(ModelTempUCatGraphAE):
+class GKM(TemplateUCatGraphAE):
     """Graph version of KM.
 
     Uses GNN encoder/decoder instead of MLP.
