@@ -2,15 +2,13 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from typing import Union
 
-from dymad.io import DynData, load_model
-from dymad.models import ModelTempUEnc, predict_continuous_np
-from dymad.modules import MLP
+from dymad.io import load_model
+from dymad.models import TemplateCorrAlg
 from dymad.training import WeakFormTrainer, NODETrainer
-from dymad.utils import plot_multi_trajs, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_multi_trajs, plot_summary, setup_logging, TrajectorySampler
 
-B = 64
+B = 16
 N = 301
 t_grid = np.linspace(0, 6, N)
 
@@ -20,7 +18,27 @@ def f(t, x, p=[1.0]):
     domega = - (g / p[0]) * (np.sin(x[0]) + 0.1 * x[1])
     return np.array([dtheta, domega])
 
-class DP(ModelTempUEnc):
+# class DP(TemplateCorrAlg):
+#     CONT = True
+
+#     def base_dynamics(self, x: torch.Tensor, u: torch.Tensor, f: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
+#         _f = torch.zeros_like(x)
+#         _f[..., 0] = x[..., 1]
+#         _f[..., 1] = - (g / p[..., 0]) * (torch.sin(x[..., 0]) + f[..., 0])
+#         return _f
+
+def f_physics(x, u, f, p):
+    _f = torch.zeros_like(x)
+    _f[..., 0] = x[..., 1]
+    _f[..., 1] = - (g / p[..., 0]) * (torch.sin(x[..., 0]) + f[..., 0])
+    return _f
+
+from typing import Union
+from dymad.io import DynData
+from dymad.models import TemplateUEnc, predict_continuous_np
+from dymad.modules import MLP
+
+class DP(TemplateUEnc):
     def __init__(self, model_config, data_meta, dtype=None, device=None):
         super().__init__(model_config, data_meta, dtype=dtype, device=device)
 
@@ -46,14 +64,13 @@ class DP(ModelTempUEnc):
         )
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        print(z.shape, w.p.shape)
         if z.ndim == 3:
             w_p = w.p.unsqueeze(-2)
         else:
             w_p = w.p
         _l = self.dynamics_net(z)
-        _f = torch.zeros_like(z)
-        _f[..., 0] = z[..., 1]
-        _f[..., 1] = - (g / w_p[..., 0]) * (torch.sin(z[..., 0]) + _l[..., 0])
+        _f = f_physics(z, None, _l, w_p)
         return _f
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],
@@ -66,6 +83,7 @@ mdl_kl = {
     "decoder_layers" : 0,
     "processor_layers" : 1,
     "latent_dimension" : 32,
+    "residual_dimension" : 1,
     "activation" : "none",
     "end_activation" : False,
     "weight_init" : "xavier_uniform",
@@ -113,7 +131,7 @@ IDX = [0, 1]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
-iftrn = 0
+iftrn = 1
 ifplt = 0
 ifprd = 1
 

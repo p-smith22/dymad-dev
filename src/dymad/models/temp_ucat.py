@@ -8,7 +8,7 @@ from dymad.modules import make_autoencoder
 
 class TemplateUCat(ModelBase):
     """
-    Base class for state-encoding with input concatenation.
+    Template class for state-encoding with input concatenation.
     Handles MLP-based encoder/decoder construction and common methods.
     Same architecture for both cont-time and disc-time.
 
@@ -108,7 +108,7 @@ class TemplateUCat(ModelBase):
             w: DynData obejct, containing state (x) and control (u) tensors.
 
         Returns:
-            Tuple of (latent, latent_derivative, reconstruction)
+            Tuple of (latent, latent_derivative/latent_next, reconstruction)
         """
         z = self.encoder(w)
         z_dot = self.dynamics(z, w)
@@ -117,7 +117,7 @@ class TemplateUCat(ModelBase):
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],
                 method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        """Predict trajectory using continuous-time integration.
+        """Predict trajectory using cont-time or disc-time integration.
 
         Args:
             x0: Initial state tensor(s):
@@ -245,7 +245,7 @@ class TemplateUCatGraphAE(ModelBase):
         return self.decoder_net(z, w.ei, w.ew, w.ea)
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """Compute dynamics in Koopman space using bilinear form."""
+        """Compute dynamics in latent space using bilinear form."""
         return self.dynamics_net(self._zu_cat(z, w))
 
     def _zu_cat_ctrl(self, z: torch.Tensor, w: DynData) -> torch.Tensor:

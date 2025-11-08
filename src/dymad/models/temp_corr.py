@@ -5,16 +5,24 @@ from typing import Dict, Union, Tuple
 from dymad.io import DynData
 from dymad.models.model_base import ModelBase
 from dymad.models.prediction import predict_continuous_np, predict_discrete_exp
+from dymad.modules import MLP
 
 class TemplateCorrAlg(ModelBase):
     """
-    Base class for dynamics modeling with algebraic corrections.
-    Consider a base dynamics model
+    Template class for dynamics modeling with algebraic corrections.
+    Consider a base dynamics model with parameters p
+
+    - x_dot/x_next = Base_Dynamics(x, u, p)
+
+    The corrected dynamics model with residual force f is given by
 
     - f = Residual_Force(x, u)
     - x_dot/x_next = Base_Dynamics_With_Correction(x, u, f, p)
+
+    Here the user needs to provide Base_Dynamics_With_Correction that takes
+    the residual force as an additional input.
     """
-    GRAPH = None
+    GRAPH = False
     CONT = None
 
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
@@ -36,53 +44,67 @@ class TemplateCorrAlg(ModelBase):
         else:
             self.residual = self._residual_ctrl
 
-        # Cache
-        self.residual_net = None
+        opts = {
+            'activation'     : model_config.get('activation', 'prelu'),
+            'weight_init'    : model_config.get('weight_init', 'xavier_uniform'),
+            'bias_init'      : model_config.get('bias_init', 'zeros'),
+            'gain'           : model_config.get('gain', 1.0),
+            'end_activation' : model_config.get('end_activation', True),
+            'dtype'          : dtype,
+            'device'         : device
+        }
+        self.residual_net = MLP(
+            input_dim  = self.n_total_features,
+            latent_dim = self.latent_dimension,
+            output_dim = self.residual_dimension,
+            n_layers   = model_config.get('processor_layers', 2),
+            **opts
+        )
 
         assert self.CONT is not None, "CONT flag must be set in derived class."
 
     def diagnostic_info(self) -> str:
         model_info = super().diagnostic_info()
-        model_info += f"Dynamics: {self.residual_net}\n"
+        model_info += f"Residual: {self.residual_net}\n"
         model_info += f"Input order: {self.input_order}"
         return model_info
 
-    def _residual_ctrl(self, w: DynData) -> torch.Tensor:
+    def _residual_ctrl(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """
-        Map features to latent space for systems with inputs.\
+        Map features to residual force for systems with inputs.
         """
-        return self.residual_net(torch.cat([w.x, w.u], dim=-1))
+        return self.residual_net(torch.cat([z, w.u], dim=-1))
 
-    def _residual_auto(self, w: DynData) -> torch.Tensor:
+    def _residual_auto(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """
-        Map features to latent space for autonomous systems.
+        Map features to residual force for autonomous systems.
         """
-        return self.residual_net(w.x)
+        return self.residual_net(z)
 
     def base_dynamics(self, x: torch.Tensor, u: torch.Tensor, f: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError("Implement in derived class.")
 
     def encoder(self, w: DynData) -> torch.Tensor:
         """
-        Map features to latent space for autonomous systems.
+        Dummy interface.
         """
         return w.x
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """
-        Compute latent dynamics (derivative).
+        Compute corrected dynamics.
         """
         if z.ndim == 3:
             w_p = w.p.unsqueeze(-2)
         else:
             w_p = w.p
-        _l = self.residual(w)
+        _l = self.residual(z, w.u)
         _f = self.base_dynamics(z, w.u, _l, w_p)
         return _f
 
     def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """
-        Map from latent space back to state space.
+        Dummy interface.
         """
         return z
 
@@ -98,7 +120,7 @@ class TemplateCorrAlg(ModelBase):
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],
                 method: str = 'dopri5', **kwargs) -> torch.Tensor:
         """
-        Predict trajectory using CT or DT integration.
+        Predict trajectory using cont-time or disc-time integration.
         """
         if self.CONT:
             return predict_continuous_np(self, x0, ts, w, method=method, order=self.input_order, **kwargs)

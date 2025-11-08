@@ -8,7 +8,7 @@ from dymad.modules import make_autoencoder
 
 class TemplateUEnc(ModelBase):
     """
-    Base class for joint encoding of states and inputs.
+    Template class for joint encoding of states and inputs.
     Handles MLP-based encoder/decoder construction and common methods.
     Same architecture for both cont-time and disc-time.
 
@@ -123,7 +123,7 @@ class TemplateUEnc(ModelBase):
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """
-        Compute latent dynamics (derivative).
+        Compute latent dynamics, derivative or next state.
 
         Args:
             z (torch.Tensor): Latent state
@@ -141,7 +141,7 @@ class TemplateUEnc(ModelBase):
             w (DynData): Input data containing state and control tensors
 
         Returns:
-            Tuple of (latent, latent_derivative, reconstruction)
+            Tuple of (latent, latent_derivative/latent_next, reconstruction)
         """
         z = self.encoder(w)
         z_dot = self.dynamics(z, w)
@@ -150,7 +150,7 @@ class TemplateUEnc(ModelBase):
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],
                 method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        """Predict trajectory using continuous-time integration.
+        """Predict trajectory using cont-time or disc-time integration.
 
         Args:
             x0: Initial state tensor(s):
