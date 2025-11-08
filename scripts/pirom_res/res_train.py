@@ -1,12 +1,14 @@
+import jax.numpy as jnp
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from typing import Dict, Tuple, Union
 
 from dymad.io import load_model
 from dymad.models import TemplateCorrAlg
 from dymad.training import WeakFormTrainer, NODETrainer
-from dymad.utils import plot_multi_trajs, plot_summary, setup_logging, TrajectorySampler
+from dymad.utils import JaxWrapper, plot_multi_trajs, plot_summary, setup_logging, TrajectorySampler
 
 B = 16
 N = 301
@@ -18,69 +20,30 @@ def f(t, x, p=[1.0]):
     domega = - (g / p[0]) * (np.sin(x[0]) + 0.1 * x[1])
     return np.array([dtheta, domega])
 
-# class DP(TemplateCorrAlg):
-#     CONT = True
-
-#     def base_dynamics(self, x: torch.Tensor, u: torch.Tensor, f: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
-#         _f = torch.zeros_like(x)
-#         _f[..., 0] = x[..., 1]
-#         _f[..., 1] = - (g / p[..., 0]) * (torch.sin(x[..., 0]) + f[..., 0])
-#         return _f
-
-def f_physics(x, u, f, p):
-    _f = torch.zeros_like(x)
-    _f[..., 0] = x[..., 1]
-    _f[..., 1] = - (g / p[..., 0]) * (torch.sin(x[..., 0]) + f[..., 0])
-    return _f
-
-from typing import Union
-from dymad.io import DynData
-from dymad.models import TemplateUEnc, predict_continuous_np
-from dymad.modules import MLP
-
-class DP(TemplateUEnc):
-    def __init__(self, model_config, data_meta, dtype=None, device=None):
-        super().__init__(model_config, data_meta, dtype=dtype, device=device)
-
-        enc_out_dim, dec_inp_dim = self._build_autoencoder(model_config, dtype, device)
-
-        proc_depth = model_config.get('processor_layers', 2)
-        opts = {
-            'activation'     : model_config.get('activation', 'prelu'),
-            'weight_init'    : model_config.get('weight_init', 'xavier_uniform'),
-            'bias_init'      : model_config.get('bias_init', 'zeros'),
-            'gain'           : model_config.get('gain', 1.0),
-            'end_activation' : model_config.get('end_activation', True),
-            'dtype'          : dtype,
-            'device'         : device
-        }
-
-        self.dynamics_net = MLP(
-            input_dim  = enc_out_dim,
-            latent_dim = self.latent_dimension,
-            output_dim = dec_inp_dim - 1,
-            n_layers   = proc_depth,
-            **opts
-        )
-
-    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        print(z.shape, w.p.shape)
-        if z.ndim == 3:
-            w_p = w.p.unsqueeze(-2)
-        else:
-            w_p = w.p
-        _l = self.dynamics_net(z)
-        _f = f_physics(z, None, _l, w_p)
+class DPT(TemplateCorrAlg):
+    CONT = True
+    def base_dynamics(self, x: torch.Tensor, u: torch.Tensor, f: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
+        _f = torch.zeros_like(x)
+        _f[..., 0] = x[..., 1]
+        _f[..., 1] = - (g / p[..., 0]) * (torch.sin(x[..., 0]) + f[..., 0])
         return _f
 
-    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],
-                method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        return predict_continuous_np(self, x0, ts, w, method=method, order=self.input_order, **kwargs)
+def f_jax(*xs: jnp.ndarray) -> Union[jnp.ndarray, Tuple[jnp.ndarray, ...]]:
+    x, u, f, p = xs
+    y1 = x[..., 1]
+    y2 = - (g / p[..., 0]) * (jnp.sin(x[..., 0]) + f[..., 0])
+    return jnp.stack([y1, y2], axis=-1)
+class DPJ(TemplateCorrAlg):
+    CONT = True
+    def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
+        super().__init__(model_config, data_meta, dtype, device)
+        self._jax_layer = JaxWrapper(f_jax, jit=False)
+
+    def base_dynamics(self, x: torch.Tensor, u: torch.Tensor, f: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
+        return self._jax_layer(x, u, f, p)
 
 mdl_kl = {
     "name" : 'res_model',
-    "encoder_layers" : 0,
-    "decoder_layers" : 0,
     "processor_layers" : 1,
     "latent_dimension" : 32,
     "residual_dimension" : 1,
@@ -123,16 +86,18 @@ trn_nd = {
 config_path = 'res_model.yaml'
 
 cfgs = [
-    ('dp_nd', DP, NODETrainer,     {"model": mdl_kl, "training" : trn_nd}),
-    ('dp_wf', DP, WeakFormTrainer, {"model": mdl_kl, "training" : trn_wf}),
+    ('dp_nd', DPT, NODETrainer,     {"model": mdl_kl, "training" : trn_nd}),
+    ('dp_wf', DPT, WeakFormTrainer, {"model": mdl_kl, "training" : trn_wf}),
+    ('dj_nd', DPJ, NODETrainer,     {"model": mdl_kl, "training" : trn_nd}),
+    ('dj_wf', DPJ, WeakFormTrainer, {"model": mdl_kl, "training" : trn_wf}),
     ]
 
-IDX = [0, 1]
+IDX = [0, 1, 2, 3]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
 iftrn = 1
-ifplt = 0
+ifplt = 1
 ifprd = 1
 
 if ifdat:
