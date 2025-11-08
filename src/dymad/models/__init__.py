@@ -7,7 +7,7 @@ from dymad.models.model_base import ModelBase
 from dymad.models.model_temp_ucat import ModelTempUCat, ModelTempUCatGraphAE
 from dymad.models.model_temp_uenc import ModelTempUEnc, ModelTempUEncGraphAE, ModelTempUEncGraphDyn
 from dymad.models.prediction import predict_continuous, predict_continuous_exp, predict_continuous_fenc, \
-    predict_discrete, predict_discrete_exp
+    predict_continuous_np, predict_discrete, predict_discrete_exp
 
 __all__ = [
     "DGKBF",
@@ -37,6 +37,7 @@ __all__ = [
     "predict_continuous",
     "predict_continuous_exp",
     "predict_continuous_fenc",
+    "predict_continuous_np",
     "predict_discrete",
     "predict_discrete_exp",
 ]

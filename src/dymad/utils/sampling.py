@@ -198,7 +198,7 @@ def _build_interpolant(t: Array, u: Array, mode: str) -> Callable:
     raise ValueError(f"Unknown interpolation mode '{mode}'.")
 
 # -----------------------
-# Initial Condition Samplers
+# Initial Condition / Parameter Samplers
 # -----------------------
 
 def gaussian_x0(*,
@@ -385,7 +385,7 @@ class TrajectorySampler:
         tmp = self.config.get("dims", None)
         if tmp is None:
             raise ValueError("Config must specify 'dims' (state/observation/input dimensions).")
-        self.dims = [tmp["states"], tmp["inputs"], tmp["observations"]]
+        self.dims = [tmp["states"], tmp["inputs"], tmp["observations"], tmp.get("parameters", 0)]
 
         self._is_autonomous = (self.dims[1] == 0)
         if self._is_autonomous:
@@ -398,12 +398,13 @@ class TrajectorySampler:
 
         logger.info(f"TrajectorySampler initialized with dims: "
                     f"states={self.dims[0]}, inputs={self.dims[1]}, "
-                    f"observations={self.dims[2]}")
+                    f"observations={self.dims[2]}, parameters={self.dims[3]}.")
         if self._is_autonomous:
             logger.info("Sampler is autonomous (no control inputs).")
         else:
             logger.info(f"Control config: {self.config.get('control', None)}")
         logger.info(f"Init. Cond. config: {self.config.get('x0', None)}")
+        logger.info(f"Param. config: {self.config.get('p', None)}")
         logger.info(f"Solver config: {self.config.get('solver', None)}")
         logger.info(f"Postprocess config: {self.config.get('postprocess', None)}")
 
@@ -451,25 +452,34 @@ class TrajectorySampler:
 
         raise TypeError("Unrecognised u_spec type.")
 
-    def _sample_x0(self, traj_idx: int) -> Array:
-        x0_spec = self.config.get("x0", None)
+    def _sample_xp(self, traj_num: int, pref='x0', dims=None) -> Array:
+        x0_spec = self.config.get(pref, None)
+        if x0_spec is None:
+            return None
 
         if isinstance(x0_spec, Array):
             # Externally supplied array data
             x0_arr = np.asarray(x0_spec)
-            return x0_arr if x0_arr.ndim == 1 else x0_arr[traj_idx]
+            if x0_arr.ndim == 1:
+                assert x0_arr.shape[0] == dims
+                return [x0_arr for _ in range(traj_num)]
+            else:
+                assert x0_arr.shape[1] == dims
+                assert x0_arr.shape[0] >= traj_num
+                return x0_arr[:traj_num]
 
         if isinstance(x0_spec, dict):
             # Defined by a dictionary
             kind = x0_spec["kind"].lower()
             if kind not in _X0_MAP:
-                raise KeyError(f"Unknown x0 kind '{kind}'. Available: {list(_X0_MAP)}")
+                raise KeyError(f"Unknown {pref} kind '{kind}'. Available: {list(_X0_MAP)}")
             params = x0_spec.get("params", {})
             params.update({
-                "dim": self.dims[0],
+                "dim": dims,
                 "rng": self.rng})
             x0_func = _X0_MAP[kind](**params)
-            return np.asarray(x0_func(traj_idx))
+            return np.asarray(
+                [x0_func(_i) for _i in range(traj_num)])
 
         raise TypeError("Unrecognised x0_spec type.")
 
@@ -506,18 +516,23 @@ class TrajectorySampler:
         xs = np.zeros((batch, Nt, self.dims[0]))
         us = np.zeros((batch, Nt, self.dims[1]))
         ys = np.zeros((batch, Nt, self.dims[2]))
+        x0s = self._sample_xp(batch, pref='x0', dims=self.dims[0])
+        ps = self._sample_xp(batch, pref='p', dims=self.dims[3])
 
         for i in range(batch):
             logger.info(f"Generating trajectory {i+1}/{batch}...")
 
             fu, uu = self._create_control_sampler(tt, i)
-            def rhs(t, x):
-                return self.f(t, x, fu(t))
+            if ps is None:
+                def rhs(t, x):
+                    return self.f(t, x, fu(t))
+            else:
+                def rhs(t, x):
+                    return self.f(t, x, fu(t), ps[i])
 
-            x0  = self._sample_x0(i)
             sol = solve_ivp(rhs,
                             (tt[0], tt[-1]),
-                            x0,
+                            x0s[i],
                             t_eval=tt,
                             **opts)
             if not sol.success:
@@ -534,9 +549,14 @@ class TrajectorySampler:
         if save is not None:
             assert isinstance(save, str), "Save path must be a string."
             os.makedirs(os.path.dirname(save), exist_ok=True)
-            np.savez_compressed(save, t=ts, x=ys, u=us)
+            if ps is None:
+                np.savez_compressed(save, t=ts, x=ys, u=us)
+            else:
+                np.savez_compressed(save, t=ts, x=ys, u=us, p=ps)
 
-        return ts, xs, us, ys
+        if ps is None:
+            return ts, xs, us, ys
+        return ts, xs, us, ys, ps
 
     def _sample_auto(self,
                      t_samples: Array,
@@ -570,15 +590,18 @@ class TrajectorySampler:
         ts = np.zeros((batch, Nt))
         xs = np.zeros((batch, Nt, self.dims[0]))
         ys = np.zeros((batch, Nt, self.dims[2]))
+        x0s = self._sample_xp(batch, pref='x0', dims=self.dims[0])
+        ps = self._sample_xp(batch, pref='p', dims=self.dims[3])
 
         for i in range(batch):
             logger.info(f"Generating trajectory {i+1}/{batch}...")
 
-            x0  = self._sample_x0(i)
+            args = None if ps is None else (ps[i],)
             sol = solve_ivp(self.f,
                             (tt[0], tt[-1]),
-                            x0,
+                            x0s[i],
                             t_eval=tt,
+                            args=args,
                             **opts)
             if not sol.success:
                 raise RuntimeError(f"Integration failed on traj {i}: {sol.message}")
@@ -594,6 +617,11 @@ class TrajectorySampler:
         if save is not None:
             assert isinstance(save, str), "Save path must be a string."
             os.makedirs(os.path.dirname(save), exist_ok=True)
-            np.savez_compressed(save, t=ts, x=ys)
+            if ps is None:
+                np.savez_compressed(save, t=ts, x=ys)
+            else:
+                np.savez_compressed(save, t=ts, x=ys, p=ps)
 
-        return ts, xs, ys
+        if ps is None:
+            return ts, xs, ys
+        return ts, xs, ys, ps

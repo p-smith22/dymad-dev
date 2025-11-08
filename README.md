@@ -60,7 +60,12 @@ If there are API errors such as some files not found, try deleting the auto-gene
 
 - PIROM class - residual force
 - PIROM class - hidden dynamics
+- two-stage implementation
+- N4SID
 - Demo on simple pendulum
 
 - Torch-fy transform classes
 - Internal normalization in PIROM
+
+- Symmetry analysis
+- Torch-fy Manifold class
