@@ -190,7 +190,7 @@ def predict_continuous_np(
         _tk  = bucket(t)
         wtmp = _ws.get_step(_tk)
         u    = u_intp(t)
-        z_dot = model.dynamics(z, wtmp.set_x(u))
+        z_dot = model.dynamics(z, wtmp.set_u(u))
         return z_dot
 
     logger.debug(f"predict_continuous_np: Starting ODE integration with shape {z0.shape}, method {method}, and interpolation order {order if _has_u else 'N/A'}")

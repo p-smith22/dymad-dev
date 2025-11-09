@@ -3,7 +3,7 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from typing import Dict, Tuple, Union
+from typing import Tuple, Union
 
 from dymad.io import load_model
 from dymad.models import TemplateCorrDif
@@ -32,7 +32,7 @@ class DPT(TemplateCorrDif):
         return _f
 
     def encoder(self, w) -> torch.Tensor:
-        return torch.cat([w.x, torch.zeros(w.x.shape[:-1], 1)], dim=-1)
+        return torch.cat([w.x, torch.zeros(w.x.shape[:-1], 1, device=w.x.device, dtype=w.x.dtype)], dim=-1)
 
     def decoder(self, z, w) -> torch.Tensor:
         return z[..., :2]
@@ -51,7 +51,7 @@ class DPJ(TemplateCorrDif):
         return self._jax_layer(x, u, f, p)
 
     def encoder(self, w) -> torch.Tensor:
-        return torch.cat([w.x, torch.zeros(w.x.shape[:-1], 1)], dim=-1)
+        return torch.cat([w.x, torch.zeros(w.x.shape[:-1], 1, device=w.x.device, dtype=w.x.dtype)], dim=-1)
 
     def decoder(self, z, w) -> torch.Tensor:
         return z[..., :2]
@@ -71,7 +71,7 @@ mdl_kl = {
     "gain" : 0.1,}
 
 trn_nd = {
-    "n_epochs": 400,
+    "n_epochs": 500,
     "save_interval": 50,
     "load_checkpoint": False,
     "learning_rate": 5e-3,
@@ -92,11 +92,11 @@ cfgs = [
     ('dj_nd', DPJ, NODETrainer,     {"model": mdl_kl, "training" : trn_nd}),
     ]
 
-IDX = [0, 1]
+IDX = [1]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
-iftrn = 0
+iftrn = 1
 ifprd = 1
 
 if ifdat:

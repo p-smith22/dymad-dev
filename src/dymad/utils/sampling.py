@@ -462,7 +462,7 @@ class TrajectorySampler:
             x0_arr = np.asarray(x0_spec)
             if x0_arr.ndim == 1:
                 assert x0_arr.shape[0] == dims
-                return [x0_arr for _ in range(traj_num)]
+                return [x0_arr.copy() for _ in range(traj_num)]
             else:
                 assert x0_arr.shape[1] == dims
                 assert x0_arr.shape[0] >= traj_num
