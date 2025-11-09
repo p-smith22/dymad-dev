@@ -3,10 +3,8 @@ from torch.autograd import Function
 from torch.utils import dlpack as torch_dlpack
 
 import jax
-import jax.numpy as jnp
 from jax import dlpack as jax_dlpack
 from functools import lru_cache
-from typing import Tuple, Union
 
 # ---- Torch <-> JAX via DLPack ----
 def torch_to_jax(t: torch.Tensor) -> "jax.Array":

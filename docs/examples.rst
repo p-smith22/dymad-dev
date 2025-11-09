@@ -19,3 +19,5 @@ Examples
    examples/vortex/part1
    examples/vortex/part2
    examples/vortex/part3
+   examples/simple_pendulum/part1
+   examples/simple_pendulum/part2

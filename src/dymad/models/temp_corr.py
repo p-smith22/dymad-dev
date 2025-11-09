@@ -61,7 +61,15 @@ class TemplateCorrAlg(ModelBase):
             **opts
         )
 
+        self.extra_setup()
+
         assert self.CONT is not None, "CONT flag must be set in derived class."
+
+    def extra_setup(self):
+        """
+        Additional setup in derived classes.  Called at end of __init__.
+        """
+        pass
 
     def diagnostic_info(self) -> str:
         model_info = super().diagnostic_info()
@@ -82,6 +90,12 @@ class TemplateCorrAlg(ModelBase):
         return self.residual_net(z)
 
     def base_dynamics(self, x: torch.Tensor, u: torch.Tensor, f: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
+        """
+        The minimal that the user must implement.
+
+        `f` is the residual correction term computed by `self.residual`, and needs
+        to be incorporated into the base dynamics.
+        """
         raise NotImplementedError("Implement in derived class.")
 
     def encoder(self, w: DynData) -> torch.Tensor:
@@ -227,7 +241,15 @@ class TemplateCorrDif(ModelBase):
             **opts
         )
 
+        self.extra_setup()
+
         assert self.CONT is not None, "CONT flag must be set in derived class."
+
+    def extra_setup(self):
+        """
+        Additional setup in derived classes.  Called at end of __init__.
+        """
+        pass
 
     def diagnostic_info(self) -> str:
         model_info = super().diagnostic_info()
@@ -254,23 +276,35 @@ class TemplateCorrDif(ModelBase):
 
     def _residual_ctrl(self, z: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         """
-        Map features to residual force for systems with inputs.
+        Map states to residual force for systems with inputs.
         """
         return self.residual_net(torch.cat([z, u], dim=-1))
 
     def _residual_auto(self, z: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         """
-        Map features to residual force for autonomous systems.
+        Map states to residual force for autonomous systems.
         """
         return self.residual_net(z)
 
     def _hidden_ctrl(self, z: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+        """
+        Dynamics of the hidden state for systems with inputs.
+        """
         return self.dynamics_net(torch.cat([z, u], dim=-1))
 
     def _hidden_auto(self, z: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+        """
+        Dynamics of the hidden state for autonomous systems.
+        """
         return self.dynamics_net(z)
 
     def base_dynamics(self, x: torch.Tensor, u: torch.Tensor, f: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
+        """
+        The minimal that the user must implement.
+
+        `f` is the residual correction term as output from the hidden dynamics, and needs
+        to be incorporated into the base dynamics.
+        """
         raise NotImplementedError("Implement in derived class.")
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:

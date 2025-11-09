@@ -1,0 +1,17 @@
+data:
+  path: './data/res.npz'
+  n_samples: 16
+  n_steps: 301
+  double_precision: true
+
+transform_x:
+  type: "identity"
+
+transform_u:
+  type: "identity"
+
+split:
+  train_frac: 0.75
+
+dataloader:
+  batch_size: 256

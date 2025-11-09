@@ -58,11 +58,10 @@ If there are API errors such as some files not found, try deleting the auto-gene
 - Demo on Lorenz
 - Demo on KS chaotic
 
-- PIROM class - residual force
-- PIROM class - hidden dynamics
 - two-stage implementation
 - N4SID
-- Demo on simple pendulum
+- EnKF, EnKS, IEnKS
+- Interface to numpy and others
 
 - Torch-fy transform classes
 - Internal normalization in PIROM

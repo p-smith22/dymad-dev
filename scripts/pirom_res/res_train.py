@@ -35,8 +35,7 @@ def f_jax(*xs: jnp.ndarray) -> Union[jnp.ndarray, Tuple[jnp.ndarray, ...]]:
     return jnp.stack([y1, y2], axis=-1)
 class DPJ(TemplateCorrAlg):
     CONT = True
-    def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
-        super().__init__(model_config, data_meta, dtype, device)
+    def extra_setup(self):
         self._jax_layer = JaxWrapper(f_jax, jit=True)
 
     def base_dynamics(self, x: torch.Tensor, u: torch.Tensor, f: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
