@@ -195,17 +195,16 @@ def plot_one_trajectory(
         if axes is None:
             _scale_axes(ax[i], traj[:, idx_x[i]], xscl)
 
-    if axes is None:
-        if dim_u > 0:
-            # Plot only once as this is from data
-            offset = dim_x
-            for i in range(dim_u):
-                ax[offset + i].plot(ts, us[:, idx_u[i]], '-', color='#3498db', linewidth=2)
-                ax[offset + i].set_xlim([0, ts[-1]])
-                ax[offset + i].grid(True, alpha=0.3)
-                ax[offset + i].set_ylabel(f'Control {i+1}', fontsize=10)
+    if dim_u > 0:
+        # Plot only once as this is from data
+        offset = dim_x
+        for i in range(dim_u):
+            ax[offset + i].plot(ts, us[:, idx_u[i]], '-', color='#3498db', linewidth=2)
+            ax[offset + i].set_xlim([0, ts[-1]])
+            ax[offset + i].grid(True, alpha=0.3)
+            ax[offset + i].set_ylabel(f'Control {i+1}', fontsize=10)
 
-                _scale_axes(ax[offset + i], us[:, idx_u[i]], uscl)
+            _scale_axes(ax[offset + i], us[:, idx_u[i]], uscl)
 
     for i in range(n_cols):
         ax[-i-1].set_xlabel('Time', fontsize=10)

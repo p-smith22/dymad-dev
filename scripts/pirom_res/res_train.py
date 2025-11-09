@@ -37,14 +37,14 @@ class DPJ(TemplateCorrAlg):
     CONT = True
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
         super().__init__(model_config, data_meta, dtype, device)
-        self._jax_layer = JaxWrapper(f_jax, jit=False)
+        self._jax_layer = JaxWrapper(f_jax, jit=True)
 
     def base_dynamics(self, x: torch.Tensor, u: torch.Tensor, f: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
         return self._jax_layer(x, u, f, p)
 
 mdl_kl = {
     "name" : 'res_model',
-    "processor_layers" : 1,
+    "residual_layers" : 1,
     "latent_dimension" : 32,
     "residual_dimension" : 1,
     "activation" : "none",
