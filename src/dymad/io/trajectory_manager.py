@@ -45,7 +45,7 @@ def _process_data(data, x, label, base_dim=1, offset=0):
             if data.shape[0] == 1 and len(x) > 1:
                 logging.info(f"Detected {label} as np.ndarray (1, n_steps, ...): {data.shape} for multiple x. Broadcasting to all trajectories.")
                 _data = [np.array(data[0]) for _ in x]
-            elif data.shape[1] == 1:
+            elif data.shape[1] == 1 and offset == 0:   # Need offset == 0, otherwise n_steps dimension is irrelevant (for p, offset=1)
                 logging.info(f"Detected {label} as np.ndarray (n_traj, 1, ...): {data.shape}. Expanding to trajectory for each x and broadcasting to all time steps.")
                 _data = [np.tile(data[_i], (_x.shape[0],) + (1,) * base_dim) for _i, _x in enumerate(x)]
             else:

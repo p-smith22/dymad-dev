@@ -286,6 +286,12 @@ The currently available models of each category are listed below.  In the header
      - :class:`~dymad.models.GKM`
      - :class:`~dymad.models.DGKM` :class:`~dymad.models.DGKMSK`
 
+Lastly, for advanced users, we also provide template model classes for customization:
+
+- :class:`~dymad.models.TemplateUCat`, :class:`~dymad.models.TemplateUCatGraphAE`: `KBF`-like models where only states are encoded into latent space.
+- :class:`~dymad.models.TemplateUEnc`, :class:`~dymad.models.TemplateUEncGraphAE`, :class:`~dymad.models.TemplateUEncGraphDyn`: `LDM`-like models where states and inputs are encoded together into latent space.
+- :class:`~dymad.models.TemplateCorrAlg`, :class:`~dymad.models.TemplateCorrDif`: Physics-infused models where a physics-based base dynamics is corrected by a data-driven residual term.
+
 Model Analysis
 ^^^^^^^^^^^^^^
 

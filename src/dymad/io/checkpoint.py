@@ -196,7 +196,7 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
         return np.array(_data_transform_x.inverse_transform(_atleast_3d(pred))).squeeze()
 
     # Prediction in data space
-    def predict_fn(x0, t, u=None, ei=None, ew=None, ea=None, device="cpu"):
+    def predict_fn(x0, t, u=None, p=None, ei=None, ew=None, ea=None, device="cpu"):
         """Predict trajectory in data space."""
         _x0 = _proc_x0(x0, device)
         if isinstance(t, np.ndarray):
@@ -224,6 +224,9 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
             _ew = _proc_ew(ew, device)
             _ea = _proc_ea(ea, device)
             _data = DynData(u=_u, ei=_ei, ew=_ew, ea=_ea)
+        if p is not None:
+            _data.p = torch.as_tensor(p, dtype=dtype, device=device)
+        _data.batch_size = _x0.shape[0] if _x0.ndim == 2 else 1
         with torch.no_grad():
             pred = model.predict(_x0, _data, t).cpu().numpy()
         return _proc_prd(pred)

@@ -6,14 +6,14 @@ from dymad.io import DynData
 from dymad.models.model_base import ModelBase
 from dymad.modules import make_autoencoder
 
-class ModelTempUCat(ModelBase):
+class TemplateUEnc(ModelBase):
     """
-    Base class for state-encoding with input concatenation.
+    Template class for joint encoding of states and inputs.
     Handles MLP-based encoder/decoder construction and common methods.
     Same architecture for both cont-time and disc-time.
 
-    - z = encoder(x)
-    - z_dot/z_next = Custom_Dynamics(z, u)
+    - z = encoder(x, u)
+    - z_dot/z_next = Custom_Dynamics(z)
     - x_hat = decoder(z)
     """
     GRAPH = False
@@ -23,6 +23,7 @@ class ModelTempUCat(ModelBase):
         super().__init__()
         self.n_total_state_features = data_meta.get('n_total_state_features')
         self.n_total_control_features = data_meta.get('n_total_control_features')
+        self.n_total_features = data_meta.get('n_total_features')
         self.latent_dimension = model_config.get('latent_dimension', 64)
         self.dtype = dtype
         self.device = device
@@ -32,25 +33,25 @@ class ModelTempUCat(ModelBase):
 
         # Input concatenation
         if self.n_total_control_features == 0:
-            self._zu_cat = self._zu_cat_auto
+            self.encoder = self._encoder_auto
         else:
-            self._zu_cat = self._zu_cat_ctrl
+            self.encoder = self._encoder_ctrl
 
         # Cache
         self.encoder_net  = None
         self.dynamics_net = None
         self.decoder_net  = None
 
-    def _build_autoencoder(self, hidden_dim, model_config, dtype, device):
+    def _build_autoencoder(self, model_config, dtype, device):
+        # Get layer depths from config
         enc_depth = model_config.get('encoder_layers', 2)
         dec_depth = model_config.get('decoder_layers', 2)
 
-        if self.n_total_state_features != hidden_dim:
-            if enc_depth == 0 or dec_depth == 0:
-                raise ValueError(f"Encoder depth {enc_depth}, decoder depth {dec_depth}: "
-                                 f"but n_total_state_features ({self.n_total_state_features}) "
-                                 f"must match hidden_dim ({hidden_dim})")
+        # Determine dimensions
+        enc_out_dim = self.latent_dimension if enc_depth > 0 else self.n_total_features
+        dec_inp_dim = self.latent_dimension if dec_depth > 0 else self.n_total_features
 
+        # Determine other options for MLP layers
         opts = {
             'activation'     : model_config.get('activation', 'prelu'),
             'weight_init'    : model_config.get('weight_init', 'xavier_uniform'),
@@ -62,16 +63,19 @@ class ModelTempUCat(ModelBase):
         }
         aec_type = model_config.get('autoencoder_type', 'smp')
 
+        # Build encoder/decoder networks
         self.encoder_net, self.decoder_net = make_autoencoder(
             type="mlp_"+aec_type,
-            input_dim=self.n_total_state_features,
+            input_dim=self.n_total_features,
             latent_dim=self.latent_dimension,
-            hidden_dim=hidden_dim,
+            hidden_dim=enc_out_dim,
             enc_depth=enc_depth,
             dec_depth=dec_depth,
             output_dim=self.n_total_state_features,
             **opts
         )
+
+        return enc_out_dim, dec_inp_dim
 
     def diagnostic_info(self) -> str:
         model_info = super().diagnostic_info()
@@ -81,34 +85,63 @@ class ModelTempUCat(ModelBase):
         model_info += f"Input order: {self.input_order}"
         return model_info
 
-    def encoder(self, w: DynData) -> torch.Tensor:
-        """Encode combined features to embedded space."""
+    def _encoder_ctrl(self, w: DynData) -> torch.Tensor:
+        """
+        Map features to latent space for systems with inputs.
+
+        Args:
+            w (DynData): Raw features
+
+        Returns:
+            torch.Tensor: Latent representation
+        """
+        return self.encoder_net(torch.cat([w.x, w.u], dim=-1))
+
+    def _encoder_auto(self, w: DynData) -> torch.Tensor:
+        """
+        Map features to latent space for autonomous systems.
+
+        Args:
+            w (DynData): Raw features
+
+        Returns:
+            torch.Tensor: Latent representation
+        """
         return self.encoder_net(w.x)
 
     def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """Decode from embedded space back to state space."""
+        """
+        Map from latent space back to state space.
+
+        Args:
+            z (torch.Tensor): Latent state
+
+        Returns:
+            torch.Tensor: Reconstructed state
+        """
         return self.decoder_net(z)
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """Compute dynamics in embedded space."""
-        return self.dynamics_net(self._zu_cat(z, w))
-
-    def _zu_cat_ctrl(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """Concatenate state and control inputs."""
-        raise NotImplementedError("Implement in derived class.")
-
-    def _zu_cat_auto(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """Concatenate state and control inputs."""
-        return z
-
-    def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Forward pass for the model.
+        """
+        Compute latent dynamics, derivative or next state.
 
         Args:
-            w: DynData obejct, containing state (x) and control (u) tensors.
+            z (torch.Tensor): Latent state
 
         Returns:
-            Tuple of (latent, latent_derivative, reconstruction)
+            torch.Tensor: Latent state derivative
+        """
+        return self.dynamics_net(z)
+
+    def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass through the model.
+
+        Args:
+            w (DynData): Input data containing state and control tensors
+
+        Returns:
+            Tuple of (latent, latent_derivative/latent_next, reconstruction)
         """
         z = self.encoder(w)
         z_dot = self.dynamics(z, w)
@@ -117,7 +150,7 @@ class ModelTempUCat(ModelBase):
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],
                 method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        """Predict trajectory using continuous-time integration.
+        """Predict trajectory using cont-time or disc-time integration.
 
         Args:
             x0: Initial state tensor(s):
@@ -139,30 +172,9 @@ class ModelTempUCat(ModelBase):
         """
         raise NotImplementedError("Implement in derived class.")
 
-    def linear_features(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute linear features, f, and outputs, dz, for the model.
 
-        dz = Af(z)
-
-        dz is the output of the dynamics, z_dot for cont-time, z_next for disc-time.
-        """
-        z = self.encoder(w)
-        return self._zu_cat(z, w), z
-
-    def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute linear evaluation, dz, and states, z, for the model.
-
-        dz = Af(z)
-
-        z is the encoded state, which will be used to compute the expected output.
-        """
-        z = self.encoder(w)
-        z_dot = self.dynamics(z, w)
-        return z_dot, z
-
-
-class ModelTempUCatGraphAE(ModelBase):
-    """Graph version of ModelTempUCat.
+class TemplateUEncGraphAE(ModelBase):
+    """Graph version of TemplateUEnc.
 
     The MLP autoencoder is replaced by GNN-based one.
 
@@ -175,6 +187,7 @@ class ModelTempUCatGraphAE(ModelBase):
         super().__init__()
         self.n_total_state_features = data_meta.get('n_total_state_features')
         self.n_total_control_features = data_meta.get('n_total_control_features')
+        self.n_total_features = data_meta.get('n_total_features')
         self.latent_dimension = model_config.get('latent_dimension', 64)
         self.dtype = dtype
         self.device = device
@@ -184,28 +197,32 @@ class ModelTempUCatGraphAE(ModelBase):
 
         # Input concatenation
         if self.n_total_control_features == 0:
-            self._zu_cat = self._zu_cat_auto
+            self.encoder = self._encoder_auto
         else:
-            self._zu_cat = self._zu_cat_ctrl
+            self.encoder = self._encoder_ctrl
 
         # Cache
         self.encoder_net  = None
         self.dynamics_net = None
         self.decoder_net  = None
 
-    def _build_autoencoder(self, hidden_dim, model_config, dtype, device):
+    def _build_autoencoder(self, model_config, dtype, device):
         # Get layer depths from config
         enc_depth = model_config.get('encoder_layers', 2)
         dec_depth = model_config.get('decoder_layers', 2)
 
-        # Determine other options for GNN layers
+        # Determine dimensions
+        enc_out_dim = self.latent_dimension if enc_depth > 0 else self.n_total_features
+        dec_inp_dim = self.latent_dimension if dec_depth > 0 else self.n_total_features
+
+        # Determine other options for MLP layers
         opts = {
-            'gcl'            : model_config.get('gcl', 'sage'),
-            'gcl_opts'       : model_config.get('gcl_opts', {}),
             'activation'     : model_config.get('activation', 'prelu'),
             'weight_init'    : model_config.get('weight_init', 'xavier_uniform'),
             'bias_init'      : model_config.get('bias_init', 'zeros'),
             'gain'           : model_config.get('gain', 1.0),
+            'gcl'            : model_config.get('gcl', 'sage'),
+            'gcl_opts'       : model_config.get('gcl_opts', {}),
             'end_activation' : model_config.get('end_activation', True),
             'dtype'          : dtype,
             'device'         : device
@@ -215,14 +232,16 @@ class ModelTempUCatGraphAE(ModelBase):
         # Build encoder/decoder networks
         self.encoder_net, self.decoder_net = make_autoencoder(
             type="gnn_"+aec_type,
-            input_dim=self.n_total_state_features,
+            input_dim=self.n_total_features,
             latent_dim=self.latent_dimension,
-            hidden_dim=hidden_dim,
+            hidden_dim=enc_out_dim,
             enc_depth=enc_depth,
             dec_depth=dec_depth,
             output_dim=self.n_total_state_features,
             **opts
         )
+
+        return enc_out_dim, dec_inp_dim
 
     def diagnostic_info(self) -> str:
         model_info = super().diagnostic_info()
@@ -232,29 +251,18 @@ class ModelTempUCatGraphAE(ModelBase):
         model_info += f"Input order: {self.input_order}"
         return model_info
 
-    def encoder(self, w: DynData) -> torch.Tensor:
-        # The GNN implementation outputs flattened features
-        # Here internal dynamics are node-wise, so we need to reshape
-        # the features to node*features_per_node again
+    def _encoder_ctrl(self, w: DynData) -> torch.Tensor:
+        xu_cat = torch.cat([w.xg, w.ug], dim=-1)
+        return w.g(self.encoder_net(xu_cat, w.ei, w.ew, w.ea))
+
+    def _encoder_auto(self, w: DynData) -> torch.Tensor:
         return w.g(self.encoder_net(w.xg, w.ei, w.ew, w.ea))
 
     def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        # Since the decoder outputs to the original space,
-        # which is assumed to be flattened, we can use the GNN decoder directly
-        # Note: the input, though, is still node-wise
         return self.decoder_net(z, w.ei, w.ew, w.ea)
 
     def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """Compute dynamics in Koopman space using bilinear form."""
-        return self.dynamics_net(self._zu_cat(z, w))
-
-    def _zu_cat_ctrl(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """Concatenate state and control inputs."""
-        raise NotImplementedError("Implement in derived class.")
-
-    def _zu_cat_auto(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """Concatenate state and control inputs."""
-        return z
+        return self.dynamics_net(z)
 
     def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         z = self.encoder(w)
@@ -265,22 +273,29 @@ class ModelTempUCatGraphAE(ModelBase):
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], method: str = 'dopri5', **kwargs) -> torch.Tensor:
         raise NotImplementedError("Implement in derived class.")
 
-    def linear_features(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute linear features, f, and outputs, dz, for the model.
 
-        Main difference with ModelTempUCat: the middle two dimensions are permuted, so that
-        the time dimension is the second last dimension, this is needed in
-        linear trainer to match the expected shape.
-        """
-        z = self.encoder(w)
-        f = self._zu_cat(z, w)
-        return f.permute(0, 2, 1, 3), z.permute(0, 2, 1, 3)
+class TemplateUEncGraphDyn(TemplateUEnc):
+    """Graph version of TemplateUEnc.
 
-    def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute linear evaluation, dz, and states, z, for the model.
+    The autoencoder is still MLP, but dynamics is expected to be GNN-based.
 
-        Same idea as in linear_features about the permutation.
-        """
-        z = self.encoder(w)
-        z_dot = self.dynamics(z, w)
-        return z_dot.permute(0, 2, 1, 3), z.permute(0, 2, 1, 3)
+    The autoencoder is applied per node.
+
+    Since n_total_state_features etc are per node, most of TemplateUEnc can be reused,
+    and only the encoder-dynamics-decoder interface needs to be changed.
+    """
+    GRAPH = True
+    CONT  = None
+
+    def _encoder_ctrl(self, w: DynData) -> torch.Tensor:
+        xu_cat = torch.cat([w.xg, w.ug], dim=-1)
+        return w.G(self.encoder_net(xu_cat))  # G is needed for external data structure
+
+    def _encoder_auto(self, w: DynData) -> torch.Tensor:
+        return w.G(self.encoder_net(w.xg))    # G is needed for external data structure
+
+    def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        return w.G(self.decoder_net(w.g(z)))  # G is needed for external data structure
+
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        return self.dynamics_net(w.g(z), w.ei, w.ew, w.ea)   # G is effectively applied in dynamics_net

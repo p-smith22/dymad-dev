@@ -3,11 +3,11 @@ import torch
 from typing import Dict, Union
 
 from dymad.io import DynData
-from dymad.models.model_temp_uenc import ModelTempUEnc, ModelTempUEncGraphAE
+from dymad.models.temp_uenc import TemplateUEnc, TemplateUEncGraphAE
 from dymad.models.prediction import predict_continuous, predict_discrete, predict_discrete_exp
 from dymad.modules import MLP
 
-class LDM(ModelTempUEnc):
+class LDM(TemplateUEnc):
     """Latent Dynamics Model (LDM)
 
     The encoder, dynamics, and decoder networks are implemented as MLPs.
@@ -73,7 +73,7 @@ class DLDM(LDM):
             return predict_discrete_exp(self, x0, ts, w, **kwargs)
         return predict_discrete(self, x0, ts, w, **kwargs)
 
-class GLDM(ModelTempUEncGraphAE):
+class GLDM(TemplateUEncGraphAE):
     """Graph Latent Dynamics Model (GLDM).
 
     Uses GNN for encoder/decoder and MLP for dynamics.

@@ -14,16 +14,17 @@ plt_logger.setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 def plot_trajectory(
-        traj, ts, model_name, us=None, labels=None, ifclose=True, prefix='.',
-        xidx=None, uidx=None, grid=None, xscl=None, uscl=None):
+        traj, ts, model_name=None, us=None, axes=None, labels=None, ifclose=True, prefix='.',
+        xidx=None, uidx=None, grid=None, xscl=None, uscl=None, cmp_err=True):
     """
     Plot trajectories with optional control inputs and save the figure.
 
     Args:
         traj (np.ndarray): Trajectory data, shape (n_steps, n_features) or (n_traj, n_steps, n_features)
         ts (np.ndarray): Time points corresponding to the trajectory data, shape (n_steps,)
-        model_name (str): Name of the model for the plot title and filename
+        model_name (str, optional): Name of the model for the plot title and filename
         us (np.ndarray, optional): Control inputs, shape (n_steps, n_controls)
+        axes (list, optional): List of axes to plot on. If None, creates new subplots
         labels (list, optional): Labels for each trajectory, length must match number of trajectories
         ifclose (bool): Whether to close the plot after saving
         prefix (str): Directory prefix for saving the plot
@@ -32,26 +33,81 @@ def plot_trajectory(
         grid (tuple, optional): Tuple (n_rows, n_cols) for subplot layout
         xscl (str, optional): Scaling mode for state features ('01', '-11', 'std', or 'none')
         uscl (str, optional): Scaling mode for control inputs ('01', '-11', 'std', or 'none')
+        cmp_err (bool): Whether to compute and display RMSE between trajectories
+
+    Returns:
+        axes (list): List of axes used for plotting
     """
     if traj.ndim == 2:
         traj = np.array([traj])
 
     Ntrj = len(traj)
-    assert Ntrj == len(labels), \
-        "Number of trajectories must match number of labels"
+    if labels is None:
+        labels = [None]*Ntrj
+    else:
+        assert Ntrj == len(labels), \
+            "Number of trajectories must match number of labels"
 
     # Plot the first trajectory and create the axes
-    _, ax = plot_one_trajectory(traj[0], ts, idx=0, us=us, axes=None, label=labels[0],
+    _, ax = plot_one_trajectory(traj[0], ts, idx=0, us=us, axes=axes, label=labels[0],
                                 xidx=xidx, uidx=uidx, grid=grid, xscl=xscl, uscl=uscl)
 
     if Ntrj > 1:
         # Add additional trajectories to the same axes
         for i in range(1, Ntrj):
-            rmse = np.linalg.norm(traj[0] - traj[i]) / (traj[0].shape[0] - 1)**0.5
+            lbl = labels[i]
+            if labels[i] is not None:
+                if cmp_err:
+                    rmse = np.linalg.norm(traj[0] - traj[i]) / (traj[0].shape[0] - 1)**0.5
+                    lbl = labels[i]+f" rmse: {rmse:4.3e}"
             plot_one_trajectory(
-                traj[i], ts, idx=i, us=None, axes=ax,
-                label=labels[i]+f" rmse: {rmse:4.3e}",
+                traj[i], ts, idx=i, us=None, axes=ax, label=lbl,
                 xidx=xidx, uidx=uidx, grid=grid, xscl=xscl, uscl=uscl)
+
+    # Adjust layout and save
+    plt.tight_layout()
+    if model_name is not None:
+        if prefix != '.':
+            os.makedirs(prefix, exist_ok=True)
+        plt.savefig(f'{prefix}/{model_name}_prediction.png', dpi=150, bbox_inches='tight',
+                    facecolor='white', edgecolor='none')
+    if ifclose:
+        plt.close()
+
+    return ax
+
+def plot_multi_trajs(
+        traj, ts, model_name, us=None, labels=None, ifclose=True, prefix='.',
+        xidx=None, uidx=None, grid=None, xscl=None, uscl=None):
+    """
+    Multi-trajectory version of plot_trajectory - comparison of batches of trajectories.
+    """
+    if traj.ndim == 3:
+        traj = np.array([traj])
+
+    Ntrj = len(traj[0])
+    assert len(traj) == len(labels), \
+        "Number of trajectories must match number of labels"
+    _us = [None]*Ntrj if us is None else us
+
+    # Update labels to include RMSE
+    for i in range(1, len(traj)):
+        rmse = np.sqrt(np.mean((traj[0] - traj[i])**2))
+        labels[i] = f"{labels[i]} rmse: {rmse:4.3e}"
+
+    # Plot the first trajectory and create the axes
+    ax = plot_trajectory(
+        np.array([_t[0] for _t in traj]),
+        ts, model_name=None, us=_us[0], axes=None, labels=labels,
+        ifclose=False, xidx=xidx, uidx=uidx, grid=grid, xscl=xscl, uscl=uscl, cmp_err=False)
+
+    if Ntrj > 1:
+        # Add additional trajectories to the same axes
+        for i in range(1, Ntrj):
+            ax = plot_trajectory(
+                np.array([_t[i] for _t in traj]),
+                ts, model_name=None, us=_us[i], axes=ax, labels=None,
+                ifclose=False, xidx=xidx, uidx=uidx, grid=grid, xscl=xscl, uscl=uscl)
 
     # Adjust layout and save
     plt.tight_layout()
@@ -139,17 +195,16 @@ def plot_one_trajectory(
         if axes is None:
             _scale_axes(ax[i], traj[:, idx_x[i]], xscl)
 
-    if axes is None:
-        if dim_u > 0:
-            # Plot only once as this is from data
-            offset = dim_x
-            for i in range(dim_u):
-                ax[offset + i].plot(ts, us[:, idx_u[i]], '-', color='#3498db', linewidth=2)
-                ax[offset + i].set_xlim([0, ts[-1]])
-                ax[offset + i].grid(True, alpha=0.3)
-                ax[offset + i].set_ylabel(f'Control {i+1}', fontsize=10)
+    if dim_u > 0:
+        # Plot only once as this is from data
+        offset = dim_x
+        for i in range(dim_u):
+            ax[offset + i].plot(ts, us[:, idx_u[i]], '-', color='#3498db', linewidth=2)
+            ax[offset + i].set_xlim([0, ts[-1]])
+            ax[offset + i].grid(True, alpha=0.3)
+            ax[offset + i].set_ylabel(f'Control {i+1}', fontsize=10)
 
-                _scale_axes(ax[offset + i], us[:, idx_u[i]], uscl)
+            _scale_axes(ax[offset + i], us[:, idx_u[i]], uscl)
 
     for i in range(n_cols):
         ax[-i-1].set_xlabel('Time', fontsize=10)

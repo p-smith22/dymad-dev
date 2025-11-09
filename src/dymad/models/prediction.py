@@ -136,12 +136,13 @@ def predict_continuous(
         u_intp = ControlInterpolator(_ts, _ws.u, order=order)
     else:
         logger.debug(f"predict_continuous: {'Batch' if is_batch else 'Single'} mode (autonomous)")
+        u_intp = lambda t: None
 
     z0 = model.encoder(_ws.get_step(0).set_x(_x0))
     def ode_func(t, z):
         _tk  = bucket(t)
         wtmp = _ws.get_step(_tk)
-        u    = u_intp(t) if _has_u else None
+        u    = u_intp(t)
         x    = model.decoder(z, wtmp.set_u(u))
         _, z_dot, _ = model(wtmp.set_x(x))
         return z_dot
@@ -153,6 +154,52 @@ def predict_continuous(
     x_traj = _proc_ztraj(z_traj, model, _ws, n_steps, is_batch)
 
     logger.debug(f"predict_continuous: Final trajectory shape {x_traj.shape}")
+    return x_traj
+
+def predict_continuous_np(
+    model,
+    x0: torch.Tensor,
+    ts: Union[np.ndarray, torch.Tensor],
+    ws: DynData = None,
+    method: str = 'dopri5',
+    order: str = 'cubic',
+    **kwargs
+) -> torch.Tensor:
+    """
+    Predict trajectory(ies) for continuous-time models with batch support.
+
+    No-projection version, meaning during ODE integration, we do not decode
+    back to the observation space and encode back; the decoding happens only at the end.
+    """
+    _x0, _ts, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
+    _ts = _ts[0]
+
+    def bucket(t):
+        return torch.searchsorted(_ts, t).clamp(1, _ts.numel()-1)
+
+    _has_u = _ws.u is not None
+    if _has_u:
+        logger.debug(f"predict_continuous_np: {'Batch' if is_batch else 'Single'} mode (controlled)")
+        u_intp = ControlInterpolator(_ts, _ws.u, order=order)
+    else:
+        logger.debug(f"predict_continuous_np: {'Batch' if is_batch else 'Single'} mode (autonomous)")
+        u_intp = lambda t: None
+
+    z0 = model.encoder(_ws.get_step(0).set_x(_x0))
+    def ode_func(t, z):
+        _tk  = bucket(t)
+        wtmp = _ws.get_step(_tk)
+        u    = u_intp(t)
+        z_dot = model.dynamics(z, wtmp.set_u(u))
+        return z_dot
+
+    logger.debug(f"predict_continuous_np: Starting ODE integration with shape {z0.shape}, method {method}, and interpolation order {order if _has_u else 'N/A'}")
+    z_traj = odeint(ode_func, z0, _ts, method=method, **kwargs)
+    logger.debug(f"predict_continuous_np: Completed integration, trajectory shape: {z_traj.shape}")
+
+    x_traj = _proc_ztraj(z_traj, model, _ws, n_steps, is_batch)
+
+    logger.debug(f"predict_continuous_np: Final trajectory shape {x_traj.shape}")
     return x_traj
 
 def predict_continuous_exp(
