@@ -17,7 +17,7 @@ def torch_to_jax(t: torch.Tensor) -> "jax.Array":
     return jax_dlpack.from_dlpack(t.detach())
 
 def jax_to_torch(a: "jax.Array", device: torch.device, dtype: torch.dtype) -> torch.Tensor:
-    t = torch_dlpack.from_dlpack(jax_dlpack.to_dlpack(a))
+    t = torch_dlpack.from_dlpack(a)
     return t.to(device=device, dtype=dtype)
 
 # -------------------- (Optional) tiny jit cache by id(f) --------------------
