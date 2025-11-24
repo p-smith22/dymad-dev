@@ -340,12 +340,9 @@ def predict_discrete_exp(
     """
     Predict trajectory(ies) for discrete-time models with batch support.
 
-    Autonomous case.  In discrete-time, this is equivalent to
-    repeated application of the dynamics.
+    In discrete-time, this is equivalent to repeated application of the dynamics.
     """
     _x0, _, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
-    if _ws is not None:
-        assert _ws.u is None, "predict_discrete_exp only supports autonomous case."
 
     logger.debug(f"predict_discrete: {'Batch' if is_batch else 'Single'} mode")
 

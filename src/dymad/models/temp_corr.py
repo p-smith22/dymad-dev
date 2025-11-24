@@ -77,13 +77,13 @@ class TemplateCorrAlg(ModelBase):
         model_info += f"Input order: {self.input_order}"
         return model_info
 
-    def _residual_ctrl(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+    def _residual_ctrl(self, z: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         """
         Map features to residual force for systems with inputs.
         """
-        return self.residual_net(torch.cat([z, w.u], dim=-1))
+        return self.residual_net(torch.cat([z, u], dim=-1))
 
-    def _residual_auto(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+    def _residual_auto(self, z: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         """
         Map features to residual force for autonomous systems.
         """
