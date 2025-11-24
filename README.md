@@ -65,6 +65,7 @@ If there are API errors such as some files not found, try deleting the auto-gene
 
 - Torch-fy transform classes
 - Internal normalization in PIROM
+- RTD for PIROM DT case
 
 - Symmetry analysis
 - Torch-fy Manifold class

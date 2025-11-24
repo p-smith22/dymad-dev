@@ -5,6 +5,7 @@ from dymad.numerics.linalg import check_direction, check_orthogonality, eig_low_
     mode_split, randomized_svd, real_lowrank_from_eigpairs, scaled_eig, truncate_sequence, truncated_svd
 from dymad.numerics.manifold import DimensionEstimator, Manifold, ManifoldAltTree, ManifoldAnalytical, tangent_1circle, tangent_2torus
 from dymad.numerics.spectrum import generate_coef, rational_kernel
+from dymad.numerics.time_int import fe_step, rk4_step
 from dymad.numerics.weak import generate_weak_weights
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "eig_low_rank",
     "expm_full_rank",
     "expm_low_rank",
+    "fe_step",
     "generate_coef",
     "generate_weak_weights",
     "logm_low_rank",
@@ -33,6 +35,7 @@ __all__ = [
     "randomized_svd",
     "rational_kernel",
     "real_lowrank_from_eigpairs",
+    "rk4_step",
     "scaled_eig",
     "tangent_1circle",
     "tangent_2torus",
