@@ -137,13 +137,13 @@ class DriverBase:
     #         logger.info(f"No checkpoint found at {self.checkpoint_path}, using the yaml config.")
     #         return {'config': self.config}
 
-    def _create_trajectory_manager(self, mode: str) -> Union[TrajectoryManager, TrajectoryManagerGraph]:
+    def _create_trajectory_manager(self, data_key: str) -> Union[TrajectoryManager, TrajectoryManagerGraph]:
         md = {'config': copy.deepcopy(self.base_config)}
         if self.model_class.GRAPH:
-            tm = TrajectoryManagerGraph(md, mode=mode, device=self.device)
+            tm = TrajectoryManagerGraph(md, data_key=data_key, device=self.device)
         else:
-            tm = TrajectoryManager(md, mode=mode, device=self.device)
-        tm.load_data()
+            tm = TrajectoryManager(md, data_key=data_key, device=self.device)
+        tm.prepare_data()
         return tm
 
     def _build_data_state(self, fold_id: int, cfg: Dict[str, Any]) -> RunState:
@@ -271,13 +271,13 @@ class SingleSplitDriver(DriverBase):
         if 'data_valid' in self.base_config:
             # A separate validation dataset is specified
             # This is necessary esp when valid set format is different from train set
-            self.train_sets = [self._create_trajectory_manager(mode='train')]
-            self.valid_sets = [self._create_trajectory_manager(mode='valid')]
+            self.train_sets = [self._create_trajectory_manager(data_key='train')]
+            self.valid_sets = [self._create_trajectory_manager(data_key='valid')]
         else:
             # The same dataset is used for training and validation
             # We will adjust later
-            self.train_sets = [self._create_trajectory_manager(mode='train')]
-            self.valid_sets = [self._create_trajectory_manager(mode='train')]
+            self.train_sets = [self._create_trajectory_manager(data_key='train')]
+            self.valid_sets = [self._create_trajectory_manager(data_key='train')]
 
     def _init_fold_split(self):
         """

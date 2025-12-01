@@ -1,3 +1,4 @@
+import copy
 import logging
 import numpy as np
 import torch
@@ -142,25 +143,16 @@ class TrajectoryManager:
     def __init__(
             self,
             metadata: Dict,
-            mode: str = 'train',
+            data_key: str | None = None,
             device: torch.device = torch.device("cpu")):
-        self.metadata = metadata
-        self.dtype = torch.double if self.metadata['config']['data'].get('double_precision', False) else torch.float
+        self.metadata = copy.deepcopy(metadata)
         self.device = device
-        if mode == 'train':
-            self.data_key = 'data'
-        elif mode == 'valid':
-            self.data_key = 'data_valid'
-        elif mode == 'test':
-            self.data_key = 'data_test'
-        else:
-            raise ValueError(f"Unsupported mode: {mode}")
-        self.data_path = self.metadata['config'][self.data_key]['path']
 
         self._init_transforms()
-        self._load_metadata(metadata)
+        self._load_metadata(self.metadata, data_key)
 
     def _init_transforms(self) -> None:
+        self._transform_fitted = False
         self._data_transform_x = make_transform(self.metadata['config'].get('transform_x', None))
         self._data_transform_y = make_transform(self.metadata['config'].get('transform_y', None))
         self._data_transform_p = make_transform(self.metadata['config'].get('transform_p', None))
@@ -171,7 +163,18 @@ class TrajectoryManager:
         else:
             self.metadata["delay"] = max(self._data_transform_x.delay, self._data_transform_u.delay)
 
-    def _load_metadata(self, metadata: Dict) -> None:
+    def _load_metadata(self, metadata: Dict, data_key: str) -> None:
+        if "data_key" in metadata:
+            self.data_key = metadata["data_key"]
+        else:
+            if data_key == 'train':
+                self.data_key = 'data'
+            else:
+                self.data_key = 'data_' + data_key
+            self.metadata["data_key"] = self.data_key
+        self.data_path = self.metadata['config'][self.data_key]['path']
+        self.dtype = torch.double if self.metadata['config'][self.data_key].get('double_precision', False) else torch.float
+
         if "data_index" in metadata:
             # If data_index is already in metadata, we assume the dataset has been processed before.
             assert metadata["n_data"] == len(metadata["data_index"])
@@ -192,7 +195,7 @@ class TrajectoryManager:
         After this step, data transformations need to be refitted.
         """
         self.metadata['config'].update(config)
-        self._transform_fitted = False
+        self._init_transforms()
         logger.info("New config loaded.")
 
     def set_transforms(
@@ -202,7 +205,7 @@ class TrajectoryManager:
             ) -> None:
         if (metadata is None and trajmgr is None) or (metadata is not None and trajmgr is not None):
             raise ValueError("Either metadata or trajmgr must be provided, but not both.")
-        
+
         if metadata is not None:
             self._data_transform_x.load_state_dict(metadata["transform_x_state"])
             if "transform_y_state" in metadata:
@@ -219,6 +222,10 @@ class TrajectoryManager:
                 self._data_transform_u.load_state_dict(trajmgr._data_transform_u.state_dict())
             if hasattr(trajmgr, "_data_transform_p") and trajmgr._data_transform_p is not None:
                 self._data_transform_p.load_state_dict(trajmgr._data_transform_p.state_dict())
+        self.metadata["transform_x_state"] = self._data_transform_x.state_dict()
+        self.metadata["transform_y_state"] = self._data_transform_y.state_dict() if self._data_transform_y is not None else None
+        self.metadata["transform_u_state"] = self._data_transform_u.state_dict() if self._data_transform_u is not None else None
+        self.metadata["transform_p_state"] = self._data_transform_p.state_dict() if self._data_transform_p is not None else None
         self._transform_fitted = True
 
     def set_data_index(self, index: Union[torch.Tensor, List[int]] | None = None) -> None:
@@ -238,20 +245,19 @@ class TrajectoryManager:
 
         logger.info(f"Data index set: {self.metadata['n_data']} trajectories.")
 
-    def process_data(self, split) -> Tuple[Tuple[DataLoader, DataLoader, DataLoader], Tuple[torch.Tensor, torch.Tensor, torch.Tensor], dict]:
+    def prepare_data(self) -> None:
         """
-        Step 3 of process_all
+        Handy function to load and truncate data in one call.
         """
+        self.load_data()
+        self.data_truncation()
 
-        # TODO
-
-
-
-
-
-
-        self.apply_data_transformations()  # Assembles the datasets
-        self.create_dataloaders()          # Creates the dataloaders, depending on the model type
+    def process_data(self) -> Tuple[Tuple[DataLoader, DataLoader, DataLoader], Tuple[torch.Tensor, torch.Tensor, torch.Tensor], dict]:
+        """
+        Latter half of process_all
+        """
+        self.apply_data_transformations()
+        self.create_dataloaders()
 
         logger.info(f"Data processing complete. Data size: {len(self.dataset)}.")
         return self.dataloader, self.dataset, self.metadata
@@ -261,9 +267,9 @@ class TrajectoryManager:
         Returns:
             A tuple containing: dataloader, dataset, metadata
         """
-        self.load_data()
-        self.data_truncation()
-        self.set_data_index()
+        self.prepare_data()
+        if self.data_index is None:
+            self.set_data_index()
         res = self.process_data()
         return res
 
@@ -587,11 +593,11 @@ class TrajectoryManagerGraph(TrajectoryManager):
     def __init__(
             self,
             metadata: Dict,
-            mode: str = 'train',
+            data_key: str = 'train',
             device: torch.device = torch.device("cpu"),
             adj: Optional[Union[torch.Tensor, np.ndarray]] = None
             ):
-        super().__init__(metadata, mode, device)
+        super().__init__(metadata, data_key, device)
         self.adj = adj  # Store the adjacency matrix if provided externally
 
     def _init_transforms(self) -> None:
@@ -626,6 +632,8 @@ class TrajectoryManagerGraph(TrajectoryManager):
                 self._data_transform_ea.load_state_dict(trajmgr._data_transform_ea.state_dict())
             if hasattr(trajmgr, "_data_transform_p") and trajmgr._data_transform_p is not None:
                 self._data_transform_p.load_state_dict(trajmgr._data_transform_p.state_dict())
+        self.metadata["transform_ew_state"] = self._data_transform_ew.state_dict()
+        self.metadata["transform_ea_state"] = self._data_transform_ea.state_dict() if self._data_transform_ea is not None else None
         self._transform_fitted = True
 
     def load_data(self, path: str) -> None:
