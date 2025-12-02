@@ -196,15 +196,8 @@ def test_trajmgr(trj_data, case):
     trn_metadata = copy.deepcopy(trn.metadata)
     vld_metadata = copy.deepcopy(vld.metadata)
 
-    if case == 0:
-        new_trn = TrajectoryManager(trn_metadata, device="cpu")
-        new_vld = TrajectoryManager(vld_metadata, device="cpu")
-        print("------------")
-        print(new_vld.data_key, new_vld.data_path)
-        print("------------")
-    else:
-        new_trn = TrajectoryManager(trn_metadata, device="cpu")
-        new_vld = TrajectoryManager(vld_metadata, device="cpu")
+    new_trn = TrajectoryManager(trn_metadata, device="cpu")
+    new_vld = TrajectoryManager(vld_metadata, device="cpu")
     new_trn.process_all()
     new_vld.process_all()
 

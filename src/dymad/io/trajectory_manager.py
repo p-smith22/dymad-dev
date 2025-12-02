@@ -273,7 +273,7 @@ class TrajectoryManager:
         res = self.process_data()
         return res
 
-    def load_data(self) -> None:
+    def load_data(self) -> Dict:
         """
         Load raw data from a binary file.
 
@@ -361,6 +361,8 @@ class TrajectoryManager:
         self.p = _process_data(
             None if vals[4] is None else np.array(vals[4]),
             self.x, "p", base_dim=1, offset=1)
+        
+        return data
 
     def data_truncation(self) -> None:
         """
@@ -618,8 +620,7 @@ class TrajectoryManagerGraph(TrajectoryManager):
             metadata: Dict | None = None,
             trajmgr: Optional['TrajectoryManagerGraph'] = None
             ) -> None:
-        if (metadata is None and trajmgr is None) or (metadata is not None and trajmgr is not None):
-            raise ValueError("Either metadata or trajmgr must be provided, but not both.")
+        super().set_transforms(metadata, trajmgr)
 
         if metadata is not None:
             if "transform_ew_state" in metadata:
@@ -636,12 +637,10 @@ class TrajectoryManagerGraph(TrajectoryManager):
         self.metadata["transform_ea_state"] = self._data_transform_ea.state_dict() if self._data_transform_ea is not None else None
         self._transform_fitted = True
 
-    def load_data(self, path: str) -> None:
-        super().load_data(path)
+    def load_data(self) -> Dict:
+        data = super().load_data()
 
-        # Load the binary data from the file again.
-        # by now t/x/y/u/p should have been loaded.
-        data = np.load(path, allow_pickle=True)
+        # By now t/x/y/u/p should have been loaded.
         ei = data.get('ei', None)
         ew = data.get('ew', None)
         ea = data.get('ea', None)
@@ -674,6 +673,8 @@ class TrajectoryManagerGraph(TrajectoryManager):
         self.n_nodes = int(np.max(_n))
         self.metadata["n_nodes"] = self.n_nodes
         logger.info(f"Number of nodes detected: {self.n_nodes}")
+
+        return data
 
     def data_truncation(self) -> None:
         super().data_truncation()

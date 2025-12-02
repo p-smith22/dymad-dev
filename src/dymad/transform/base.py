@@ -18,6 +18,8 @@ class Transform(ABC):
     """
     def __init__(self, **kwargs):  # Optional
         self.delay = 0  # Default delay is 0 for non-delay transforms.
+        self._inp_dim = None
+        self._out_dim = None
 
     def fit(self, data: Array) -> None:  # Optional
         """
