@@ -7,8 +7,7 @@ from dymad.utils import plot_trajectory
 
 def prediction_rmse(model,
                    truth: DynData,
-                   ts: Union[np.ndarray, torch.Tensor],
-                   metadata: dict,
+                   config: dict,
                    model_name: str,
                    method: str = 'dopri5',
                    plot: bool = False,
@@ -19,9 +18,8 @@ def prediction_rmse(model,
     Args:
         model (torch.nn.Module): The model to evaluate (any model with a predict method)
         truth (DynData): Ground truth trajectory data
-        ts (Union[np.ndarray, torch.Tensor]): Time points for the trajectory
         model_name (str): Name of the model to save the plot
-        metadata (dict): Metadata dictionary with n_state_features and n_control_features
+        config (dict): Configuration dictionary possibly with plotting settings
         method (str): ODE solver method (for models that use ODE solvers)
         plot (bool): Whether to plot the predicted vs ground truth trajectories
         prefix (str): Path prefix for saving plots
@@ -34,6 +32,7 @@ def prediction_rmse(model,
         x_truth = truth.x
         x0 = truth.x[:, 0]
         us = truth.u
+        ts = truth.t
 
         # Make prediction
         x_pred = model.predict(x0, truth, ts, method=method)
@@ -45,8 +44,8 @@ def prediction_rmse(model,
 
         if plot:
             _us = None if us is None else us.detach().cpu().numpy().squeeze(0)
-            plotting_config = metadata.get('config', {}).get('plotting', {})
-            plot_trajectory(np.array([x_truth, x_pred]), ts, model_name,
+            plotting_config = config.get('plotting', {})
+            plot_trajectory(np.array([x_truth, x_pred]), ts.squeeze(), model_name,
                             us=_us, labels=['Truth', 'Prediction'], prefix=prefix,
                             **plotting_config)
 

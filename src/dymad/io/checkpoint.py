@@ -99,15 +99,13 @@ def _atleast_3d(x):
         return np.expand_dims(x, axis=0)
     return x
 
-def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
+def load_model(model_class, checkpoint_path):
     """
     Load a model from a checkpoint file.
 
     Args:
         model_class (torch.nn.Module): The class of the model to load.
         checkpoint_path (str): Path to the checkpoint file.
-        config_path (str, optional): Path to the configuration file, used as backup.  Deprecated.
-        config_mod (dict, optional): Dictionary to merge into the config.  Deprecated.
 
     Returns:
         tuple: A tuple containing the model and a prediction function.
@@ -116,36 +114,33 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
         - callable: A function to predict trajectories in data space.
     """
     chkpt = torch.load(checkpoint_path, weights_only=False)
-    md = chkpt['metadata']
-    dtype = torch.double if md['config']['data'].get('double_precision', False) else torch.float
+    cfg = chkpt['config']
+    md = chkpt['train_md']
+    dtype = torch.double if cfg['data'].get('double_precision', False) else torch.float
     torch.set_default_dtype(dtype)   # GNNs use the default dtype, so we need to set it here
 
     # Model
-    if config_path is not None:
-        config = load_config(config_path, config_mod)
-        model_config = md['config'].get('model', config['model'])
-    else:
-        model_config = md['config'].get('model', None)
+    model_config = cfg.get('model', None)
     model = model_class(model_config, md, dtype=dtype)
     model.load_state_dict(chkpt['model_state_dict'])
 
     # Data transformations
-    _data_transform_x = make_transform(md['config'].get('transform_x', None))
+    _data_transform_x = make_transform(cfg.get('transform_x', None))
     _data_transform_x.load_state_dict(md["transform_x_state"])
 
     _has_u = md.get('transform_u_state', None) is not None
     if _has_u:
-        _data_transform_u = make_transform(md['config'].get('transform_u', None))
+        _data_transform_u = make_transform(cfg.get('transform_u', None))
         _data_transform_u.load_state_dict(md["transform_u_state"])
 
-    _has_ew = md['config'].get('transform_ew', None) is not None
+    _has_ew = cfg.get('transform_ew', None) is not None
     if _has_ew:
-        _data_transform_ew = make_transform(md['config'].get('transform_ew', None))
+        _data_transform_ew = make_transform(cfg.get('transform_ew', None))
         _data_transform_ew.load_state_dict(md["transform_ew_state"])
 
-    _has_ea = md['config'].get('transform_ea', None) is not None
+    _has_ea = cfg.get('transform_ea', None) is not None
     if _has_ea:
-        _data_transform_ea = make_transform(md['config'].get('transform_ea', None))
+        _data_transform_ea = make_transform(cfg.get('transform_ea', None))
         _data_transform_ea.load_state_dict(md["transform_ea_state"])
 
     # Data processing

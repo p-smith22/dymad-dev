@@ -47,8 +47,8 @@ labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0
 iftrn = 1
-ifplt = 0
-ifprd = 0
+ifplt = 1
+ifprd = 1
 
 if ifdat:
     sampler = TrajectorySampler(f, g, config='lti_data.yaml', config_mod=config_chr)
@@ -67,7 +67,7 @@ if iftrn:
         trainer.train()
 
 if ifplt:
-    npz_files = [f'results/lti_{mdl}_summary.npz' for mdl in labels]
+    npz_files = [f'lti_{mdl}_c0_f0' for mdl in labels]
     npzs = plot_summary(npz_files, labels = labels, ifclose=False)
     for lbl, npz in zip(labels, npzs):
         print(f"Epoch time: {lbl} - {npz['avg_epoch_time']}")
@@ -83,7 +83,8 @@ if ifprd:
     res = [x_data]
     for _i in IDX:
         mdl, MDL = cases[_i]['name'], cases[_i]['model']
-        _, prd_func = load_model(MDL, f'lti_{mdl}.pt', f'lti_{mdl}.yaml')
+        # _, prd_func = load_model(MDL, f'lti_{mdl}.pt', f'lti_{mdl}.yaml')
+        _, prd_func = load_model(MDL, f'checkpoints/lti_{mdl}_c0_f0.pt')
 
         with torch.no_grad():
             _pred = prd_func(x_data, t_data, u=u_data)

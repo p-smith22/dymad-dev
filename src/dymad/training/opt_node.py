@@ -30,32 +30,34 @@ class OptNODE(OptBase):
     def __init__(
         self,
         config: Dict[str, Any],
+        config_phase: Dict[str, Any],
         model_class: Type[torch.nn.Module],
         run_state: RunState,
         device: torch.device,
+        dtype: torch.dtype,
     ):
-        super().__init__(config, model_class, run_state, device)
+        super().__init__(config, config_phase, model_class, run_state, device, dtype)
 
         # ODE solver settings
-        self.ode_method = self.config["training"].get("ode_method", "dopri5")
-        self.ode_args = self.config["training"].get("ode_args", {})
+        self.ode_method = self.config_phase.get("ode_method", "dopri5")
+        self.ode_args = self.config_phase.get("ode_args", {})
 
         # Trajectory chopping
-        self.chop_mode = self.config["training"].get("chop_mode", "initial")
+        self.chop_mode = self.config_phase.get("chop_mode", "initial")
         assert self.chop_mode in ["initial", "unfold"], f"Invalid chop_mode: {self.chop_mode}"
-        self.chop_step = self.config["training"].get("chop_step", 1.0)
+        self.chop_step = self.config_phase.get("chop_step", 1.0)
         assert self.chop_step > 0, f"Chop step must be positive. Got: {self.chop_step}"
 
         # Optional: minimum LR default for NODE
-        self.config["training"].setdefault("min_learning_rate", 5e-5)
+        self.config_phase.setdefault("min_learning_rate", 1e-6)
 
         # Sweep settings
-        sweep_lengths = self.config["training"].get("sweep_lengths", [len(self.t)])
-        epoch_step = self.config["training"].get(
-            "sweep_epoch_step", self.config["training"]["n_epochs"]
+        sweep_lengths = self.config_phase.get("sweep_lengths", [None])
+        epoch_step = self.config_phase.get(
+            "sweep_epoch_step", self.config_phase["n_epochs"]
         )
-        sweep_tols = self.config["training"].get("sweep_tols", None)
-        sweep_mode = self.config["training"].get("sweep_mode", "skip")
+        sweep_tols = self.config_phase.get("sweep_tols", None)
+        sweep_mode = self.config_phase.get("sweep_mode", "skip")
 
         sweep_scheduler = make_scheduler(
             scheduler_type="sweep",
@@ -96,7 +98,7 @@ class OptNODE(OptBase):
         # Initial states and time vector
         init_states = B.x[:, 0, :]  # (batch_size, n_total_state_features)
         # Use the actual time points from trajectory manager
-        ts = self.t[:num_steps].to(self.device)
+        ts = B.t[:, :num_steps]
 
         # Batched NODE prediction
         predictions = self.model.predict(
@@ -112,7 +114,7 @@ class OptNODE(OptBase):
         loss_dict = {"dynamics": dynamics_loss}
 
         # Optional reconstruction loss
-        if self.config["training"].get("use_recon_loss", True):
+        if self.config_phase.get("use_recon_loss", True):
             _, _, x_hat = self.model(B)
             recon_loss = self.criterion(B.x, x_hat.view(*B.x.shape))
             loss_dict["recon"] = recon_loss

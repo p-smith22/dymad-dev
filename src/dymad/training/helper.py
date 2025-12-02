@@ -7,7 +7,8 @@ from typing import Any, Dict, Iterable, List, Optional
 @dataclass
 class RunState:
     # Persistent
-    config: Dict[str, Any]
+    config: Optional[Dict[str, Any]]
+    device: Optional[torch.device] = None
     epoch: int = 0
     best_loss: float = float("inf")
     hist: List[Any] = field(default_factory=list)
@@ -28,15 +29,11 @@ class RunState:
     train_md: Optional[Dict[str, Any]] = None
     valid_md: Optional[Dict[str, Any]] = None
 
-    # LS updater (optional)
-    ls_updater: Any = None
-    ls_config: Optional[Dict[str, Any]] = None
-
     def to_checkpoint(self) -> Dict[str, Any]:
         """Serialize the persistent subset of state."""
         return {
             "config": self.config,
-            "metadata": self.metadata,
+            "device": self.device,
             "epoch": self.epoch,
             "best_loss": self.best_loss,
             "hist": self.hist,
@@ -48,6 +45,8 @@ class RunState:
             "scheduler_state_dicts": [
                 scheduler.state_dict() for scheduler in self.schedulers if hasattr(scheduler, "state_dict")
             ],
+            "train_md": self.train_md,
+            "valid_md": self.valid_md,
         }
 
     @classmethod
@@ -69,7 +68,6 @@ class RunState:
 
         return cls(
             config=ckpt.get("config", {}),
-            metadata=ckpt.get("metadata", {}),
             epoch=ckpt.get("epoch", 0),
             best_loss=ckpt.get("best_loss", float("inf")),
             hist=ckpt.get("hist", []),
@@ -79,6 +77,8 @@ class RunState:
             model=model,
             optimizer=optimizer,
             schedulers=schedulers,
+            train_md=ckpt.get("train_md", {}),
+            valid_md=ckpt.get("valid_md", {}),
         )
 
 

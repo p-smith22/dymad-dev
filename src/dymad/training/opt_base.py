@@ -34,13 +34,17 @@ class OptBase:
     def __init__(
         self,
         config: Dict[str, Any],
+        config_phase: Dict[str, Any],
         model_class: Type[torch.nn.Module],
         run_state: RunState,
         device: torch.device,
+        dtype: torch.dtype,
     ):
         self.config = copy.deepcopy(config)
+        self.config_phase = copy.deepcopy(config_phase)
         self.model_class = model_class
         self.device = device
+        self.dtype = dtype
 
         self.convergence_tolerance_reached = False
 
@@ -51,7 +55,7 @@ class OptBase:
         #     dynamics: 1.0
         #     recon: 0.5
         #     physics: 10.0
-        self.loss_weights: Dict[str, float] = self.config["training"].get(
+        self.loss_weights: Dict[str, float] = self.config_phase.get(
             "loss_weights", {}
         )
 
@@ -59,6 +63,7 @@ class OptBase:
         self.model_name = self.config["model"]["name"]
         self.checkpoint_path = self.config["path"]["checkpoint_prefix"] + "_checkpoint.pt"
         self.best_model_path = self.config["path"]["checkpoint_prefix"] + ".pt"
+        os.makedirs(self.config["path"]["results_prefix"], exist_ok=True)
         self.results_prefix  = self.config["path"]["results_prefix"]
 
         ifloaded = self.load_checkpoint()
@@ -82,14 +87,14 @@ class OptBase:
         logger.info(f"Using device: {self.device}")
         logger.info(f"Double precision: {self.config['data'].get('double_precision', False)}")
         logger.info(
-            f"Epochs: {self.config['training']['n_epochs']}, "
-            f"Save interval: {self.config['training']['save_interval']}"
+            f"Epochs: {self.config_phase['n_epochs']}, "
+            f"Save interval: {self.config_phase['save_interval']}"
         )
 
     def _setup_model(self) -> None:
         """Setup model, optimizer, schedulers, and criterion."""
         self.model = self.model_class(
-            self.config["model"], self.metadata, dtype=self.dtype, device=self.device
+            self.config["model"], self.train_md, dtype=self.dtype, device=self.device
         ).to(self.device)
 
         if self.config["data"].get("double_precision", False):
@@ -97,8 +102,8 @@ class OptBase:
 
         # By default there is only one scheduler.
         # There might be more, e.g., in OptNODE with sweep scheduler.
-        lr = float(self.config["training"].get("learning_rate", 1e-3))
-        gamma = float(self.config["training"].get("decay_rate", 0.999))
+        lr = float(self.config_phase.get("learning_rate", 1e-3))
+        gamma = float(self.config_phase.get("decay_rate", 0.999))
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.schedulers = [make_scheduler(
             torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=gamma)
@@ -107,12 +112,12 @@ class OptBase:
 
     def _setup_ls(self) -> None:
         """Setup LSUpdater if requested."""
-        if self.config["training"].get("ls_update", False):
-            cfg = self.config["training"]["ls_update"]
+        if self.config_phase.get("ls_update", False):
+            cfg = self.config_phase["ls_update"]
             self._ls = LSUpdater(
                 method=cfg.get("method", "full"),
                 model=self.model,
-                dt=self.metadata["dt_and_n_steps"][0][0],
+                dt=self.train_md["dt_and_n_steps"][0][0],
                 params=cfg.get("params", None),
                 **cfg.get("kwargs", {}),
             )
@@ -143,19 +148,17 @@ class OptBase:
           - data-only: model/optimizer/schedulers None -> we set them up fresh.
           - full: everything present -> we reuse all.
         """
-        self.config = state.config
-        self.metadata = state.metadata
-
         # Data
         self.train_set = state.train_set
         self.valid_set = state.valid_set
         self.train_loader = state.train_loader
         self.valid_loader = state.valid_loader
+        self.train_md = state.train_md     # Only need dimension info
+        self.valid_md = state.valid_md
 
         # If model is None, this is "data-only" state: build model from scratch
         if state.model is None or state.optimizer is None or not state.schedulers:
             self._setup_model()
-            self._setup_ls()
 
             self.start_epoch = 0
             self.best_loss = float("inf")
@@ -164,8 +167,6 @@ class OptBase:
             self.epoch_times = []
         else:
             self.model = state.model.to(self.device)
-            self._ls = state.ls_updater
-            self._ls_config = state.ls_config
             self.optimizer = state.optimizer
             self.schedulers = state.schedulers
             self.criterion = state.optimizer.defaults.get("criterion", self.criterion)
@@ -175,12 +176,13 @@ class OptBase:
             self.hist = list(state.hist)
             self.rmse = list(state.rmse)
             self.epoch_times = []
+        self._setup_ls()
 
     def export_run_state(self, epoch: int) -> RunState:
         """Package the current trainer state into a RunState."""
         return RunState(
             config=self.config,
-            metadata=self.metadata,
+            device=self.device,
             epoch=epoch,
             best_loss=self.best_loss,
             hist=list(self.hist),
@@ -194,8 +196,8 @@ class OptBase:
             valid_set=self.valid_set,
             train_loader=self.train_loader,
             valid_loader=self.valid_loader,
-            ls_updater=self._ls,
-            ls_config=self.config["training"].get("ls_update", None),
+            train_md=self.train_md,
+            valid_md=self.valid_md,
         )
 
     # ------------------------------------------------------------------
@@ -205,7 +207,7 @@ class OptBase:
     def load_checkpoint(self) -> None:
         """If checkpoint exists and config requires, load it into the current model/optimizer/schedulers."""
         checkpoint_path = None
-        load_from_checkpoint = self.config['training']['load_checkpoint']
+        load_from_checkpoint = self.config_phase.get('load_checkpoint', False)
         if isinstance(load_from_checkpoint, str):
             checkpoint_path = load_from_checkpoint
         elif load_from_checkpoint:
@@ -253,7 +255,7 @@ class OptBase:
             self.best_loss = val_loss
             self.convergence_epoch = epoch+1
             self.save_checkpoint(epoch, self.best_model_path)
-            logger.info(f"New best model at epoch {epoch}, val_loss={val_loss:.6f}")
+            logger.info(f"New best model at epoch {epoch}, val_loss={val_loss:.4e}")
             return True
         return False
 
@@ -353,7 +355,7 @@ class OptBase:
                 logger.info("Resetting best loss due to scheduler change.")
 
         # Enforce minimum LR
-        min_lr = float(self.config["training"].get("min_learning_rate", 1e-6))
+        min_lr = float(self.config_phase.get("min_learning_rate", 1e-6))
         if min_lr > 0.0:
             for param_group in self.optimizer.param_groups:
                 if param_group["lr"] < min_lr:
@@ -409,18 +411,18 @@ class OptBase:
 
         prediction_rmse_func = self.get_prediction_rmse_func()
         rmse_values = [
-            prediction_rmse_func(self.model, trajectory, trajectory.t, self.metadata, self.model_name,
+            prediction_rmse_func(self.model, trajectory, self.config, self.model_name,
                                  plot=plot, prefix=self.results_prefix)
             for trajectory in dataset
         ]
 
         return sum(rmse_values) / len(rmse_values)
 
-    def train(self) -> None:
+    def train(self) -> int:
         """Run full training loop."""
 
-        n_epochs = self.config['training']['n_epochs']
-        save_interval = self.config['training']['save_interval']
+        n_epochs = self.config_phase['n_epochs']
+        save_interval = self.config_phase['save_interval']
 
         self.convergence_epoch = None
         self.epoch_times = []
@@ -551,3 +553,5 @@ class OptBase:
             info = f"{results[key]:.4e}" if isinstance(results[key], float) else str(results[key])
             logger.info(f"{key}: {info}")
         logger.info(f"Summary and loss/rmse histories saved to {file_name}")
+
+        return epoch

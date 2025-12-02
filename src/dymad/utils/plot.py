@@ -235,8 +235,6 @@ def plot_hist(hist, epoch, model_name, ifclose=True, prefix='.'):
                  label='Training', alpha=0.8)
     plt.semilogy(_e, _h[1], '-', color='#e74c3c', linewidth=2,
                  label='Validation', alpha=0.9)
-    plt.semilogy(_e, _h[2], '-', color='#2ecc71', linewidth=2,
-                 label='Test', alpha=0.9)
 
     # Styling
     plt.xlim([_e[0], _e[-1]+1])
@@ -268,7 +266,8 @@ def plot_summary(npz_files, labels=None, ifscl=True, ifclose=True, prefix='.'):
         ifclose (bool): Whether to close the plot after saving.
         prefix (str): Directory prefix for saving the plot.
     """
-    npzs = [np.load(_f) for _f in npz_files]
+    _files = [f"results/{npz}/{npz}_summary.npz" for npz in npz_files]
+    npzs = [np.load(_f) for _f in _files]
     ax = None
     for idx, npz in enumerate(npzs):
         label = labels[idx] if labels is not None else f'Run {idx+1}'
@@ -316,7 +315,7 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
     ax[0].legend()
 
     ax[1].semilogy(e_rmse, h_rmse[0], '-',  color=clr, label=f'{label}, Train')
-    ax[1].semilogy(e_rmse, h_rmse[2], '--', color=clr, label=f'{label}, Test')
+    ax[1].semilogy(e_rmse, h_rmse[1], '--', color=clr, label=f'{label}, Validation')
     ax[1].set_title('Trajectory RMSE')
     ax[1].set_xlabel('Epoch')
     ax[1].set_ylabel('RMSE')

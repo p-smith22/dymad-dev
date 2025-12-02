@@ -41,9 +41,9 @@ class DriverBase:
         os.makedirs(f'{_dir}/results', exist_ok=True)
         self.results_prefix = f'{_dir}/results/{self.base_name}'
 
-        # Placeholder for trajectory managers
-        self.train_sets: List[TrajectoryManager] = []
-        self.valid_sets: List[TrajectoryManager] = []
+        # Initialize data sets
+        self._init_trajectory_managers()
+        self._init_fold_split()
 
     # -------- Abstract API to be implemented by subclasses --------
 
@@ -102,6 +102,8 @@ class DriverBase:
                 opt = StackedOpt(
                     config=cfg,
                     model_class=self.model_class,
+                    device=self.device,
+                    dtype=self.dtype,
                 )
                 results = opt.run(initial_state=data_state)
 
@@ -151,16 +153,16 @@ class DriverBase:
         # Config can contain different data transforms
         # So we need to update the datasets accordingly
         # The data transforms in valid set should be determined by train set
-        trainset = self.train_sets[fold_id]
+        trainset: TrajectoryManager | TrajectoryManagerGraph = self.train_sets[fold_id]
         trainset.update_config(cfg)
-        validset = self.valid_sets[fold_id]
+        train_loader, train_set, train_md = trainset.process_data()
+
+        validset: TrajectoryManager | TrajectoryManagerGraph = self.valid_sets[fold_id]
         validset.update_config(cfg)
         validset.set_transforms(trajmgr=trainset)
-
-        train_loader, train_set, train_md = trainset.process_data()
         valid_loader, valid_set, valid_md = validset.process_data()
-        self.dtype = trainset.dtype
 
+        self.dtype = trainset.dtype
         return RunState(
             config=cfg,
             device=self.device,
@@ -296,7 +298,7 @@ class SingleSplitDriver(DriverBase):
         train_frac = split_cfg.get("train_frac", 0.75)
         assert 0.0 < train_frac < 1.0, f"train_frac must be in (0, 1). Got: {train_frac}"
 
-        n_samples = len(self.trajmgr_train.x)
+        n_samples = self.train_sets[0].metadata['n_samples']
         n_train = int(n_samples * train_frac)
         n_val = n_samples - n_train
         assert n_train > 0, f"Training set must have at least one sample. Got {n_train}."
