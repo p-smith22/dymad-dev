@@ -168,7 +168,7 @@ class OptBase:
             self.model = state.model.to(self.device)
             self.optimizer = state.optimizer
             self.schedulers = state.schedulers
-            self.criterion = state.optimizer.defaults.get("criterion", self.criterion)
+            self.criterion = state.criterion
 
             self.start_epoch = state.epoch
             self.best_loss = state.best_loss
@@ -191,6 +191,7 @@ class OptBase:
             model=self.model,
             optimizer=self.optimizer,
             schedulers=self.schedulers,
+            criterion=self.criterion,
             train_set=self.train_set,
             valid_set=self.valid_set,
             train_loader=self.train_loader,
@@ -229,7 +230,7 @@ class OptBase:
             return flag
 
         ckpt = torch.load(self.checkpoint_path, weights_only=False, map_location=self.device)
-        state = RunState.from_checkpoint(ckpt, self.model, self.optimizer, self.schedulers)
+        state = RunState.from_checkpoint(ckpt, self.model, self.optimizer, self.schedulers, self.criterion)
 
         # Attach the persistent parts
         self.start_epoch = state.epoch + 1  # resume from next epoch
@@ -395,7 +396,6 @@ class OptBase:
             # Extract states and controls
             x_truth = truth.x
             x0 = truth.x[:, 0, :]
-            us = truth.u
             ts = truth.t
 
             # Make prediction
@@ -407,7 +407,7 @@ class OptBase:
             rmse = np.sqrt(np.mean((x_pred - x_truth)**2))
 
             if plot:
-                _us = None if us is None else us.detach().cpu().numpy().squeeze(0)
+                _us = None if truth.u is None else truth.u.detach().cpu().numpy().squeeze(0)
                 plotting_config = self.config.get('plotting', {})
                 plot_trajectory(np.array([x_truth, x_pred]), ts.squeeze(0), self.model_name,
                                 us=_us, labels=['Truth', 'Prediction'], prefix=self.results_prefix,

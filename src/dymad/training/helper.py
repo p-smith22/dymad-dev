@@ -20,6 +20,7 @@ class RunState:
     model: Optional[torch.nn.Module] = None
     optimizer: Optional[torch.optim.Optimizer] = None
     schedulers: List[Any] = field(default_factory=list)
+    criterion: Optional[torch.nn.Module] = None
 
     # Data: live objects only (not serialized)
     train_set: Optional[Dataset] = None
@@ -45,6 +46,7 @@ class RunState:
             "scheduler_state_dicts": [
                 scheduler.state_dict() for scheduler in self.schedulers if hasattr(scheduler, "state_dict")
             ],
+            "criterion_state_dict": None if self.criterion is None else self.criterion.state_dict(),
             "train_md": self.train_md,
             "valid_md": self.valid_md,
         }
@@ -56,6 +58,7 @@ class RunState:
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         schedulers: List[Any],
+        criterion: Optional[torch.nn.Module],
     ) -> "RunState":
         """Rebuild RunState from a checkpoint, plus new live model/optimizer/schedulers."""
         model.load_state_dict(ckpt["model_state_dict"])
@@ -65,6 +68,7 @@ class RunState:
             for s, s_state in zip(schedulers, ckpt["scheduler_state_dicts"]):
                 if hasattr(s, "load_state_dict"):
                     s.load_state_dict(s_state)
+        criterion.load_state_dict(ckpt["criterion_state_dict"])
 
         return cls(
             config=ckpt.get("config", {}),
@@ -77,6 +81,7 @@ class RunState:
             model=model,
             optimizer=optimizer,
             schedulers=schedulers,
+            criterion=criterion,
             train_md=ckpt.get("train_md", {}),
             valid_md=ckpt.get("valid_md", {}),
         )

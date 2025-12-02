@@ -6,7 +6,7 @@ from dymad.training.opt_linear import OptLinear
 from dymad.training.opt_node import OptNODE
 from dymad.training.opt_weak_form import OptWeakForm
 from dymad.training.stacked_opt import StackedOpt
-from dymad.training.trainer import LinearTrainer, NODETrainer, WeakFormTrainer
+from dymad.training.trainer import LinearTrainer, NODETrainer, WeakFormTrainer, StackedTrainer
 
 __all__ = [
     "LinearTrainer",
@@ -22,4 +22,5 @@ __all__ = [
     "RunState",
     "SingleSplitDriver",
     "StackedOpt",
+    "StackedTrainer",
 ]
