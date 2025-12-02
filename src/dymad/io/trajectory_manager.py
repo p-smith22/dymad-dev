@@ -140,6 +140,9 @@ class TrajectoryManager:
         device (torch.device): Torch device to use.
     """
 
+    # --------------
+    # Initialization
+    # --------------
     def __init__(
             self,
             metadata: Dict,
@@ -189,6 +192,9 @@ class TrajectoryManager:
             self.data_index = None
             self._transform_fitted = False
 
+    # --------------
+    # Public interface - for modification
+    # --------------
     def update_config(self, config: Dict) -> None:
         """
         Update the configuration metadata.
@@ -245,6 +251,9 @@ class TrajectoryManager:
 
         logger.info(f"Data index set: {self.metadata['n_data']} trajectories.")
 
+    # --------------
+    # Public interface - for workflow
+    # --------------
     def prepare_data(self) -> None:
         """
         Handy function to load and truncate data in one call.
@@ -273,6 +282,9 @@ class TrajectoryManager:
         res = self.process_data()
         return res
 
+    # --------------
+    # Workflow implementation - not meant for public use
+    # --------------
     def load_data(self) -> Dict:
         """
         Load raw data from a binary file.
@@ -592,6 +604,9 @@ class TrajectoryManagerGraph(TrajectoryManager):
             If not provided, will try to get from config.
     """
 
+    # --------------
+    # Initialization
+    # --------------
     def __init__(
             self,
             metadata: Dict,
@@ -615,6 +630,9 @@ class TrajectoryManagerGraph(TrajectoryManager):
             logger.error(msg)
             raise ValueError(msg)
 
+    # --------------
+    # Public interface - for modification
+    # --------------
     def set_transforms(
             self,
             metadata: Dict | None = None,
@@ -637,6 +655,15 @@ class TrajectoryManagerGraph(TrajectoryManager):
         self.metadata["transform_ea_state"] = self._data_transform_ea.state_dict() if self._data_transform_ea is not None else None
         self._transform_fitted = True
 
+    # --------------
+    # Public interface - for workflow
+    # --------------
+    # None
+    # Reuse parent class methods
+
+    # --------------
+    # Workflow implementation - not meant for public use
+    # --------------
     def load_data(self) -> Dict:
         data = super().load_data()
 
