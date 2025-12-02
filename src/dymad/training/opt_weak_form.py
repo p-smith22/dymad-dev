@@ -17,17 +17,19 @@ class OptWeakForm(OptBase):
     def __init__(
         self,
         config: Dict[str, Any],
+        config_phase: Dict[str, Any],
         model_class: Type[torch.nn.Module],
         run_state: RunState,
         device: torch.device,
+        dtype: torch.dtype,
     ):
-        super().__init__(config, model_class, run_state, device)
+        super().__init__(config, config_phase, model_class, run_state, device, dtype)
 
         # Weak form parameters
-        self.N      = self.config["training"]["weak_form_params"]["N"]
-        self.dN     = self.config["training"]["weak_form_params"]["dN"]
-        self.ordpol = self.config["training"]["weak_form_params"]["ordpol"]
-        self.ordint = self.config["training"]["weak_form_params"]["ordint"]
+        self.N      = self.config_phase["weak_form_params"]["N"]
+        self.dN     = self.config_phase["weak_form_params"]["dN"]
+        self.ordpol = self.config_phase["weak_form_params"]["ordpol"]
+        self.ordint = self.config_phase["weak_form_params"]["ordint"]
         self._gen_params()
 
         # Additional logging
@@ -37,7 +39,7 @@ class OptWeakForm(OptBase):
         """Generate weak form parameters."""
         dtype = next(self.model.parameters()).dtype
         C, D = generate_weak_weights(
-            dt                   = self.metadata["dt_and_n_steps"][0][0],
+            dt                   = self.train_md["dt_and_n_steps"][0][0],
             n_integration_points = self.N,
             poly_order           = self.ordpol,
             int_rule_order       = self.ordint,
@@ -60,7 +62,7 @@ class OptWeakForm(OptBase):
         loss_dict = {"weak": weak_loss}
 
         # Optional reconstruction loss
-        if self.config["training"].get("use_recon_loss", True):
+        if self.config_phase.get("use_recon_loss", True):
             recon_loss = self.criterion(B.x, x_hat.view(*B.x.shape))
             loss_dict["recon"] = recon_loss
 

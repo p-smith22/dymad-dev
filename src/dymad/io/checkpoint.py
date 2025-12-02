@@ -113,6 +113,11 @@ def load_model(model_class, checkpoint_path):
         - nn.Module: The loaded model.
         - callable: A function to predict trajectories in data space.
     """
+    # If checkpoint_path does not exist, try adding 'checkpoints/' prefix
+    if not os.path.exists(checkpoint_path):
+        checkpoint_path = os.path.join('checkpoints', checkpoint_path)
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"Checkpoint file not found at {checkpoint_path}.")
     chkpt = torch.load(checkpoint_path, weights_only=False)
     cfg = chkpt['config']
     md = chkpt['train_md']

@@ -439,26 +439,25 @@ class OptBase:
             # Partial LS update if specified
             if self._ls is not None:
                 if epoch % self._ls_update_interval == 0:
-                    if epoch == self.start_epoch:
-                        if not self._start_w_ls:
-                            logger.info("Skipping LS update at the start epoch as per configuration.")
-                            continue
-                    _ls_count += 1
-                    if _ls_count == self._ls_update_times+1:
-                        logger.info(f"LS update performed {self._ls_update_times} times, stopping further LS updates.")
-                    elif _ls_count <= self._ls_update_times:
-                        logger.info(f"Performing LS update {_ls_count} of {self._ls_update_times} times at epoch {epoch+1}")
-                        _, params = self._ls.update(self.model, self.train_loader)
+                    if epoch == self.start_epoch and not self._start_w_ls:
+                        logger.info("Skipping LS update at the start epoch as per configuration.")
+                    else:
+                        _ls_count += 1
+                        if _ls_count == self._ls_update_times+1:
+                            logger.info(f"LS update performed {self._ls_update_times} times, stopping further LS updates.")
+                        elif _ls_count <= self._ls_update_times:
+                            logger.info(f"Performing LS update {_ls_count} of {self._ls_update_times} times at epoch {epoch+1}")
+                            _, params = self._ls.update(self.model, self.train_loader)
 
-                        # Remove optimizer state for parameters updated by LS
-                        if self._ls_reset:
-                            target_names = [self._param_to_name.get(p, "<unnamed>") for p in params]
-                            for _p, _n in zip(params, target_names):
-                                for param_group in self.optimizer.param_groups:
-                                    param_names = [self._param_to_name.get(_q, "<unnamed>") for _q in param_group['params']]
-                                    if _n in param_names:
-                                        self.optimizer.state.pop(_p, None)
-                                        logger.info(f"Removed optimizer state for {_n} after LS update.")
+                            # Remove optimizer state for parameters updated by LS
+                            if self._ls_reset:
+                                target_names = [self._param_to_name.get(p, "<unnamed>") for p in params]
+                                for _p, _n in zip(params, target_names):
+                                    for param_group in self.optimizer.param_groups:
+                                        param_names = [self._param_to_name.get(_q, "<unnamed>") for _q in param_group['params']]
+                                        if _n in param_names:
+                                            self.optimizer.state.pop(_p, None)
+                                            logger.info(f"Removed optimizer state for {_n} after LS update.")
 
             train_loss = self.train_epoch()
             val_loss = self.evaluate(self.valid_loader)

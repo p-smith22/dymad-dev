@@ -5,16 +5,16 @@ import torch
 
 from dymad.training.helper import RunState
 from dymad.training.opt_base import OptBase
+from dymad.training.opt_linear import OptLinear
 from dymad.training.opt_node import OptNODE
 from dymad.training.opt_weak_form import OptWeakForm
-# from dymad.training.lr_trainer import LRTrainer, etc.
 
 logger = logging.getLogger(__name__)
 
 OPT_REGISTRY: Dict[str, Type[OptBase]] = {
     "NODE": OptNODE,
     "Weak": OptWeakForm,
-    # "LinearRegression": LRTrainer,
+    "Linear": OptLinear,
 }
 
 class PhaseResult:

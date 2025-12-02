@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 class Compose(Transform):
     """Apply transforms in order.  Inverse is applied in reverse."""
     def __init__(self, transforms: List[Transform] = None):
+        super().__init__()
+
         if transforms is None:
             # Reload from state_dict is expected.
             return

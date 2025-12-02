@@ -5,7 +5,7 @@ import torch
 
 from dymad.io import load_model
 from dymad.models import KBF
-from dymad.training import NODETrainer
+from dymad.training import NODETrainer, WeakFormTrainer
 from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
 
 B = 128
@@ -39,7 +39,7 @@ config_gau = {
             "mode": "zoh"}}}
 
 cases = [
-    # {"name": "kbf_wf",   "model" : KBF, "trainer": OptWeakForm, "config": 'lti_kbf_wf.yaml'},
+    {"name": "kbf_wf",   "model" : KBF, "trainer": WeakFormTrainer, "config": 'lti_kbf_wf.yaml'},
     {"name": "kbf_node", "model" : KBF, "trainer": NODETrainer,     "config": 'lti_kbf_node.yaml'},
 ]
 IDX = [0]
@@ -83,8 +83,7 @@ if ifprd:
     res = [x_data]
     for _i in IDX:
         mdl, MDL = cases[_i]['name'], cases[_i]['model']
-        # _, prd_func = load_model(MDL, f'lti_{mdl}.pt', f'lti_{mdl}.yaml')
-        _, prd_func = load_model(MDL, f'checkpoints/lti_{mdl}_c0_f0.pt')
+        _, prd_func = load_model(MDL, f'lti_{mdl}_c0_f0.pt')
 
         with torch.no_grad():
             _pred = prd_func(x_data, t_data, u=u_data)

@@ -30,7 +30,7 @@ def prediction_rmse(model,
     with torch.no_grad():
         # Extract states and controls
         x_truth = truth.x
-        x0 = truth.x[:, 0]
+        x0 = truth.x[:, 0, :]
         us = truth.u
         ts = truth.t
 
@@ -45,7 +45,7 @@ def prediction_rmse(model,
         if plot:
             _us = None if us is None else us.detach().cpu().numpy().squeeze(0)
             plotting_config = config.get('plotting', {})
-            plot_trajectory(np.array([x_truth, x_pred]), ts.squeeze(), model_name,
+            plot_trajectory(np.array([x_truth, x_pred]), ts.squeeze(0), model_name,
                             us=_us, labels=['Truth', 'Prediction'], prefix=prefix,
                             **plotting_config)
 
