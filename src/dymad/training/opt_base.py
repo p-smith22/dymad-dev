@@ -6,13 +6,12 @@ import random
 import time
 import torch
 from torch.utils.data import DataLoader
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, Optional, Tuple, Type, Union
 
-from dymad.io import TrajectoryManager, TrajectoryManagerGraph
-from dymad.losses import prediction_rmse
+from dymad.io import DynData
 from dymad.training.helper import RunState
 from dymad.training.ls_update import LSUpdater
-from dymad.utils import load_config, make_scheduler, plot_hist
+from dymad.utils import make_scheduler, plot_hist, plot_trajectory
 
 logger = logging.getLogger(__name__)
 
@@ -375,15 +374,50 @@ class OptBase:
         return total_loss / len(dataloader)
 
     # ------------------------------------------------------------------
-    # RMSE and main training loop
+    # Criteria and main training loop
     # ------------------------------------------------------------------
-
-    def get_prediction_rmse_func(self):
-        return prediction_rmse
-
-    def evaluate_rmse(self, split: str = 'test', plot: bool = False, evaluate_all: bool = False) -> float:
+    def evaluate_criteria_single_traj(self,
+                    truth: DynData,
+                    method: str = 'dopri5',
+                    plot: bool = False) -> float:
         """
-        Calculate RMSE on trajectory(ies) from the specified split.
+        Calculate RMSE between model predictions and ground truth for regular models
+
+        Args:
+            truth (DynData): Ground truth trajectory data
+            method (str): ODE solver method (for models that use ODE solvers)
+            plot (bool): Whether to plot the predicted vs ground truth trajectories
+
+        Returns:
+            float: Root mean squared error between predictions and ground truth
+        """
+        with torch.no_grad():
+            # Extract states and controls
+            x_truth = truth.x
+            x0 = truth.x[:, 0, :]
+            us = truth.u
+            ts = truth.t
+
+            # Make prediction
+            x_pred = self.model.predict(x0, truth, ts, method=method)
+
+            x_truth = x_truth.detach().cpu().numpy().squeeze(0)
+            x_pred = x_pred.detach().cpu().numpy().squeeze(0)
+            # Calculate RMSE
+            rmse = np.sqrt(np.mean((x_pred - x_truth)**2))
+
+            if plot:
+                _us = None if us is None else us.detach().cpu().numpy().squeeze(0)
+                plotting_config = self.config.get('plotting', {})
+                plot_trajectory(np.array([x_truth, x_pred]), ts.squeeze(0), self.model_name,
+                                us=_us, labels=['Truth', 'Prediction'], prefix=self.results_prefix,
+                                **plotting_config)
+
+            return rmse
+
+    def evaluate_criteria(self, split: str = 'test', plot: bool = False, evaluate_all: bool = False) -> float:
+        """
+        Calculate criteria on trajectory(ies) from the specified split.
 
         Args:
             split (str): Dataset split to use ('train', 'valid')
@@ -394,7 +428,7 @@ class OptBase:
                 - If False, evaluate a single random trajectory.
 
         Returns:
-            float: RMSE value (mean RMSE if evaluate_all=True)
+            float: Criteria value (mean criteria if evaluate_all=True)
         """
         if split == "train":
             dataset = self.train_set
@@ -409,14 +443,13 @@ class OptBase:
         else:
             dataset = [random.choice(dataset)]
 
-        prediction_rmse_func = self.get_prediction_rmse_func()
-        rmse_values = [
-            prediction_rmse_func(self.model, trajectory, self.config, self.model_name,
-                                 plot=plot, prefix=self.results_prefix)
+        _method = self.config.get("training", {}).get("ode_method", "dopri5")
+        criteria_values = [
+            self.evaluate_criteria_single_traj(trajectory, method=_method, plot=plot)
             for trajectory in dataset
         ]
 
-        return sum(rmse_values) / len(rmse_values)
+        return sum(criteria_values) / len(criteria_values)
 
     def train(self) -> int:
         """Run full training loop."""
@@ -486,14 +519,14 @@ class OptBase:
                 plot_hist(self.hist, epoch+1, self.model_name, prefix=self.results_prefix)
 
                 # Evaluate RMSE on random trajectories
-                train_rmse = self.evaluate_rmse('train', plot=False)
-                val_rmse   = self.evaluate_rmse('valid', plot=True)
-                self.rmse.append([epoch, train_rmse, val_rmse])
+                train_rmse = self.evaluate_criteria('train', plot=False)
+                valid_rmse = self.evaluate_criteria('valid', plot=True)
+                self.rmse.append([epoch, train_rmse, valid_rmse])
 
                 logger.info(
                     f"Prediction RMSE - "
                     f"Train: {train_rmse:.4e}, "
-                    f"Valid: {val_rmse:.4e}"
+                    f"Valid: {valid_rmse:.4e}"
                 )
 
                 if self.convergence_tolerance_reached:
@@ -503,16 +536,16 @@ class OptBase:
                     break
 
         if self.rmse == []:
-            train_rmse = self.evaluate_rmse('train', plot=False)
-            val_rmse   = self.evaluate_rmse('valid', plot=True)
-            self.rmse.append([epoch, train_rmse, val_rmse])
+            train_rmse = self.evaluate_criteria('train', plot=False)
+            valid_rmse = self.evaluate_criteria('valid', plot=True)
+            self.rmse.append([epoch, train_rmse, valid_rmse])
 
         plot_hist(self.hist, epoch+1, self.model_name, prefix=self.results_prefix)
         total_training_time = time.time() - overall_start_time
         avg_epoch_time = np.mean(self.epoch_times)
         final_train_loss = self.evaluate(self.train_loader)
         final_valid_loss = self.evaluate(self.valid_loader)
-        _ = self.evaluate_rmse('valid', plot=True)
+        _ = self.evaluate_criteria('valid', plot=True)
 
         # Process histories of loss and RMSE
         # These are saved in the checkpoint too, but here we process them for easier post-processing
