@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from typing import Any, Dict, Optional, Tuple, Type, Union
 
 from dymad.io import DynData
+from dymad.losses import LOSS_MAP
 from dymad.training.helper import RunState
 from dymad.training.ls_update import LSUpdater
 from dymad.utils import make_scheduler, plot_hist, plot_trajectory
@@ -47,17 +48,6 @@ class OptBase:
 
         self.convergence_tolerance_reached = False
 
-        # Loss weights (for multi-loss aggregation)
-        # Example YAML:
-        # training:
-        #   loss_weights:
-        #     dynamics: 1.0
-        #     recon: 0.5
-        #     physics: 10.0
-        self.loss_weights: Dict[str, float] = self.config_phase.get(
-            "loss_weights", {}
-        )
-
         # Setup paths
         self.model_name = self.config["model"]["name"]
         self.checkpoint_path = self.config["path"]["checkpoint_prefix"] + "_checkpoint.pt"
@@ -79,7 +69,11 @@ class OptBase:
         logger.info(self.model.diagnostic_info())
         logger.info("Optimization settings:")
         logger.info(self.optimizer)
-        logger.info(self.criterion)
+        logger.info("Criteria settings:")
+        for _n, _c, _w in zip(self.criteria_names, self.criteria, self.criteria_weights):
+            logger.info(f" - {_n}: weight={_w}, criterion={_c}")
+        logger.info("Prediction criterion settings:")
+        logger.info(f" - {self.pred_crit_name}: criterion={self.prediction_criterion}")
         logger.info("Scheduler info:")
         for _s in self.schedulers:
             logger.info(_s.diagnostic_info())
@@ -92,22 +86,66 @@ class OptBase:
 
     def _setup_model(self) -> None:
         """Setup model, optimizer, schedulers, and criterion."""
+        # Model
         self.model = self.model_class(
             self.config["model"], self.train_md, dtype=self.dtype, device=self.device
         ).to(self.device)
-
         if self.config["data"].get("double_precision", False):
             self.model = self.model.double()
 
-        # By default there is only one scheduler.
-        # There might be more, e.g., in OptNODE with sweep scheduler.
+        # Optimizer
         lr = float(self.config_phase.get("learning_rate", 1e-3))
         gamma = float(self.config_phase.get("decay_rate", 0.999))
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+
+        # By default there is only one scheduler.
+        # There might be more, e.g., in OptNODE with sweep scheduler.
         self.schedulers = [make_scheduler(
             torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=gamma)
         )]
-        self.criterion = torch.nn.MSELoss(reduction="mean")
+
+        # Criteria - for training
+        crit_dict  = copy.deepcopy(self.config.get("criterion", {}))
+        crit_dict.update(self.config_phase.get("criterion", {}))   # Possible phase override
+
+        self.criteria = []
+        self.criteria_names = ['dynamics']   # There is always dynamics
+        self.criteria_weights = []
+        if 'dynamics' in crit_dict:
+            crit_cfg = crit_dict['dynamics']
+            loss_class = LOSS_MAP[crit_cfg.get("type", "mse")]
+            self.criteria.append(loss_class(**crit_cfg.get("params", {})))
+            self.criteria_weights.append(crit_cfg.get("weight", 1.0))
+        else:
+            # Default dynamics criterion
+            self.criteria.append(torch.nn.MSELoss(reduction="mean"))
+            self.criteria_weights.append(1.0)
+        if 'recon' in crit_dict:
+            crit_cfg = crit_dict['recon']
+            loss_class = LOSS_MAP.get(crit_cfg.get("type", "mse"))
+            self.criteria.append(loss_class(**crit_cfg.get("params", {})))
+            self.criteria_weights.append(crit_cfg.get("weight", 1.0))
+            self.criteria_names.append('recon')
+        for key in crit_dict:
+            if key in ['dynamics', 'recon']:
+                continue
+            crit_cfg = crit_dict[key]
+            loss_class = LOSS_MAP.get(crit_cfg.get("type", "mse"))
+            self.criteria.append(loss_class(**crit_cfg.get("params", {})))
+            self.criteria_weights.append(crit_cfg.get("weight", 1.0))
+            self.criteria_names.append(key)
+
+        # Criteria - for monitoring, possibly different from training
+        crit_dict  = copy.deepcopy(self.config.get("prediction_criterion", {}))
+        crit_dict.update(self.config_phase.get("prediction_criterion", {}))   # Possible phase override
+        if len(crit_dict) > 0:
+            key = crit_dict.get("type", "mse")
+            loss_class = LOSS_MAP.get(key)
+            self.prediction_criterion = loss_class(**crit_dict.get("params", {}))
+            self.pred_crit_name = key
+        else:
+            self.prediction_criterion = self.criteria[0]
+            self.pred_crit_name = str(self.criteria[0])
 
     def _setup_ls(self) -> None:
         """Setup LSUpdater if requested."""
@@ -162,18 +200,22 @@ class OptBase:
             self.start_epoch = 0
             self.best_loss = float("inf")
             self.hist = []
-            self.rmse = []
+            self.crit = []
             self.epoch_times = []
         else:
             self.model = state.model.to(self.device)
             self.optimizer = state.optimizer
             self.schedulers = state.schedulers
-            self.criterion = state.criterion
+            self.criteria = state.criteria
+            self.criteria_weights = state.criteria_weights
+            self.criteria_names = state.criteria_names
+            self.prediction_criterion = state.prediction_criterion
+            self.pred_crit_name = state.pred_crit_name
 
             self.start_epoch = state.epoch
             self.best_loss = state.best_loss
             self.hist = list(state.hist)
-            self.rmse = list(state.rmse)
+            self.crit = list(state.crit)
             self.epoch_times = []
         self._setup_ls()
 
@@ -185,13 +227,17 @@ class OptBase:
             epoch=epoch,
             best_loss=self.best_loss,
             hist=list(self.hist),
-            rmse=list(self.rmse),
+            crit=list(self.crit),
             epoch_times=list(self.epoch_times),
             converged=self.convergence_tolerance_reached,
             model=self.model,
             optimizer=self.optimizer,
             schedulers=self.schedulers,
-            criterion=self.criterion,
+            criteria=self.criteria,
+            criteria_weights=self.criteria_weights,
+            criteria_names=self.criteria_names,
+            prediction_criterion=self.prediction_criterion,
+            pred_crit_name=self.pred_crit_name,
             train_set=self.train_set,
             valid_set=self.valid_set,
             train_loader=self.train_loader,
@@ -225,18 +271,20 @@ class OptBase:
             self.start_epoch = 0
             self.best_loss = float("inf")
             self.hist = []
-            self.rmse = []
+            self.crit = []
             self.epoch_times = []
             return flag
 
         ckpt = torch.load(self.checkpoint_path, weights_only=False, map_location=self.device)
-        state = RunState.from_checkpoint(ckpt, self.model, self.optimizer, self.schedulers, self.criterion)
+        state = RunState.from_checkpoint(
+            ckpt, self.model, self.optimizer, self.schedulers,
+            self.criteria, self.prediction_criterion)
 
         # Attach the persistent parts
         self.start_epoch = state.epoch + 1  # resume from next epoch
         self.best_loss = state.best_loss
         self.hist = state.hist
-        self.rmse = state.rmse
+        self.crit = state.crit
         self.convergence_tolerance_reached = False  # reset on load
         self.epoch_times = state.epoch_times
 
@@ -269,7 +317,7 @@ class OptBase:
 
         Return either:
           - a single Tensor (total loss), or
-          - a dict name -> Tensor; we aggregate using `loss_weights`.
+          - a dict name -> Tensor; we aggregate using `criteria_weights`.
             If the dict contains key 'total', we treat that as the final loss
             and ignore weights.
         """
@@ -282,39 +330,10 @@ class OptBase:
         - If 'total' in loss_dict: we directly return it.
         - Else: sum w_i * loss_i, where w_i = loss_weights.get(name, 1.0).
         """
-        if "total" in loss_dict:
-            return loss_dict["total"]
-
         total = 0.0
-        for name, term in loss_dict.items():
-            if not torch.is_tensor(term):
-                continue
-            w = self.loss_weights.get(name, 1.0)
-            total = total + w * term
+        for _n, _w in zip(self.criteria_names, self.criteria_weights):
+            total += loss_dict[_n] * _w
         return total
-
-    def _compute_total_loss(
-        self, out: Union[torch.Tensor, Dict[str, torch.Tensor]]
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
-        """
-        Given the output of `_process_batch`, compute:
-          - total loss Tensor
-          - dict of scalar loss terms (for logging if desired)
-        """
-        if isinstance(out, torch.Tensor):
-            loss = out
-            terms = {"total": float(loss.detach().cpu())}
-            return loss, terms
-
-        # dict case
-        loss = self._aggregate_losses(out)
-        terms: Dict[str, float] = {}
-        for name, term in out.items():
-            if torch.is_tensor(term):
-                terms[name] = float(term.detach().cpu())
-        # also store total
-        terms.setdefault("total", float(loss.detach().cpu()))
-        return loss, terms
 
     # ------------------------------------------------------------------
     # Generic training engine
@@ -334,10 +353,15 @@ class OptBase:
         self.model.train()
         total_loss = 0.0
 
+        # TODO
+        # Let _process_batch output tensor
+        # dot with weights
+        # return also dict losses
+
         for batch in self.train_loader:
             self.optimizer.zero_grad(set_to_none=True)
             out = self._process_batch(batch)
-            loss, _ = self._compute_total_loss(out)
+            loss = self._aggregate_losses(out)
             loss.backward()
             self.optimizer.step()
             total_loss += loss.item()
@@ -370,19 +394,41 @@ class OptBase:
         with torch.no_grad():
             for batch in dataloader:
                 out = self._process_batch(batch)
-                loss, _ = self._compute_total_loss(out)
+                loss = self._aggregate_losses(out)
                 total_loss += loss.item()
         return total_loss / len(dataloader)
 
+    def _additional_criteria_evaluation(self, x_hat, predictions, B) -> None:
+        """
+        Compute additional criteria losses beyond dynamics
+        """
+        loss_dict = {}
+        if len(self.criteria_names) < 2:
+            return loss_dict
+
+        if self.criteria_names[1] == "recon":
+            recon_loss = self.criteria[1](B.x, x_hat.view(*B.x.shape))
+            loss_dict["recon"] = recon_loss
+
+        for _i in range(2, len(self.criteria)):
+            crit_name = self.criteria_names[_i]
+            loss_value = self.criteria[_i](predictions, B.x)
+            loss_dict[crit_name] = loss_value
+
+        return loss_dict
+
     # ------------------------------------------------------------------
-    # Criteria and main training loop
+    # Prediction criterion evaluation
     # ------------------------------------------------------------------
-    def evaluate_criteria_single_traj(self,
+    def evaluate_prediction_criterion_single(self,
                     truth: DynData,
                     method: str = 'dopri5',
                     plot: bool = False) -> float:
         """
-        Calculate RMSE between model predictions and ground truth for regular models
+        Calculate prediction criterion between model predictions and ground truth.
+
+        Regardless of the training criterion, this function evaluates
+        a prediction-based criterion (e.g., RMSE over trajectory).
 
         Args:
             truth (DynData): Ground truth trajectory data
@@ -390,7 +436,7 @@ class OptBase:
             plot (bool): Whether to plot the predicted vs ground truth trajectories
 
         Returns:
-            float: Root mean squared error between predictions and ground truth
+            float: Prediction criterion between predictions and ground truth, can be problem dependent
         """
         with torch.no_grad():
             # Extract states and controls
@@ -401,10 +447,10 @@ class OptBase:
             # Make prediction
             x_pred = self.model.predict(x0, truth, ts, method=method)
 
+            # Dynamics criterion
             x_truth = x_truth.detach().cpu().numpy().squeeze(0)
             x_pred = x_pred.detach().cpu().numpy().squeeze(0)
-            # Calculate RMSE
-            rmse = np.sqrt(np.mean((x_pred - x_truth)**2))
+            prediction_crit = self.prediction_criterion(x_pred, x_truth)
 
             if plot:
                 _us = None if truth.u is None else truth.u.detach().cpu().numpy().squeeze(0)
@@ -413,22 +459,22 @@ class OptBase:
                                 us=_us, labels=['Truth', 'Prediction'], prefix=self.results_prefix,
                                 **plotting_config)
 
-            return rmse
+            return prediction_crit.item()
 
-    def evaluate_criteria(self, split: str = 'test', plot: bool = False, evaluate_all: bool = False) -> float:
+    def evaluate_prediction_criterion(self, split: str = 'test', plot: bool = False, evaluate_all: bool = False) -> float:
         """
-        Calculate criteria on trajectory(ies) from the specified split.
+        Calculate prediction criterion on trajectory(ies) from the specified split.
 
         Args:
             split (str): Dataset split to use ('train', 'valid')
             plot (bool): Whether to plot the results (only works when evaluate_all=False)
             evaluate_all (bool):
 
-                - If True, evaluate all trajectories and return mean RMSE.
+                - If True, evaluate all trajectories and return the mean.
                 - If False, evaluate a single random trajectory.
 
         Returns:
-            float: Criteria value (mean criteria if evaluate_all=True)
+            float: Criterion value
         """
         if split == "train":
             dataset = self.train_set
@@ -444,13 +490,30 @@ class OptBase:
             dataset = [random.choice(dataset)]
 
         _method = self.config.get("training", {}).get("ode_method", "dopri5")
-        criteria_values = [
-            self.evaluate_criteria_single_traj(trajectory, method=_method, plot=plot)
+        criterion_values = [
+            self.evaluate_prediction_criterion_single(trajectory, method=_method, plot=plot)
             for trajectory in dataset
         ]
 
-        return sum(criteria_values) / len(criteria_values)
+        return sum(criterion_values) / len(criterion_values)
 
+    def update_prediction_criterion_history(self, epoch: int) -> None:
+        """
+        Handy wrapper for evaluating prediction criterion on train and valid sets, log and store results.
+        """
+        train_crit = self.evaluate_prediction_criterion('train', plot=False)
+        valid_crit = self.evaluate_prediction_criterion('valid', plot=True)
+        self.crit.append([epoch, train_crit, valid_crit])
+
+        logger.info(
+            f"Prediction criterion - "
+            f"Train: {train_crit:.4e}, "
+            f"Valid: {valid_crit:.4e}"
+        )
+
+    # ------------------------------------------------------------------
+    # Main training loop
+    # ------------------------------------------------------------------
     def train(self) -> int:
         """Run full training loop."""
 
@@ -518,16 +581,8 @@ class OptBase:
                 # Plot loss curves
                 plot_hist(self.hist, epoch+1, self.model_name, prefix=self.results_prefix)
 
-                # Evaluate RMSE on random trajectories
-                train_rmse = self.evaluate_criteria('train', plot=False)
-                valid_rmse = self.evaluate_criteria('valid', plot=True)
-                self.rmse.append([epoch, train_rmse, valid_rmse])
-
-                logger.info(
-                    f"Prediction RMSE - "
-                    f"Train: {train_rmse:.4e}, "
-                    f"Valid: {valid_rmse:.4e}"
-                )
+                # Evaluate prediction criterion on random trajectories
+                self.update_prediction_criterion_history(epoch)
 
                 if self.convergence_tolerance_reached:
                     self.convergence_epoch = epoch+1
@@ -535,24 +590,22 @@ class OptBase:
                                 f"with validation loss {val_loss:.4e}")
                     break
 
-        if self.rmse == []:
-            train_rmse = self.evaluate_criteria('train', plot=False)
-            valid_rmse = self.evaluate_criteria('valid', plot=True)
-            self.rmse.append([epoch, train_rmse, valid_rmse])
+        if self.crit == []:
+            self.update_prediction_criterion_history(epoch)
 
         plot_hist(self.hist, epoch+1, self.model_name, prefix=self.results_prefix)
         total_training_time = time.time() - overall_start_time
         avg_epoch_time = np.mean(self.epoch_times)
         final_train_loss = self.evaluate(self.train_loader)
         final_valid_loss = self.evaluate(self.valid_loader)
-        _ = self.evaluate_criteria('valid', plot=True)
+        _ = self.evaluate_prediction_criterion('valid', plot=True)
 
-        # Process histories of loss and RMSE
+        # Process histories of loss and prediction criterion
         # These are saved in the checkpoint too, but here we process them for easier post-processing
         tmp = np.array(self.hist).T
         epoch_loss, losses = tmp[0], tmp[1:]
-        tmp = np.array(self.rmse).T
-        epoch_rmse, rmses = tmp[0], tmp[1:]
+        tmp = np.array(self.crit).T
+        epoch_crit, crits = tmp[0], tmp[1:]
 
         # Save summary of training
         # Here we also save the model itself - a lazy approach but more "out-of-the-box" for deployment
@@ -566,8 +619,10 @@ class OptBase:
             'convergence_epoch': self.convergence_epoch,
             'epoch_loss': epoch_loss,
             'losses': losses,
-            'epoch_rmse': epoch_rmse,
-            'rmses': rmses,
+            'loss_names': self.criteria_names,
+            'epoch_crit': epoch_crit,
+            'crits': crits,
+            'crit_name': self.pred_crit_name,
         }
 
         file_name = f"{self.results_prefix}/{self.model_name}_summary.npz"
@@ -584,6 +639,6 @@ class OptBase:
         ]:
             info = f"{results[key]:.4e}" if isinstance(results[key], float) else str(results[key])
             logger.info(f"{key}: {info}")
-        logger.info(f"Summary and loss/rmse histories saved to {file_name}")
+        logger.info(f"Summary and loss/criterion histories saved to {file_name}")
 
         return epoch

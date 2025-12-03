@@ -42,14 +42,15 @@ class OptLinear(OptBase):
         Only used in `evaluation` in this Trainer.
         """
         B = batch.to(self.device)
-        linear_loss = self._ls.eval_batch(self.model, B, self.criterion)
-        loss_dict = {"linear": linear_loss}
+        linear_loss = self._ls.eval_batch(self.model, B, self.criteria[0])
+        loss_dict = {"dynamics": linear_loss}
 
-        if self.config_phase.get("use_recon_loss", True):
-            # Add reconstruction loss
+        # Other criteria
+        x_hat = None
+        if "recon" in self.criteria_names:
             _, _, x_hat = self.model(B)
-            recon_loss = self.criterion(B.x, x_hat)
-            loss_dict["recon"] = recon_loss
+        _dict = self._additional_criteria_evaluation(x_hat, None, B)
+        loss_dict.update(_dict)
 
         return loss_dict
 

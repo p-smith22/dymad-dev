@@ -58,12 +58,11 @@ class OptWeakForm(OptBase):
 
         true_weak = z_windows @ self.C
         pred_weak = z_dot_windows @ self.D
-        weak_loss = self.criterion(pred_weak, true_weak)
-        loss_dict = {"weak": weak_loss}
+        weak_loss = self.criteria[0](pred_weak, true_weak)
+        loss_dict = {"dynamics": weak_loss}
 
-        # Optional reconstruction loss
-        if self.config_phase.get("use_recon_loss", True):
-            recon_loss = self.criterion(B.x, x_hat.view(*B.x.shape))
-            loss_dict["recon"] = recon_loss
+        # Other criteria
+        _dict = self._additional_criteria_evaluation(x_hat, None, B)
+        loss_dict.update(_dict)
 
         return loss_dict

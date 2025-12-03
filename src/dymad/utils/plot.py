@@ -257,7 +257,7 @@ def plot_hist(hist, epoch, model_name, ifclose=True, prefix='.'):
 
 def plot_summary(npz_files, labels=None, ifscl=True, ifclose=True, prefix='.'):
     """
-    Plot training loss and trajectory RMSE for multiple summary files on the same figure.
+    Plot training losses and prediction criterion for multiple summary files on the same figure.
 
     Args:
         npz_files (list): List of NPZ file paths containing summary data.
@@ -285,7 +285,7 @@ def plot_summary(npz_files, labels=None, ifscl=True, ifclose=True, prefix='.'):
 
 def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
     """
-    Plot training loss and trajectory RMSE from a summary file.
+    Plot training losses and prediction criterion from a summary file.
 
     Args:
         npz (dict): Dictionary from the NPZ file.
@@ -297,7 +297,7 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
     clr = PALETTE[index % len(PALETTE)]
 
     e_loss, h_loss = npz['epoch_loss'], npz['losses']
-    e_rmse, h_rmse = npz['epoch_rmse'], npz['rmses']
+    e_crit, h_crit, n_crit = npz['epoch_crit'], npz['crits'], npz['crit_name']
 
     if axes is None:
         fig, ax = plt.subplots(nrows=2, sharex=True, figsize=(8, 6))
@@ -314,11 +314,11 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
         ax[0].set_ylabel('Loss')
     ax[0].legend()
 
-    ax[1].semilogy(e_rmse, h_rmse[0], '-',  color=clr, label=f'{label}, Train')
-    ax[1].semilogy(e_rmse, h_rmse[1], '--', color=clr, label=f'{label}, Validation')
-    ax[1].set_title('Trajectory RMSE')
+    ax[1].semilogy(e_crit, h_crit[0], '-',  color=clr, label=f'{label}, Train')
+    ax[1].semilogy(e_crit, h_crit[1], '--', color=clr, label=f'{label}, Validation')
+    ax[1].set_title('Prediction Criterion')
     ax[1].set_xlabel('Epoch')
-    ax[1].set_ylabel('RMSE')
+    ax[1].set_ylabel(f'Criterion {n_crit}')
     ax[1].legend()
 
     return fig, ax

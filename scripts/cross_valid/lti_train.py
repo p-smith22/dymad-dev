@@ -42,14 +42,15 @@ cases = [
     {"name": "kbf_wf",   "model" : KBF, "trainer": WeakFormTrainer, "config": 'lti_kbf_wf.yaml'},
     {"name": "kbf_node", "model" : KBF, "trainer": NODETrainer,     "config": 'lti_kbf_node.yaml'},
     {"name": "kbf_two",  "model" : KBF, "trainer": StackedTrainer,  "config": 'lti_kbf_two.yaml'},
+    {"name": "kbf_mcri", "model" : KBF, "trainer": StackedTrainer,  "config": 'lti_kbf_mcri.yaml'},
 ]
-IDX = [2]
+IDX = [3]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0
 iftrn = 1
 ifplt = 1
-ifprd = 1
+ifprd = 0
 
 if ifdat:
     sampler = TrajectorySampler(f, g, config='lti_data.yaml', config_mod=config_chr)

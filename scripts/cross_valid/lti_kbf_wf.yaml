@@ -32,8 +32,6 @@ training:
   save_interval: 10
   load_checkpoint: false
   learning_rate: 5e-3
-  reconstruction_weight: 1.0
-  dynamics_weight: 1.0 
   weak_form_params:
     N: 13
     dN: 2

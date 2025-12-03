@@ -109,14 +109,15 @@ class OptNODE(OptBase):
             **self.ode_args,
         )
 
-        # Base dynamics loss
-        dynamics_loss = self.criterion(predictions, B.x)
+        # Base dynamics criterion
+        dynamics_loss = self.criteria[0](predictions, B.x)
         loss_dict = {"dynamics": dynamics_loss}
 
-        # Optional reconstruction loss
-        if self.config_phase.get("use_recon_loss", True):
+        # Other criteria
+        x_hat = None
+        if "recon" in self.criteria_names:
             _, _, x_hat = self.model(B)
-            recon_loss = self.criterion(B.x, x_hat.view(*B.x.shape))
-            loss_dict["recon"] = recon_loss
+        _dict = self._additional_criteria_evaluation(x_hat, predictions, B)
+        loss_dict.update(_dict)
 
         return loss_dict

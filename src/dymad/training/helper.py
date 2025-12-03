@@ -12,7 +12,7 @@ class RunState:
     epoch: int = 0
     best_loss: float = float("inf")
     hist: List[Any] = field(default_factory=list)
-    rmse: List[Any] = field(default_factory=list)
+    crit: List[Any] = field(default_factory=list)
     epoch_times: List[float] = field(default_factory=list)
     converged: bool = False
 
@@ -20,7 +20,11 @@ class RunState:
     model: Optional[torch.nn.Module] = None
     optimizer: Optional[torch.optim.Optimizer] = None
     schedulers: List[Any] = field(default_factory=list)
-    criterion: Optional[torch.nn.Module] = None
+    criteria: Optional[List[torch.nn.Module]] = None
+    criteria_weights: Optional[List[float]] = None
+    criteria_names: Optional[List[str]] = None
+    prediction_criterion: Optional[torch.nn.Module] = None
+    pred_crit_name: Optional[str] = None
 
     # Data: live objects only (not serialized)
     train_set: Optional[Dataset] = None
@@ -38,7 +42,7 @@ class RunState:
             "epoch": self.epoch,
             "best_loss": self.best_loss,
             "hist": self.hist,
-            "rmse": self.rmse,
+            "crit": self.crit,
             "epoch_times": self.epoch_times,
             "converged": self.converged,
             "model_state_dict": None if self.model is None else self.model.state_dict(),
@@ -46,7 +50,13 @@ class RunState:
             "scheduler_state_dicts": [
                 scheduler.state_dict() for scheduler in self.schedulers if hasattr(scheduler, "state_dict")
             ],
-            "criterion_state_dict": None if self.criterion is None else self.criterion.state_dict(),
+            "criteria_state_dicts": [
+                c.state_dict() for c in self.criteria
+            ],
+            "criteria_weights": self.criteria_weights,
+            "criteria_names": self.criteria_names,
+            "prediction_criterion_state_dict": None if self.prediction_criterion is None else self.prediction_criterion.state_dict(),
+            "pred_crit_name": self.pred_crit_name,
             "train_md": self.train_md,
             "valid_md": self.valid_md,
         }
@@ -58,7 +68,8 @@ class RunState:
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         schedulers: List[Any],
-        criterion: Optional[torch.nn.Module],
+        criteria: Optional[List[torch.nn.Module]],
+        prediction_criterion: Optional[torch.nn.Module],
     ) -> "RunState":
         """Rebuild RunState from a checkpoint, plus new live model/optimizer/schedulers."""
         model.load_state_dict(ckpt["model_state_dict"])
@@ -68,20 +79,28 @@ class RunState:
             for s, s_state in zip(schedulers, ckpt["scheduler_state_dicts"]):
                 if hasattr(s, "load_state_dict"):
                     s.load_state_dict(s_state)
-        criterion.load_state_dict(ckpt["criterion_state_dict"])
+        if criteria is not None and "criteria_state_dicts" in ckpt:
+            for criterion, c_state in zip(criteria, ckpt["criteria_state_dicts"]):
+                criterion.load_state_dict(c_state)
+        if prediction_criterion is not None and "prediction_criterion_state_dict" in ckpt:
+            prediction_criterion.load_state_dict(ckpt["prediction_criterion_state_dict"])
 
         return cls(
             config=ckpt.get("config", {}),
             epoch=ckpt.get("epoch", 0),
             best_loss=ckpt.get("best_loss", float("inf")),
             hist=ckpt.get("hist", []),
-            rmse=ckpt.get("rmse", []),
+            crit=ckpt.get("crit", []),
             epoch_times=ckpt.get("epoch_times", []),
             converged=ckpt.get("converged", False),
             model=model,
             optimizer=optimizer,
             schedulers=schedulers,
-            criterion=criterion,
+            criteria=criteria,
+            criteria_weights=ckpt.get("criteria_weights", []),
+            criteria_names=ckpt.get("criteria_names", []),
+            prediction_criterion=prediction_criterion,
+            pred_crit_name=ckpt.get("pred_crit_name", None),
             train_md=ckpt.get("train_md", {}),
             valid_md=ckpt.get("valid_md", {}),
         )
