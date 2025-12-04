@@ -70,10 +70,10 @@ class OptBase:
         logger.info("Optimization settings:")
         logger.info(self.optimizer)
         logger.info("Criteria settings:")
-        for _n, _c, _w in zip(self.criteria_names, self.criteria, self.criteria_weights):
+        for _n, _c, _w in zip(self.criteria_names[:-1], self.criteria[:-1], self.criteria_weights):
             logger.info(f" - {_n}: weight={_w}, criterion={_c}")
         logger.info("Prediction criterion settings:")
-        logger.info(f" - {self.pred_crit_name}: criterion={self.prediction_criterion}")
+        logger.info(f" - {self.criteria_names[-1]}: criterion={self.criteria[-1]}")
         logger.info("Scheduler info:")
         for _s in self.schedulers:
             logger.info(_s.diagnostic_info())
@@ -85,7 +85,7 @@ class OptBase:
         )
 
     def _setup_model(self) -> None:
-        """Setup model, optimizer, schedulers, and criterion."""
+        """Setup model, optimizer, schedulers, and criteria."""
         # Model
         self.model = self.model_class(
             self.config["model"], self.train_md, dtype=self.dtype, device=self.device
@@ -136,16 +136,16 @@ class OptBase:
             self.criteria_names.append(key)
 
         # Criteria - for monitoring, possibly different from training
-        crit_dict  = copy.deepcopy(self.config.get("prediction_criterion", {}))
+        crit_dict = copy.deepcopy(self.config.get("prediction_criterion", {}))
         crit_dict.update(self.config_phase.get("prediction_criterion", {}))   # Possible phase override
         if len(crit_dict) > 0:
             key = crit_dict.get("type", "mse")
             loss_class = LOSS_MAP.get(key)
-            self.prediction_criterion = loss_class(**crit_dict.get("params", {}))
-            self.pred_crit_name = key
+            self.criteria.append(loss_class(**crit_dict.get("params", {})))
+            self.criteria_names.append(key)
         else:
-            self.prediction_criterion = self.criteria[0]
-            self.pred_crit_name = str(self.criteria[0])
+            self.criteria.append(self.criteria[0])
+            self.criteria_names.append(str(self.criteria_names[0]))
 
     def _setup_ls(self) -> None:
         """Setup LSUpdater if requested."""
@@ -209,8 +209,6 @@ class OptBase:
             self.criteria = state.criteria
             self.criteria_weights = state.criteria_weights
             self.criteria_names = state.criteria_names
-            self.prediction_criterion = state.prediction_criterion
-            self.pred_crit_name = state.pred_crit_name
 
             self.start_epoch = state.epoch
             self.best_loss = state.best_loss
@@ -236,8 +234,6 @@ class OptBase:
             criteria=self.criteria,
             criteria_weights=self.criteria_weights,
             criteria_names=self.criteria_names,
-            prediction_criterion=self.prediction_criterion,
-            pred_crit_name=self.pred_crit_name,
             train_set=self.train_set,
             valid_set=self.valid_set,
             train_loader=self.train_loader,
@@ -277,8 +273,7 @@ class OptBase:
 
         ckpt = torch.load(self.checkpoint_path, weights_only=False, map_location=self.device)
         state = RunState.from_checkpoint(
-            ckpt, self.model, self.optimizer, self.schedulers,
-            self.criteria, self.prediction_criterion)
+            ckpt, self.model, self.optimizer, self.schedulers, self.criteria)
 
         # Attach the persistent parts
         self.start_epoch = state.epoch + 1  # resume from next epoch
@@ -331,7 +326,7 @@ class OptBase:
         - Else: sum w_i * loss_i, where w_i = loss_weights.get(name, 1.0).
         """
         total = 0.0
-        for _n, _w in zip(self.criteria_names, self.criteria_weights):
+        for _n, _w in zip(self.criteria_names[:-1], self.criteria_weights):
             total += loss_dict[_n] * _w
         return total
 
@@ -403,14 +398,14 @@ class OptBase:
         Compute additional criteria losses beyond dynamics
         """
         loss_dict = {}
-        if len(self.criteria_names) < 2:
+        if len(self.criteria_weights) < 2:
             return loss_dict
 
         if self.criteria_names[1] == "recon":
             recon_loss = self.criteria[1](B.x, x_hat.view(*B.x.shape))
             loss_dict["recon"] = recon_loss
 
-        for _i in range(2, len(self.criteria)):
+        for _i in range(2, len(self.criteria)-1):
             crit_name = self.criteria_names[_i]
             loss_value = self.criteria[_i](predictions, B.x)
             loss_dict[crit_name] = loss_value
@@ -450,7 +445,7 @@ class OptBase:
             # Dynamics criterion
             x_truth = x_truth.detach().cpu().numpy().squeeze(0)
             x_pred = x_pred.detach().cpu().numpy().squeeze(0)
-            prediction_crit = self.prediction_criterion(x_pred, x_truth)
+            prediction_crit = self.criteria[-1](x_pred, x_truth)
 
             if plot:
                 _us = None if truth.u is None else truth.u.detach().cpu().numpy().squeeze(0)
@@ -622,7 +617,6 @@ class OptBase:
             'loss_names': self.criteria_names,
             'epoch_crit': epoch_crit,
             'crits': crits,
-            'crit_name': self.pred_crit_name,
         }
 
         file_name = f"{self.results_prefix}/{self.model_name}_summary.npz"

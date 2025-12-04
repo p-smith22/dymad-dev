@@ -23,8 +23,6 @@ class RunState:
     criteria: Optional[List[torch.nn.Module]] = None
     criteria_weights: Optional[List[float]] = None
     criteria_names: Optional[List[str]] = None
-    prediction_criterion: Optional[torch.nn.Module] = None
-    pred_crit_name: Optional[str] = None
 
     # Data: live objects only (not serialized)
     train_set: Optional[Dataset] = None
@@ -55,8 +53,6 @@ class RunState:
             ],
             "criteria_weights": self.criteria_weights,
             "criteria_names": self.criteria_names,
-            "prediction_criterion_state_dict": None if self.prediction_criterion is None else self.prediction_criterion.state_dict(),
-            "pred_crit_name": self.pred_crit_name,
             "train_md": self.train_md,
             "valid_md": self.valid_md,
         }
@@ -68,8 +64,7 @@ class RunState:
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         schedulers: List[Any],
-        criteria: Optional[List[torch.nn.Module]],
-        prediction_criterion: Optional[torch.nn.Module],
+        criteria: Optional[List[torch.nn.Module]]
     ) -> "RunState":
         """Rebuild RunState from a checkpoint, plus new live model/optimizer/schedulers."""
         model.load_state_dict(ckpt["model_state_dict"])
@@ -82,8 +77,6 @@ class RunState:
         if criteria is not None and "criteria_state_dicts" in ckpt:
             for criterion, c_state in zip(criteria, ckpt["criteria_state_dicts"]):
                 criterion.load_state_dict(c_state)
-        if prediction_criterion is not None and "prediction_criterion_state_dict" in ckpt:
-            prediction_criterion.load_state_dict(ckpt["prediction_criterion_state_dict"])
 
         return cls(
             config=ckpt.get("config", {}),
@@ -99,8 +92,6 @@ class RunState:
             criteria=criteria,
             criteria_weights=ckpt.get("criteria_weights", []),
             criteria_names=ckpt.get("criteria_names", []),
-            prediction_criterion=prediction_criterion,
-            pred_crit_name=ckpt.get("pred_crit_name", None),
             train_md=ckpt.get("train_md", {}),
             valid_md=ckpt.get("valid_md", {}),
         )

@@ -297,7 +297,7 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
     clr = PALETTE[index % len(PALETTE)]
 
     e_loss, h_loss = npz['epoch_loss'], npz['losses']
-    e_crit, h_crit, n_crit = npz['epoch_crit'], npz['crits'], npz['crit_name']
+    e_crit, h_crit, n_crit = npz['epoch_crit'], npz['crits'], npz['loss_names'][-1]
 
     if axes is None:
         fig, ax = plt.subplots(nrows=2, sharex=True, figsize=(8, 6))
