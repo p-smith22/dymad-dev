@@ -48,7 +48,7 @@ IDX = [3]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0
-iftrn = 1
+iftrn = 0
 ifplt = 1
 ifprd = 0
 

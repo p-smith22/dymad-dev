@@ -43,19 +43,20 @@ class OptLinear(OptBase):
         """
         B = batch.to(self.device)
         linear_loss = self._ls.eval_batch(self.model, B, self.criteria[0])
-        loss_dict = {"dynamics": linear_loss}
+        loss_list = [linear_loss]
 
         # Other criteria
         x_hat = None
         if "recon" in self.criteria_names:
             _, _, x_hat = self.model(B)
-        _dict = self._additional_criteria_evaluation(x_hat, None, B)
-        loss_dict.update(_dict)
+        _list = self._additional_criteria_evaluation(x_hat, None, B)
+        loss_list.extend(_list)
 
-        return loss_dict
+        return loss_list
 
     def train_epoch(self) -> float:
         """Train the model for one epoch."""
         logger.info("Least squares update in OptLinear.")
         avg_epoch_loss, _ = self._ls.update(self.model, self.train_loader)
-        return avg_epoch_loss
+        loss_items = [avg_epoch_loss.item()] + [0.0] * (len(self.criteria_weights) - 1)
+        return avg_epoch_loss, loss_items

@@ -6,7 +6,7 @@ import random
 import time
 import torch
 from torch.utils.data import DataLoader
-from typing import Any, Dict, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
 from dymad.io import DynData
 from dymad.losses import LOSS_MAP
@@ -55,14 +55,11 @@ class OptBase:
         os.makedirs(self.config["path"]["results_prefix"], exist_ok=True)
         self.results_prefix  = self.config["path"]["results_prefix"]
 
-        ifloaded = self.load_checkpoint()
-        if not ifloaded:
-            if run_state is None:
-                raise ValueError("No checkpoint found and no run_state provided.")
-            # Attach an existing run state (may be data-only or full)
-            self._attach_run_state(run_state)
+        # Create model, optimizer, schedulers, criteria
+        self._attach_run_state(run_state)
+        self.load_checkpoint()
 
-        # ---- logging summary ----
+        # logging summary
         logger.info("Opt Initialized:")
         logger.info(f"Model name: {self.model_name}")
         logger.info(self.model)
@@ -193,26 +190,23 @@ class OptBase:
         self.train_md = state.train_md     # Only need dimension info
         self.valid_md = state.valid_md
 
-        # If model is None, this is "data-only" state: build model from scratch
+        self._setup_model()
         if state.model is None or state.optimizer is None or not state.schedulers:
-            self._setup_model()
-
+            # If model is None, this is "data-only" state
+            # Start history from scratch
             self.start_epoch = 0
             self.best_loss = float("inf")
             self.hist = []
             self.crit = []
             self.epoch_times = []
         else:
-            self.model = state.model.to(self.device)
-            self.optimizer = state.optimizer
-            self.schedulers = state.schedulers
-            self.criteria = state.criteria
-            self.criteria_weights = state.criteria_weights
-            self.criteria_names = state.criteria_names
+            # Full RunState: reuse model/optimizer, but not schedulers and criteria
+            self.model.load_state_dict(state.model.state_dict())
+            self.optimizer.load_state_dict(state.optimizer.state_dict())
 
             self.start_epoch = state.epoch
-            self.best_loss = state.best_loss
-            self.hist = list(state.hist)
+            self.best_loss = float("inf")     # reset best loss as the losses may differ
+            self.hist = copy.deepcopy(state.hist)
             self.crit = list(state.crit)
             self.epoch_times = []
         self._setup_ls()
@@ -224,7 +218,7 @@ class OptBase:
             device=self.device,
             epoch=epoch,
             best_loss=self.best_loss,
-            hist=list(self.hist),
+            hist=copy.deepcopy(self.hist),
             crit=list(self.crit),
             epoch_times=list(self.epoch_times),
             converged=self.convergence_tolerance_reached,
@@ -262,13 +256,7 @@ class OptBase:
         elif not os.path.exists(checkpoint_path):
             logger.info(f"No checkpoint found at {checkpoint_path}. Starting from scratch.")
             flag = False
-
         if not flag:
-            self.start_epoch = 0
-            self.best_loss = float("inf")
-            self.hist = []
-            self.crit = []
-            self.epoch_times = []
             return flag
 
         ckpt = torch.load(self.checkpoint_path, weights_only=False, map_location=self.device)
@@ -278,7 +266,7 @@ class OptBase:
         # Attach the persistent parts
         self.start_epoch = state.epoch + 1  # resume from next epoch
         self.best_loss = state.best_loss
-        self.hist = state.hist
+        self.hist = copy.deepcopy(state.hist)
         self.crit = state.crit
         self.convergence_tolerance_reached = False  # reset on load
         self.epoch_times = state.epoch_times
@@ -318,7 +306,7 @@ class OptBase:
         """
         raise NotImplementedError
 
-    def _aggregate_losses(self, loss_dict: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def _aggregate_losses(self, loss_list: List[torch.Tensor]) -> torch.Tensor:
         """
         Combine named loss terms using config-defined weights.
 
@@ -326,8 +314,8 @@ class OptBase:
         - Else: sum w_i * loss_i, where w_i = loss_weights.get(name, 1.0).
         """
         total = 0.0
-        for _n, _w in zip(self.criteria_names[:-1], self.criteria_weights):
-            total += loss_dict[_n] * _w
+        for _l, _w in zip(loss_list, self.criteria_weights):
+            total += _l * _w
         return total
 
     # ------------------------------------------------------------------
@@ -346,26 +334,25 @@ class OptBase:
           - minimum learning rate.
         """
         self.model.train()
-        total_loss = 0.0
 
-        # TODO
-        # Let _process_batch output tensor
-        # dot with weights
-        # return also dict losses
-
+        loss_total = 0.0
+        loss_items = [0.0 for _ in self.criteria_weights]
         for batch in self.train_loader:
             self.optimizer.zero_grad(set_to_none=True)
-            out = self._process_batch(batch)
-            loss = self._aggregate_losses(out)
+            loss_list = self._process_batch(batch)
+            loss = self._aggregate_losses(loss_list)
             loss.backward()
             self.optimizer.step()
-            total_loss += loss.item()
 
-        avg_epoch_loss = total_loss / len(self.train_loader)
+            loss_total += loss.item()
+            loss_items = [_l + b.item() for _l, b in zip(loss_items, loss_list)]
+
+        avg_loss_epoch = loss_total / len(self.train_loader)
+        avg_loss_items = [l / len(self.train_loader) for l in loss_items]
 
         # Step schedulers
         for scheduler in self.schedulers:
-            flag, changed = scheduler.step(eploss=avg_epoch_loss)
+            flag, changed = scheduler.step(eploss=avg_loss_epoch)
             self.convergence_tolerance_reached = (
                 self.convergence_tolerance_reached or flag
             )
@@ -380,37 +367,38 @@ class OptBase:
                 if param_group["lr"] < min_lr:
                     param_group["lr"] = min_lr
 
-        return avg_epoch_loss
+        return avg_loss_epoch, avg_loss_items
 
     def evaluate(self, dataloader: DataLoader) -> float:
         """Generic evaluation loop using `_process_batch`."""
         self.model.eval()
-        total_loss = 0.0
+        loss_total = 0.0
+        loss_items = [0.0 for _ in self.criteria_weights]
         with torch.no_grad():
             for batch in dataloader:
-                out = self._process_batch(batch)
-                loss = self._aggregate_losses(out)
-                total_loss += loss.item()
-        return total_loss / len(dataloader)
+                loss_list = self._process_batch(batch)
+                loss = self._aggregate_losses(loss_list)
+                loss_total += loss.item()
+                loss_items = [_l + b.item() for _l, b in zip(loss_items, loss_list)]
+        return loss_total / len(dataloader), [l / len(dataloader) for l in loss_items]
 
     def _additional_criteria_evaluation(self, x_hat, predictions, B) -> None:
         """
         Compute additional criteria losses beyond dynamics
         """
-        loss_dict = {}
+        loss_list = []
         if len(self.criteria_weights) < 2:
-            return loss_dict
+            return loss_list
 
         if self.criteria_names[1] == "recon":
             recon_loss = self.criteria[1](B.x, x_hat.view(*B.x.shape))
-            loss_dict["recon"] = recon_loss
+            loss_list.append(recon_loss)
 
         for _i in range(2, len(self.criteria)-1):
-            crit_name = self.criteria_names[_i]
             loss_value = self.criteria[_i](predictions, B.x)
-            loss_dict[crit_name] = loss_value
+            loss_list.append(loss_value)
 
-        return loss_dict
+        return loss_list
 
     # ------------------------------------------------------------------
     # Prediction criterion evaluation
@@ -520,6 +508,12 @@ class OptBase:
 
         _ls_count = 0
 
+        local_hist = {"epoch": []}
+        local_hist.update({"train_"+_k : [] for _k in self.criteria_names[:-1]})
+        local_hist.update({"valid_"+_k : [] for _k in self.criteria_names[:-1]})
+        local_hist['train_total'] = []
+        local_hist['valid_total'] = []
+
         overall_start_time = time.time()
         for epoch in range(self.start_epoch, self.start_epoch + n_epochs):
             # Training and evaluation
@@ -550,31 +544,40 @@ class OptBase:
                                             self.optimizer.state.pop(_p, None)
                                             logger.info(f"Removed optimizer state for {_n} after LS update.")
 
-            train_loss = self.train_epoch()
-            val_loss = self.evaluate(self.valid_loader)
+            loss_train_total, loss_train_items = self.train_epoch()
+            loss_valid_total, loss_valid_items = self.evaluate(self.valid_loader)
 
             epoch_time = time.time() - epoch_start_time
             self.epoch_times.append(epoch_time)
 
             # Record history
-            self.hist.append([epoch, train_loss, val_loss])
+            local_hist['epoch'].append(epoch)
+            for _k, _t, _v in zip(self.criteria_names[:-1], loss_train_items, loss_valid_items):
+                local_hist['train_'+_k].append(_t)
+                local_hist['valid_'+_k].append(_v)
+            local_hist['train_total'].append(loss_train_total)
+            local_hist['valid_total'].append(loss_valid_total)
 
             # Logging
             logger.info(
                 f"Epoch {epoch+1}/{self.start_epoch + n_epochs}, "
-                f"Train Loss: {train_loss:.4e}, "
-                f"Validation Loss: {val_loss:.4e}"
+                f"Train Loss: {loss_train_total:.4e}, " + ", ".join([
+                    f"{name}: {value:.4e}" for name, value in zip(self.criteria_names[:-1], loss_train_items)
+                ]) + "; " +
+                f"Valid Loss: {loss_valid_total:.4e}, " + ", ".join([
+                    f"{name}: {value:.4e}" for name, value in zip(self.criteria_names[:-1], loss_valid_items)
+                ])
             )
 
             # Save best model
-            self.save_if_best(val_loss, epoch)
+            self.save_if_best(loss_valid_total, epoch)
 
             # Periodic checkpoint and evaluation
             if (epoch + 1) % save_interval == 0 or self.convergence_tolerance_reached:
                 self.save_checkpoint(epoch)
 
                 # Plot loss curves
-                plot_hist(self.hist, epoch+1, self.model_name, prefix=self.results_prefix)
+                plot_hist(self.hist + [local_hist], self.model_name, prefix=self.results_prefix)
 
                 # Evaluate prediction criterion on random trajectories
                 self.update_prediction_criterion_history(epoch)
@@ -582,40 +585,34 @@ class OptBase:
                 if self.convergence_tolerance_reached:
                     self.convergence_epoch = epoch+1
                     logger.info(f"Convergence reached at epoch {epoch+1} "
-                                f"with validation loss {val_loss:.4e}")
+                                f"with validation loss {loss_valid_total:.4e}")
                     break
+        self.hist += [local_hist]
 
         if self.crit == []:
             self.update_prediction_criterion_history(epoch)
 
-        plot_hist(self.hist, epoch+1, self.model_name, prefix=self.results_prefix)
         total_training_time = time.time() - overall_start_time
         avg_epoch_time = np.mean(self.epoch_times)
-        final_train_loss = self.evaluate(self.train_loader)
-        final_valid_loss = self.evaluate(self.valid_loader)
-        _ = self.evaluate_prediction_criterion('valid', plot=True)
 
-        # Process histories of loss and prediction criterion
-        # These are saved in the checkpoint too, but here we process them for easier post-processing
-        tmp = np.array(self.hist).T
-        epoch_loss, losses = tmp[0], tmp[1:]
-        tmp = np.array(self.crit).T
-        epoch_crit, crits = tmp[0], tmp[1:]
+        plot_hist(self.hist, self.model_name, prefix=self.results_prefix)
+        _ = self.evaluate_prediction_criterion('valid', plot=True)
 
         # Save summary of training
         # Here we also save the model itself - a lazy approach but more "out-of-the-box" for deployment
+        tmp = np.array(self.crit).T
+        crit_epoch, crits = tmp[0], tmp[1:]
         results = {
             'model_name': self.model_name,
             'total_training_time': total_training_time,
             'avg_epoch_time': avg_epoch_time,
-            'final_train_loss': final_train_loss,
-            'final_valid_loss': final_valid_loss,
+            'final_train_loss': local_hist['train_total'][-1],
+            'final_valid_loss': local_hist['valid_total'][-1],
             'best_valid_loss': self.best_loss,
             'convergence_epoch': self.convergence_epoch,
-            'epoch_loss': epoch_loss,
-            'losses': losses,
-            'loss_names': self.criteria_names,
-            'epoch_crit': epoch_crit,
+            'hist': self.hist,
+            'crit_name': self.criteria_names[-1],  # Only the prediction criterion
+            'crit_epoch': crit_epoch,
             'crits': crits,
         }
 

@@ -5,7 +5,7 @@ import numpy as np
 import os
 
 PALETTE = ["#000000", "#9b59b6", "#3498db", "#95a5a6", "#e74c3c", "#34495e"]
-LINESTY = ["-", "--", "-.", ":"]
+LINESTY = ["-", "--", "-.", ":", ".-"]
 
 # Disable logging for matplotlib to avoid clutter in DEBUG mode
 plt_logger = logging.getLogger('matplotlib')
@@ -212,32 +212,31 @@ def plot_one_trajectory(
 
     return fig, ax
 
-def plot_hist(hist, epoch, model_name, ifclose=True, prefix='.'):
+def plot_hist(hist, model_name, ifclose=True, prefix='.'):
     """
     Plot training history with loss curves for train/validation/test sets.
 
     Args:
-        hist (list): History of losses, where hist[0] is epoch numbers and
-                     hist[1:] contains losses for train, validation, and test sets.
-        epoch (int): Number of epochs to plot.
+        hist (list): History of losses, stored as dictionaries.
         model_name (str): Name of the model for the plot title and filename.
         ifclose (bool): Whether to close the plot after saving.
         prefix (str): Directory prefix for saving the plot.
     """
-    tmp = np.array(hist).T
-    _e, _h = tmp[0][:epoch], tmp[1:,:epoch]
-
-    # Create figure
     plt.figure(figsize=(8, 6))
-
-    # Plot loss curves with modern styling
-    plt.semilogy(_e, _h[0], '--', color='#3498db', linewidth=2,
-                 label='Training', alpha=0.8)
-    plt.semilogy(_e, _h[1], '-', color='#e74c3c', linewidth=2,
-                 label='Validation', alpha=0.9)
+    for h in hist:
+        key = ['total', 'dynamics']
+        for _k in h.keys():
+            if 'train' in _k:
+                if _k[6:] not in key:
+                    key.append(_k[6:])
+        for _i, _k in enumerate(key):
+            _sty = LINESTY[_i % len(LINESTY)]
+            _clr = PALETTE[_i % len(PALETTE)]
+            plt.semilogy(h['epoch'], h[f'train_{_k}'], _sty, color=_clr, label=f'Train {_k}', linewidth=1.5)
+            plt.semilogy(h['epoch'], h[f'valid_{_k}'], _sty, color=_clr, label=f'Valid {_k}', linewidth=.75)
 
     # Styling
-    plt.xlim([_e[0], _e[-1]+1])
+    plt.xlim([hist[0]['epoch'][0], hist[-1]['epoch'][-1]+1])
     plt.xlabel('Epoch', fontsize=12)
     plt.ylabel('Loss (log scale)', fontsize=12)
     plt.title(f'{model_name} - Training History', fontsize=14, fontweight='bold')
@@ -267,11 +266,11 @@ def plot_summary(npz_files, labels=None, ifscl=True, ifclose=True, prefix='.'):
         prefix (str): Directory prefix for saving the plot.
     """
     _files = [f"results/{npz}/{npz}_summary.npz" for npz in npz_files]
-    npzs = [np.load(_f) for _f in _files]
+    npzs = [np.load(_f, allow_pickle=True) for _f in _files]
     ax = None
     for idx, npz in enumerate(npzs):
         label = labels[idx] if labels is not None else f'Run {idx+1}'
-        fig, ax = plot_one_summary(npz, label=label, index=idx, ifscl=ifscl, axes=ax)
+        _, ax = plot_one_summary(npz, label=label, index=idx, ifscl=ifscl, axes=ax)
 
     plt.tight_layout()
     if prefix != '.':
@@ -296,16 +295,23 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
     """
     clr = PALETTE[index % len(PALETTE)]
 
-    e_loss, h_loss = npz['epoch_loss'], npz['losses']
-    e_crit, h_crit, n_crit = npz['epoch_crit'], npz['crits'], npz['loss_names'][-1]
-
     if axes is None:
         fig, ax = plt.subplots(nrows=2, sharex=True, figsize=(8, 6))
     else:
         fig = axes[0].figure
         ax = axes
-    scl = h_loss[0, 0] if ifscl else 1.0
-    ax[0].semilogy(e_loss, h_loss[0]/scl, '-', color=clr, label=label)
+    scl = npz['hist'][0]['train_total'][0] if ifscl else 1.0
+    for hist in npz['hist']:
+        key = ['total', 'dynamics']
+        for _k in hist.keys():
+            if 'train' in _k:
+                if _k[6:] not in key:
+                    key.append(_k[6:])
+        epo = hist['epoch']
+        for _i, _k in enumerate(key):
+            _sty = LINESTY[_i % len(LINESTY)]
+            ax[0].semilogy(epo, np.array(hist[f'train_{_k}'])/scl, _sty, color=clr, label=f'{label} Train {_k}', linewidth=1.5)
+            ax[0].semilogy(epo, np.array(hist[f'valid_{_k}'])/scl, _sty, color=clr, label=f'{label} Valid {_k}', linewidth=.75)
     if ifscl:
         ax[0].set_title('Training Loss (relative drop)')
         ax[0].set_ylabel('Relative Loss')
@@ -314,6 +320,7 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
         ax[0].set_ylabel('Loss')
     ax[0].legend()
 
+    e_crit, h_crit, n_crit = npz['crit_epoch'], npz['crits'], npz['crit_name']
     ax[1].semilogy(e_crit, h_crit[0], '-',  color=clr, label=f'{label}, Train')
     ax[1].semilogy(e_crit, h_crit[1], '--', color=clr, label=f'{label}, Validation')
     ax[1].set_title('Prediction Criterion')

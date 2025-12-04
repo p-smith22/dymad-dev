@@ -6,6 +6,17 @@ from typing import Any, Dict, Iterable, List, Optional
 
 @dataclass
 class RunState:
+    """
+    States of a training run to be checkpointed and restored.
+
+    The usages are threefold:
+
+        - Data-only state (only data members): For initializing an optimization in StackedOpt
+        - Augmented state (adding persistent and model): For continuing an optimization in StackedOpt
+        - Full state (adding optimizer, schedulers, criteria): For resuming an interrupted optimization
+
+    It contains interfaces to and from checkpoint dictionaries, assuming full state minus data.
+    """
     # Persistent
     config: Optional[Dict[str, Any]]
     device: Optional[torch.device] = None
@@ -16,8 +27,10 @@ class RunState:
     epoch_times: List[float] = field(default_factory=list)
     converged: bool = False
 
-    # Model & optim
+    # Model
     model: Optional[torch.nn.Module] = None
+
+    # Optimization states
     optimizer: Optional[torch.optim.Optimizer] = None
     schedulers: List[Any] = field(default_factory=list)
     criteria: Optional[List[torch.nn.Module]] = None
@@ -66,10 +79,11 @@ class RunState:
         schedulers: List[Any],
         criteria: Optional[List[torch.nn.Module]]
     ) -> "RunState":
-        """Rebuild RunState from a checkpoint, plus new live model/optimizer/schedulers."""
+        """
+        Rebuild RunState from a checkpoint, meant for restarting an interrupted run.
+        """
         model.load_state_dict(ckpt["model_state_dict"])
         optimizer.load_state_dict(ckpt["optimizer_state_dict"])
-        # Restore schedulers if you stored them
         if "scheduler_state_dicts" in ckpt:
             for s, s_state in zip(schedulers, ckpt["scheduler_state_dicts"]):
                 if hasattr(s, "load_state_dict"):

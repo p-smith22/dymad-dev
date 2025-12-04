@@ -111,13 +111,13 @@ class OptNODE(OptBase):
 
         # Base dynamics criterion
         dynamics_loss = self.criteria[0](predictions, B.x)
-        loss_dict = {"dynamics": dynamics_loss}
+        loss_list = [dynamics_loss]
 
         # Other criteria
         x_hat = None
         if "recon" in self.criteria_names:
             _, _, x_hat = self.model(B)
-        _dict = self._additional_criteria_evaluation(x_hat, predictions, B)
-        loss_dict.update(_dict)
+        _list = self._additional_criteria_evaluation(x_hat, predictions, B)
+        loss_list.extend(_list)
 
-        return loss_dict
+        return loss_list
