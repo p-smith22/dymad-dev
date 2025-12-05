@@ -227,8 +227,11 @@ def plot_summary(npz_files, labels=None, ifscl=True, ifclose=True, prefix='.'):
     npzs = [np.load(_f, allow_pickle=True) for _f in _files]
     ax = None
     for idx, npz in enumerate(npzs):
-        label = labels[idx] if labels is not None else f'Run {idx+1}'
-        _, ax = plot_one_summary(npz, label=label, index=idx, ifscl=ifscl, axes=ax)
+        _, ax = plot_one_summary(npz, label=str(idx), index=idx, ifscl=ifscl, axes=ax)
+
+    lbls = labels if labels is not None else [f'Run {i+1}' for i in range(len(npzs))]
+    titl = ", ".join([f"{i}: {l}" for i, l in enumerate(lbls)])
+    ax[0].set_title(ax[0].get_title() + "\n" + titl)
 
     plt.tight_layout()
     if prefix != '.':
@@ -254,7 +257,7 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
     clr = PALETTE[index % len(PALETTE)]
 
     if axes is None:
-        fig, ax = plt.subplots(nrows=2, sharex=True, figsize=(8, 6))
+        fig, ax = plt.subplots(nrows=2, sharex=True, figsize=(10, 6))
     else:
         fig = axes[0].figure
         ax = axes
@@ -268,20 +271,20 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
         epo = hist['epoch']
         for _i, _k in enumerate(key):
             _sty = LINESTY[_i % len(LINESTY)]
-            ax[0].semilogy(epo, np.abs(hist[f'train_{_k}'])/scl, _sty, color=clr, label=f'{label} Train {_k}', linewidth=1.5)
-            ax[0].semilogy(epo, np.abs(hist[f'valid_{_k}'])/scl, _sty, color=clr, label=f'{label} Valid {_k}', linewidth=.75)
+            ax[0].semilogy(epo, np.abs(hist[f'train_{_k}'])/scl, _sty, color=clr, label=f'{label} T {_k[:3]}', linewidth=1.5)
+            ax[0].semilogy(epo, np.abs(hist[f'valid_{_k}'])/scl, _sty, color=clr, label=f'{label} V {_k[:3]}', linewidth=.75)
     if ifscl:
-        ax[0].set_title('Training Loss (relative drop)')
+        ax[0].set_title('Training Loss (scaled)')
         ax[0].set_ylabel('Relative Loss')
     else:
-        ax[0].set_title('Training Loss *magnitude not to compare*')
+        ax[0].set_title('Training Loss (raw)')
         ax[0].set_ylabel('Loss')
-    ax[0].legend()
+    ax[0].legend(loc='center left', ncol=2, bbox_to_anchor=(1, 0.5))
 
     e_crit, h_crit, n_crit = npz['crit_epoch'], npz['crits'], npz['crit_name']
     if len(e_crit) > 0:
-        ax[1].semilogy(e_crit, np.abs(h_crit[0]), '-',  color=clr, label=f'{label}, Train')
-        ax[1].semilogy(e_crit, np.abs(h_crit[1]), '--', color=clr, label=f'{label}, Validation')
+        ax[1].semilogy(e_crit, np.abs(h_crit[0]), '-',  color=clr, label=f'{label} Train')
+        ax[1].semilogy(e_crit, np.abs(h_crit[1]), '--', color=clr, label=f'{label} Valid')
         ax[1].legend()
     ax[1].set_title('Prediction Criterion')
     ax[1].set_xlabel('Epoch')

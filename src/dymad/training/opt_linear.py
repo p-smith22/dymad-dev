@@ -58,5 +58,5 @@ class OptLinear(OptBase):
         """Train the model for one epoch."""
         logger.info("Least squares update in OptLinear.")
         avg_epoch_loss, _ = self._ls.update(self.model, self.train_loader)
-        loss_items = [avg_epoch_loss.item()] + [0.0] * (len(self.criteria_weights) - 1)
-        return avg_epoch_loss, loss_items
+        loss_items = [avg_epoch_loss] + [0.0] * (len(self.criteria_weights) - 1)
+        return torch.tensor(avg_epoch_loss, dtype=torch.float64), loss_items

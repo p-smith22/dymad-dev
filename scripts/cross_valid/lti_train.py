@@ -44,7 +44,7 @@ cases = [
     {"name": "kbf_two",  "model" : KBF, "trainer": StackedTrainer,  "config": 'lti_kbf_two.yaml'},
     {"name": "kbf_mcri", "model" : KBF, "trainer": StackedTrainer,  "config": 'lti_kbf_mcri.yaml'},
 ]
-IDX = [3]
+IDX = [2, 3]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0

@@ -27,18 +27,6 @@ model:
   weight_init: "xavier_uniform"
   input_order: "cubic"
 
-criterion:
-  dynamics:
-    type: 'mse'
-    weight: 1.0
-    params:
-      reduction: 'mean'
-  recon:
-    type: 'mse'
-    weight: 1.0
-    params:
-      reduction: 'mean'
-
 prediction_criterion:
   type: 'wmse'
   params:
@@ -54,6 +42,11 @@ phases:
       dN: 2
       ordpol: 2
       ordint: 2
+    criterion:
+      dynamics:
+        weight: 1.0
+      recon:
+        weight: 1.0
 
   - trainer: 'NODE'
     n_epochs: 50
@@ -66,3 +59,6 @@ phases:
     ode_args:
       rtol: 1.e-7
       atol: 1.e-9
+    criterion:
+      dynamics:
+        weight: 1.0

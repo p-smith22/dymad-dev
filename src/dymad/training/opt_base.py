@@ -430,13 +430,13 @@ class OptBase:
             # Make prediction
             x_pred = self.model.predict(x0, truth, ts, method=method)
 
-            # Dynamics criterion
-            x_truth = x_truth.detach().cpu().numpy().squeeze(0)
-            x_pred = x_pred.detach().cpu().numpy().squeeze(0)
+            # Prediction criterion
             prediction_crit = self.criteria[-1](x_pred, x_truth)
             _crit = f" {self.criteria_names[-1]} {prediction_crit.item():.4e}"
 
             if plot:
+                x_truth = x_truth.detach().cpu().numpy().squeeze(0)
+                x_pred = x_pred.detach().cpu().numpy().squeeze(0)
                 _us = None if truth.u is None else truth.u.detach().cpu().numpy().squeeze(0)
                 plotting_config = self.config.get('plotting', {})
                 plot_trajectory(np.array([x_truth, x_pred]), ts.squeeze(0), self.model_name,

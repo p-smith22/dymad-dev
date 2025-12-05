@@ -27,6 +27,18 @@ model:
   weight_init: "xavier_uniform"
   input_order: "cubic"
 
+criterion:
+  dynamics:
+    type: 'mse'
+    weight: 1.0
+    params:
+      reduction: 'mean'
+  recon:
+    type: 'mse'
+    weight: 1.0
+    params:
+      reduction: 'mean'
+
 phases:
   - trainer: 'Weak'
     n_epochs: 200
