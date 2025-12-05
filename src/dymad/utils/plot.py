@@ -212,48 +212,6 @@ def plot_one_trajectory(
 
     return fig, ax
 
-def plot_hist(hist, model_name, ifclose=True, prefix='.'):
-    """
-    Plot training history with loss curves for train/validation/test sets.
-
-    Args:
-        hist (list): History of losses, stored as dictionaries.
-        model_name (str): Name of the model for the plot title and filename.
-        ifclose (bool): Whether to close the plot after saving.
-        prefix (str): Directory prefix for saving the plot.
-    """
-    plt.figure(figsize=(8, 6))
-    for h in hist:
-        key = ['total', 'dynamics']
-        for _k in h.keys():
-            if 'train' in _k:
-                if _k[6:] not in key:
-                    key.append(_k[6:])
-        for _i, _k in enumerate(key):
-            _sty = LINESTY[_i % len(LINESTY)]
-            _clr = PALETTE[_i % len(PALETTE)]
-            plt.semilogy(h['epoch'], h[f'train_{_k}'], _sty, color=_clr, label=f'Train {_k}', linewidth=1.5)
-            plt.semilogy(h['epoch'], h[f'valid_{_k}'], _sty, color=_clr, label=f'Valid {_k}', linewidth=.75)
-
-    # Styling
-    plt.xlim([hist[0]['epoch'][0], hist[-1]['epoch'][-1]+1])
-    plt.xlabel('Epoch', fontsize=12)
-    plt.ylabel('Loss (log scale)', fontsize=12)
-    plt.title(f'{model_name} - Training History', fontsize=14, fontweight='bold')
-    plt.grid(True, alpha=0.3)
-    plt.legend(loc='best', fontsize=11, framealpha=0.9)
-
-    # Improve tick formatting
-    plt.tick_params(axis='both', which='major', labelsize=10)
-
-    # Save with clean formatting
-    plt.tight_layout()
-    plt.savefig(f'{prefix}/{model_name}_history.png', dpi=150, bbox_inches='tight',
-                facecolor='white', edgecolor='none')
-
-    if ifclose:
-        plt.close()
-
 def plot_summary(npz_files, labels=None, ifscl=True, ifclose=True, prefix='.'):
     """
     Plot training losses and prediction criterion for multiple summary files on the same figure.
@@ -310,8 +268,8 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
         epo = hist['epoch']
         for _i, _k in enumerate(key):
             _sty = LINESTY[_i % len(LINESTY)]
-            ax[0].semilogy(epo, np.array(hist[f'train_{_k}'])/scl, _sty, color=clr, label=f'{label} Train {_k}', linewidth=1.5)
-            ax[0].semilogy(epo, np.array(hist[f'valid_{_k}'])/scl, _sty, color=clr, label=f'{label} Valid {_k}', linewidth=.75)
+            ax[0].semilogy(epo, np.abs(hist[f'train_{_k}'])/scl, _sty, color=clr, label=f'{label} Train {_k}', linewidth=1.5)
+            ax[0].semilogy(epo, np.abs(hist[f'valid_{_k}'])/scl, _sty, color=clr, label=f'{label} Valid {_k}', linewidth=.75)
     if ifscl:
         ax[0].set_title('Training Loss (relative drop)')
         ax[0].set_ylabel('Relative Loss')
@@ -321,14 +279,32 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
     ax[0].legend()
 
     e_crit, h_crit, n_crit = npz['crit_epoch'], npz['crits'], npz['crit_name']
-    ax[1].semilogy(e_crit, h_crit[0], '-',  color=clr, label=f'{label}, Train')
-    ax[1].semilogy(e_crit, h_crit[1], '--', color=clr, label=f'{label}, Validation')
+    if len(e_crit) > 0:
+        ax[1].semilogy(e_crit, np.abs(h_crit[0]), '-',  color=clr, label=f'{label}, Train')
+        ax[1].semilogy(e_crit, np.abs(h_crit[1]), '--', color=clr, label=f'{label}, Validation')
+        ax[1].legend()
     ax[1].set_title('Prediction Criterion')
     ax[1].set_xlabel('Epoch')
     ax[1].set_ylabel(f'Criterion {n_crit}')
-    ax[1].legend()
 
     return fig, ax
+
+def plot_hist(hist, crit, crit_name, model_name, ifclose=True, prefix='.'):
+    tmp = np.array(crit).T
+    npz = {
+        'hist': hist,
+        'crit_epoch': tmp[0] if len(tmp) > 0 else [],
+        'crits': tmp[1:] if len(tmp) > 1 else [],
+        'crit_name': crit_name
+        }
+    _ = plot_one_summary(npz, label='', index=0, ifscl=False, axes=None)
+
+    plt.tight_layout()
+    plt.savefig(f'{prefix}/{model_name}_history.png', dpi=150, bbox_inches='tight',
+                facecolor='white', edgecolor='none')
+
+    if ifclose:
+        plt.close()
 
 def _get_contour_func(ax, mode):
     if mode == 'contour':

@@ -434,12 +434,13 @@ class OptBase:
             x_truth = x_truth.detach().cpu().numpy().squeeze(0)
             x_pred = x_pred.detach().cpu().numpy().squeeze(0)
             prediction_crit = self.criteria[-1](x_pred, x_truth)
+            _crit = f" {self.criteria_names[-1]} {prediction_crit.item():.4e}"
 
             if plot:
                 _us = None if truth.u is None else truth.u.detach().cpu().numpy().squeeze(0)
                 plotting_config = self.config.get('plotting', {})
                 plot_trajectory(np.array([x_truth, x_pred]), ts.squeeze(0), self.model_name,
-                                us=_us, labels=['Truth', 'Prediction'], prefix=self.results_prefix,
+                                us=_us, labels=['Truth', 'Prediction'+_crit], prefix=self.results_prefix,
                                 **plotting_config)
 
             return prediction_crit.item()
@@ -577,7 +578,9 @@ class OptBase:
                 self.save_checkpoint(epoch)
 
                 # Plot loss curves
-                plot_hist(self.hist + [local_hist], self.model_name, prefix=self.results_prefix)
+                plot_hist(
+                    self.hist + [local_hist], self.crit, self.criteria_names[-1],
+                    self.model_name, prefix=self.results_prefix)
 
                 # Evaluate prediction criterion on random trajectories
                 self.update_prediction_criterion_history(epoch)
@@ -595,7 +598,9 @@ class OptBase:
         total_training_time = time.time() - overall_start_time
         avg_epoch_time = np.mean(self.epoch_times)
 
-        plot_hist(self.hist, self.model_name, prefix=self.results_prefix)
+        plot_hist(
+            self.hist, self.crit, self.criteria_names[-1],
+            self.model_name, prefix=self.results_prefix)
         _ = self.evaluate_prediction_criterion('valid', plot=True)
 
         # Save summary of training
