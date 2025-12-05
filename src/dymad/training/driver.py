@@ -22,15 +22,15 @@ class DriverBase:
         config_path: str,
         model_class: Type[torch.nn.Module],
         config_mod: Dict[str, Any] | None = None,
-        param_grid: Dict[str, Iterable[Any]] | None = None,
-        metric: str = "val_loss",
         device: torch.device | None = None,
     ):
         self.base_config = load_config(config_path, config_mod)
         self.model_class = model_class
-        self.param_grid = param_grid   # None = single combo
-        self.metric = metric
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.cv_config = self.base_config.get("cv", {})
+        self.param_grid = self.cv_config.get("param_grid", None)   # None = single combo
+        self.metric = self.cv_config.get("metric", "total")
 
         # Setup paths
         self.base_name = self.base_config['model']['name']
@@ -70,7 +70,7 @@ class DriverBase:
 
     # -------- Public API --------
 
-    def train(self) -> Tuple[CVResult, List[CVResult]]:
+    def train(self) -> Tuple[int, CVResult, List[CVResult]]:
         """
         Core loop over hyperparameter and folds combinations.
 
@@ -107,9 +107,7 @@ class DriverBase:
                 )
                 results = opt.run(initial_state=data_state)
 
-                phase_name = list(results.keys())[-1]
-                phase_res = results[phase_name]
-                metric_value = self._extract_metric(phase_res.run_state, self.metric)
+                metric_value = results[-1].run_state.get_metric(self.metric)
                 fold_metrics.append(metric_value)
 
                 logger.info(f"Combo {combo_idx+1}, fold {fold_id}: {self.metric} = {metric_value:.6f}")
@@ -125,19 +123,9 @@ class DriverBase:
         best_result = all_results[best_idx]
         logger.info(f"Best combo: {best_result.params} with {self.metric} = {best_result.mean_metric:.6f}")
 
-        return best_result, all_results
+        return best_idx, best_result, all_results
 
     # -------- helpers --------
-
-    # def _init_metadata(self) -> Dict:
-    #     """Initialize metadata from config or checkpoint."""
-    #     if os.path.exists(self.checkpoint_path) and self.config['training']['load_checkpoint']:
-    #         logger.info(f"Checkpoint found at {self.checkpoint_path}, overriding the yaml config.")
-    #         checkpoint = torch.load(self.checkpoint_path, weights_only=False)
-    #         return checkpoint['metadata']
-    #     else:
-    #         logger.info(f"No checkpoint found at {self.checkpoint_path}, using the yaml config.")
-    #         return {'config': self.config}
 
     def _create_trajectory_manager(self, data_key: str) -> Union[TrajectoryManager, TrajectoryManagerGraph]:
         md = {'config': copy.deepcopy(self.base_config)}
@@ -190,14 +178,6 @@ class DriverBase:
             }})
         return cfg
 
-    def _extract_metric(self, run_state: RunState, metric_name: str) -> float:
-        if metric_name == "val_loss":
-            return float(run_state.best_loss)
-        if metric_name.startswith("rmse."):
-            key = metric_name.split(".", 1)[1]
-            return float(run_state.rmse[key])
-        raise ValueError(f"Unsupported metric name: {metric_name}")
-
 
 class KFoldDriver(DriverBase):
     def __init__(
@@ -207,16 +187,12 @@ class KFoldDriver(DriverBase):
         k_folds: int = 5,
         base_seed: int = 123,
         config_mod: Dict[str, Any] | None = None,
-        param_grid: Dict[str, Iterable[Any]] | None = None,
-        metric: str = "val_loss",
         device: torch.device | None = None,
     ):
         super().__init__(
             config_path=config_path,
             model_class=model_class,
             config_mod=config_mod,
-            param_grid=param_grid,
-            metric=metric,
             device=device,
         )
         self.k_folds = k_folds
@@ -248,16 +224,12 @@ class SingleSplitDriver(DriverBase):
         config_path: str,
         model_class: Type[torch.nn.Module],
         config_mod: Dict[str, Any] | None = None,
-        param_grid: Dict[str, Iterable[Any]] | None = None,
-        metric: str = "val_loss",
         device: torch.device | None = None,
     ):
         super().__init__(
             config_path=config_path,
             model_class=model_class,
             config_mod=config_mod,
-            param_grid=param_grid,
-            metric=metric,
             device=device,
         )
 
@@ -267,7 +239,7 @@ class SingleSplitDriver(DriverBase):
         if "split_seed" not in fold_cfg.get("data", {}):
             set_by_dotted_key(fold_cfg, "data.split_seed", 0)
         yield 0, fold_cfg
-    
+
     def _init_trajectory_managers(self):
         assert 'data' in self.base_config, "Config must contain 'data' section."
         if 'data_valid' in self.base_config:

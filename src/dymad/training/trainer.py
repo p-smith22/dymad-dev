@@ -22,16 +22,12 @@ class NODETrainer(SingleSplitDriver):
         config_path: str,
         model_class: Type[torch.nn.Module],
         config_mod: Dict[str, Any] | None = None,
-        param_grid: Dict[str, Iterable[Any]] | None = None,
-        metric: str = "val_loss",
         device: torch.device | None = None
         ):
         super().__init__(
             config_path=config_path,
             model_class=model_class,
             config_mod=config_mod,
-            param_grid=param_grid,
-            metric=metric,
             device=device,
         )
 
@@ -52,16 +48,12 @@ class WeakFormTrainer(SingleSplitDriver):
         config_path: str,
         model_class: Type[torch.nn.Module],
         config_mod: Dict[str, Any] | None = None,
-        param_grid: Dict[str, Iterable[Any]] | None = None,
-        metric: str = "val_loss",
         device: torch.device | None = None
         ):
         super().__init__(
             config_path=config_path,
             model_class=model_class,
             config_mod=config_mod,
-            param_grid=param_grid,
-            metric=metric,
             device=device,
         )
 
@@ -82,16 +74,12 @@ class LinearTrainer(SingleSplitDriver):
         config_path: str,
         model_class: Type[torch.nn.Module],
         config_mod: Dict[str, Any] | None = None,
-        param_grid: Dict[str, Iterable[Any]] | None = None,
-        metric: str = "val_loss",
         device: torch.device | None = None
         ):
         super().__init__(
             config_path=config_path,
             model_class=model_class,
             config_mod=config_mod,
-            param_grid=param_grid,
-            metric=metric,
             device=device,
         )
 
@@ -114,15 +102,11 @@ class StackedTrainer(SingleSplitDriver):
         config_path: str,
         model_class: Type[torch.nn.Module],
         config_mod: Dict[str, Any] | None = None,
-        param_grid: Dict[str, Iterable[Any]] | None = None,
-        metric: str = "val_loss",
         device: torch.device | None = None
         ):
         super().__init__(
             config_path=config_path,
             model_class=model_class,
             config_mod=config_mod,
-            param_grid=param_grid,
-            metric=metric,
             device=device,
         )

@@ -21,7 +21,7 @@ class RunState:
     config: Optional[Dict[str, Any]]
     device: Optional[torch.device] = None
     epoch: int = 0
-    best_loss: float = float("inf")
+    best_loss: Dict[str, float] = field(default_factory=lambda: {"valid_total" : float("inf")})
     hist: List[Any] = field(default_factory=list)
     crit: List[Any] = field(default_factory=list)
     epoch_times: List[float] = field(default_factory=list)
@@ -95,7 +95,7 @@ class RunState:
         return cls(
             config=ckpt.get("config", {}),
             epoch=ckpt.get("epoch", 0),
-            best_loss=ckpt.get("best_loss", float("inf")),
+            best_loss=ckpt.get("best_loss", {"valid_total" : float("inf")}),
             hist=ckpt.get("hist", []),
             crit=ckpt.get("crit", []),
             epoch_times=ckpt.get("epoch_times", []),
@@ -110,6 +110,9 @@ class RunState:
             valid_md=ckpt.get("valid_md", {}),
         )
 
+    def get_metric(self, metric_name: str) -> float:
+        """Get the best value of a metric from history."""
+        return self.best_loss['valid_'+metric_name]
 
 @dataclass
 class CVResult:

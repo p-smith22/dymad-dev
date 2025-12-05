@@ -54,7 +54,7 @@ class StackedOpt:
           - data-only     => first trainer reuses data, builds model.
           - full RunState => continuation: reuse data + model + optimizer, etc.
         """
-        results = {}
+        results = []
         current_state = initial_state
 
         for i, phase_cfg in enumerate(self.phases):
@@ -79,10 +79,10 @@ class StackedOpt:
 
             # Export state for the next phase
             current_state = trainer.export_run_state(epoch)
-            results[phase_name] = PhaseResult(
+            results.append(PhaseResult(
                 name=phase_name,
                 run_state=current_state,
                 hist=trainer.hist,
-            )
+            ))
 
         return results

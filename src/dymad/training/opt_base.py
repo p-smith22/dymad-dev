@@ -121,7 +121,7 @@ class OptBase:
             # If model is None, this is "data-only" state
             # Start history from scratch
             self.start_epoch = 0
-            self.best_loss = float("inf")
+            self.best_loss = {"valid_total" : float("inf")}
             self.hist = []
             self.crit = []
             self.epoch_times = []
@@ -131,7 +131,7 @@ class OptBase:
             self.optimizer.load_state_dict(state.optimizer.state_dict())
 
             self.start_epoch = state.epoch
-            self.best_loss = float("inf")     # reset best loss as the losses may differ
+            self.best_loss = {"valid_total" : float("inf")}     # reset best loss as the losses may differ
             self.hist = copy.deepcopy(state.hist)
             self.crit = list(state.crit)
             self.epoch_times = []
@@ -162,7 +162,7 @@ class OptBase:
 
         # Attach the persistent parts
         self.start_epoch = state.epoch + 1  # resume from next epoch
-        self.best_loss = state.best_loss
+        self.best_loss = copy.deepcopy(state.best_loss)
         self.hist = copy.deepcopy(state.hist)
         self.crit = state.crit
         self.convergence_tolerance_reached = False  # reset on load
@@ -274,7 +274,7 @@ class OptBase:
             config=self.config,
             device=self.device,
             epoch=epoch,
-            best_loss=self.best_loss,
+            best_loss=copy.deepcopy(self.best_loss),
             hist=copy.deepcopy(self.hist),
             crit=list(self.crit),
             epoch_times=list(self.epoch_times),
@@ -299,13 +299,14 @@ class OptBase:
         ckpt = state.to_checkpoint()
         torch.save(ckpt, self.checkpoint_path if path is None else path)
 
-    def save_if_best(self, val_loss: float, epoch: int) -> None:
+    def save_if_best(self, local_hist: Dict) -> None:
         """Save best model if validation loss improves."""
-        if val_loss < self.best_loss:
-            self.best_loss = val_loss
+        if local_hist["valid_total"][-1] < self.best_loss["valid_total"]:
+            epoch = local_hist['epoch'][-1]
+            self.best_loss = {_k : _v[-1] for _k, _v in local_hist.items()}
             self.convergence_epoch = epoch+1
             self.save_checkpoint(epoch, self.best_model_path)
-            logger.info(f"New best model at epoch {epoch}, val_loss={val_loss:.4e}")
+            logger.info(f"New best model at epoch {epoch}, valid_loss={self.best_loss['valid_total']:.4e}")
             return True
         return False
 
@@ -360,7 +361,7 @@ class OptBase:
                 self.convergence_tolerance_reached or flag
             )
             if changed:
-                self.best_loss = float("inf")
+                self.best_loss = {"valid_total" : float("inf")}
                 logger.info("Resetting best loss due to scheduler change.")
 
         # Enforce minimum LR
@@ -592,7 +593,7 @@ class OptBase:
             )
 
             # Save best model
-            self.save_if_best(loss_valid_total, epoch)
+            self.save_if_best(local_hist)
 
             # Periodic checkpoint and evaluation
             if (epoch + 1) % save_interval == 0 or self.convergence_tolerance_reached:
@@ -634,7 +635,7 @@ class OptBase:
             'avg_epoch_time': avg_epoch_time,
             'final_train_loss': local_hist['train_total'][-1],
             'final_valid_loss': local_hist['valid_total'][-1],
-            'best_valid_loss': self.best_loss,
+            'best_valid_loss': copy.deepcopy(self.best_loss),
             'convergence_epoch': self.convergence_epoch,
             'hist': self.hist,
             'crit_name': self.criteria_names[-1],  # Only the prediction criterion
