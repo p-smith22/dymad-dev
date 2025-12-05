@@ -18,19 +18,38 @@ logger = logging.getLogger(__name__)
 
 class OptBase:
     """
-    Base Opt class: owns data, model, optimizer, schedulers, training
+    Base Optimization class: owns data, model, optimizer, schedulers, training
     loop, checkpointing, history, LSUpdater, and RunState.
 
+    Note:
+        This class is not meant to be used directly; one should use the Driver classes.
+
+    Key features of this class:
+      - Initialization in three modes: Data-only RunState (fresh start),
+        Full RunState (continue from other opt), or from-checkpoint (restart from same opt).
+      - Multiple training criteria are supported, and linearly combined via weights.
+        There is also a separate prediction criterion for evaluation.
+        All the training criteria can be different between different phases of optimization,
+        but the prediction criterion is shared.
+      - All the history of criteria are stored and plotted during training for monitoring;
+        similarly one random validation trajectory is predicted and plotted regularly.
+
     Inderited Opt classes (NODE, WF, LR, ...) should:
-      - implement `_process_batch(batch)` (may return Tensor or dict of losses),
+      - implement `_process_batch(batch)` (return list of losses),
       - optionally customize model / optimizer / schedulers via config.
 
     Args:
-        config_path (str): Path to the YAML configuration file
+        config (Dict): Overall experiment configuration
+        config_phase (Dict): Phase-specific configuration
         model_class (Type[torch.nn.Module]): Class of the model to train
-        config_mod (Optional[Dict]): Modifications to the config
-        run_state (Optional[RunState]): Existing RunState to attach (data-only or full)
+        run_state (RunState): Existing RunState to attach (data-only or full)
+        device (torch.device): Device to use
+        dtype (torch.dtype): Data type to use
     """
+
+    # ------------------------------------------------------------------
+    # Initialization
+    # ------------------------------------------------------------------
     def __init__(
         self,
         config: Dict[str, Any],
@@ -56,7 +75,7 @@ class OptBase:
         self.results_prefix  = self.config["path"]["results_prefix"]
 
         # Create model, optimizer, schedulers, criteria
-        self._attach_run_state(run_state)
+        self.attach_run_state(run_state)
         self.load_checkpoint()
 
         # logging summary
@@ -80,6 +99,81 @@ class OptBase:
             f"Epochs: {self.config_phase['n_epochs']}, "
             f"Save interval: {self.config_phase['save_interval']}"
         )
+
+    def attach_run_state(self, state: RunState) -> None:
+        """
+        Attach an existing RunState.
+
+        Cases:
+          - data-only: model/optimizer/schedulers None -> we set them up fresh.
+          - full: everything present -> we reuse all.
+        """
+        # Data
+        self.train_set = state.train_set
+        self.valid_set = state.valid_set
+        self.train_loader = state.train_loader
+        self.valid_loader = state.valid_loader
+        self.train_md = state.train_md     # Only need dimension info
+        self.valid_md = state.valid_md
+
+        self._setup_model()
+        if state.model is None or state.optimizer is None or not state.schedulers:
+            # If model is None, this is "data-only" state
+            # Start history from scratch
+            self.start_epoch = 0
+            self.best_loss = float("inf")
+            self.hist = []
+            self.crit = []
+            self.epoch_times = []
+        else:
+            # Full RunState: reuse model/optimizer, but not schedulers and criteria
+            self.model.load_state_dict(state.model.state_dict())
+            self.optimizer.load_state_dict(state.optimizer.state_dict())
+
+            self.start_epoch = state.epoch
+            self.best_loss = float("inf")     # reset best loss as the losses may differ
+            self.hist = copy.deepcopy(state.hist)
+            self.crit = list(state.crit)
+            self.epoch_times = []
+        self._setup_ls()
+
+    def load_checkpoint(self) -> None:
+        """If checkpoint exists and config requires, load it into the current model/optimizer/schedulers."""
+        checkpoint_path = None
+        load_from_checkpoint = self.config_phase.get('load_checkpoint', False)
+        if isinstance(load_from_checkpoint, str):
+            checkpoint_path = load_from_checkpoint
+        elif load_from_checkpoint:
+            checkpoint_path = self.checkpoint_path
+
+        flag = True
+        if checkpoint_path is None:
+            logger.info(f"Got load_from_checkpoint={load_from_checkpoint}, resulting in checkpoint_path=None. Starting from scratch.")
+            flag = False
+        elif not os.path.exists(checkpoint_path):
+            logger.info(f"No checkpoint found at {checkpoint_path}. Starting from scratch.")
+            flag = False
+        if not flag:
+            return flag
+
+        ckpt = torch.load(self.checkpoint_path, weights_only=False, map_location=self.device)
+        state = RunState.from_checkpoint(
+            ckpt, self.model, self.optimizer, self.schedulers, self.criteria)
+
+        # Attach the persistent parts
+        self.start_epoch = state.epoch + 1  # resume from next epoch
+        self.best_loss = state.best_loss
+        self.hist = copy.deepcopy(state.hist)
+        self.crit = state.crit
+        self.convergence_tolerance_reached = False  # reset on load
+        self.epoch_times = state.epoch_times
+
+        logger.info(f"Loaded checkpoint from {self.checkpoint_path}, starting at epoch {self.start_epoch}")
+        return flag
+
+    # ------------------------------------------------------------------
+    # Initialization - internal API's
+    # ------------------------------------------------------------------
 
     def _setup_model(self) -> None:
         """Setup model, optimizer, schedulers, and criteria."""
@@ -171,45 +265,8 @@ class OptBase:
             self._start_w_ls         = False
 
     # ------------------------------------------------------------------
-    # RunState attach / export
+    # Checkpoint I/O (via RunState)
     # ------------------------------------------------------------------
-
-    def _attach_run_state(self, state: RunState) -> None:
-        """
-        Attach an existing RunState.
-
-        Cases:
-          - data-only: model/optimizer/schedulers None -> we set them up fresh.
-          - full: everything present -> we reuse all.
-        """
-        # Data
-        self.train_set = state.train_set
-        self.valid_set = state.valid_set
-        self.train_loader = state.train_loader
-        self.valid_loader = state.valid_loader
-        self.train_md = state.train_md     # Only need dimension info
-        self.valid_md = state.valid_md
-
-        self._setup_model()
-        if state.model is None or state.optimizer is None or not state.schedulers:
-            # If model is None, this is "data-only" state
-            # Start history from scratch
-            self.start_epoch = 0
-            self.best_loss = float("inf")
-            self.hist = []
-            self.crit = []
-            self.epoch_times = []
-        else:
-            # Full RunState: reuse model/optimizer, but not schedulers and criteria
-            self.model.load_state_dict(state.model.state_dict())
-            self.optimizer.load_state_dict(state.optimizer.state_dict())
-
-            self.start_epoch = state.epoch
-            self.best_loss = float("inf")     # reset best loss as the losses may differ
-            self.hist = copy.deepcopy(state.hist)
-            self.crit = list(state.crit)
-            self.epoch_times = []
-        self._setup_ls()
 
     def export_run_state(self, epoch: int) -> RunState:
         """Package the current trainer state into a RunState."""
@@ -236,44 +293,6 @@ class OptBase:
             valid_md=self.valid_md,
         )
 
-    # ------------------------------------------------------------------
-    # Checkpoint I/O (via RunState)
-    # ------------------------------------------------------------------
-
-    def load_checkpoint(self) -> None:
-        """If checkpoint exists and config requires, load it into the current model/optimizer/schedulers."""
-        checkpoint_path = None
-        load_from_checkpoint = self.config_phase.get('load_checkpoint', False)
-        if isinstance(load_from_checkpoint, str):
-            checkpoint_path = load_from_checkpoint
-        elif load_from_checkpoint:
-            checkpoint_path = self.checkpoint_path
-
-        flag = True
-        if checkpoint_path is None:
-            logger.info(f"Got load_from_checkpoint={load_from_checkpoint}, resulting in checkpoint_path=None. Starting from scratch.")
-            flag = False
-        elif not os.path.exists(checkpoint_path):
-            logger.info(f"No checkpoint found at {checkpoint_path}. Starting from scratch.")
-            flag = False
-        if not flag:
-            return flag
-
-        ckpt = torch.load(self.checkpoint_path, weights_only=False, map_location=self.device)
-        state = RunState.from_checkpoint(
-            ckpt, self.model, self.optimizer, self.schedulers, self.criteria)
-
-        # Attach the persistent parts
-        self.start_epoch = state.epoch + 1  # resume from next epoch
-        self.best_loss = state.best_loss
-        self.hist = copy.deepcopy(state.hist)
-        self.crit = state.crit
-        self.convergence_tolerance_reached = False  # reset on load
-        self.epoch_times = state.epoch_times
-
-        logger.info(f"Loaded checkpoint from {self.checkpoint_path}, starting at epoch {self.start_epoch}")
-        return flag
-
     def save_checkpoint(self, epoch: int, path: Optional[str] = None) -> None:
         """Save checkpoint using current RunState."""
         state = self.export_run_state(epoch)
@@ -291,7 +310,7 @@ class OptBase:
         return False
 
     # ------------------------------------------------------------------
-    # Multi-loss: `_process_batch` + aggregation
+    # Per-step training API's, usually overridden by child classes
     # ------------------------------------------------------------------
 
     def _process_batch(self, batch) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
@@ -305,22 +324,6 @@ class OptBase:
             and ignore weights.
         """
         raise NotImplementedError
-
-    def _aggregate_losses(self, loss_list: List[torch.Tensor]) -> torch.Tensor:
-        """
-        Combine named loss terms using config-defined weights.
-
-        - If 'total' in loss_dict: we directly return it.
-        - Else: sum w_i * loss_i, where w_i = loss_weights.get(name, 1.0).
-        """
-        total = 0.0
-        for _l, _w in zip(loss_list, self.criteria_weights):
-            total += _l * _w
-        return total
-
-    # ------------------------------------------------------------------
-    # Generic training engine
-    # ------------------------------------------------------------------
 
     def train_epoch(self) -> float:
         """
@@ -369,6 +372,10 @@ class OptBase:
 
         return avg_loss_epoch, avg_loss_items
 
+    # ------------------------------------------------------------------
+    # Per-step training API's, other helpers
+    # ------------------------------------------------------------------
+
     def evaluate(self, dataloader: DataLoader) -> float:
         """Generic evaluation loop using `_process_batch`."""
         self.model.eval()
@@ -381,6 +388,18 @@ class OptBase:
                 loss_total += loss.item()
                 loss_items = [_l + b.item() for _l, b in zip(loss_items, loss_list)]
         return loss_total / len(dataloader), [l / len(dataloader) for l in loss_items]
+
+    def _aggregate_losses(self, loss_list: List[torch.Tensor]) -> torch.Tensor:
+        """
+        Combine named loss terms using config-defined weights.
+
+        - If 'total' in loss_dict: we directly return it.
+        - Else: sum w_i * loss_i, where w_i = loss_weights.get(name, 1.0).
+        """
+        total = 0.0
+        for _l, _w in zip(loss_list, self.criteria_weights):
+            total += _l * _w
+        return total
 
     def _additional_criteria_evaluation(self, x_hat, predictions, B) -> None:
         """
@@ -403,6 +422,7 @@ class OptBase:
     # ------------------------------------------------------------------
     # Prediction criterion evaluation
     # ------------------------------------------------------------------
+
     def evaluate_prediction_criterion_single(self,
                     truth: DynData,
                     method: str = 'dopri5',
@@ -498,6 +518,7 @@ class OptBase:
     # ------------------------------------------------------------------
     # Main training loop
     # ------------------------------------------------------------------
+
     def train(self) -> int:
         """Run full training loop."""
 
