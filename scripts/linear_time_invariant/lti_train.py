@@ -1,4 +1,3 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -6,7 +5,7 @@ import torch
 from dymad.io import load_model
 from dymad.models import LDM, KBF
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
-from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_summary, plot_trajectory, TrajectorySampler
 
 B = 128
 N = 501
@@ -45,7 +44,7 @@ cases = [
     {"name": "kbf_node", "model" : KBF, "trainer": NODETrainer,     "config": 'lti_kbf_node.yaml'},
     {"name": "kbf_ln",   "model" : KBF, "trainer": LinearTrainer,   "config": 'lti_kbf_ln.yaml'}
 ]
-IDX = [2]
+IDX = [0, 1, 2, 3, 4]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0
@@ -64,13 +63,11 @@ if iftrn:
         Trainer = cases[_i]['trainer']
         config_path = cases[_i]['config']
 
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, Model)
         trainer.train()
 
 if ifplt:
-    npz_files = [f'results/lti_{mdl}_summary.npz' for mdl in labels]
+    npz_files = [f'lti_{mdl}' for mdl in labels]
     npzs = plot_summary(npz_files, labels = labels, ifclose=False)
     for lbl, npz in zip(labels, npzs):
         print(f"Epoch time: {lbl} - {npz['avg_epoch_time']}")
@@ -86,7 +83,7 @@ if ifprd:
     res = [x_data]
     for _i in IDX:
         mdl, MDL = cases[_i]['name'], cases[_i]['model']
-        _, prd_func = load_model(MDL, f'lti_{mdl}.pt', f'lti_{mdl}.yaml')
+        _, prd_func = load_model(MDL, f'lti_{mdl}.pt')
 
         with torch.no_grad():
             _pred = prd_func(x_data, t_data, u=u_data)
