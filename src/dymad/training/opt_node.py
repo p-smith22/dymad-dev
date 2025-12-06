@@ -99,6 +99,11 @@ class OptNODE(OptBase):
         init_states = B.x[:, 0, :]  # (batch_size, n_total_state_features)
         # Use the actual time points from trajectory manager
         ts = B.t[:, :num_steps]
+        if ts.dim() == 3 and ts.size(0) == 1:
+            # Expect this to be the graph case with broadcasted time
+            # For now we only take the first batch entry, assuming all are identical
+            ts = ts[..., 0]
+        ts = ts.to(self.device)
 
         # Batched NODE prediction
         predictions = self.model.predict(
