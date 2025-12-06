@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from itertools import product
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 from typing import Any, Dict, Iterable, List, Optional
@@ -114,14 +115,45 @@ class RunState:
         """Get the best value of a metric from history."""
         return self.best_loss['valid_'+metric_name]
 
+
 @dataclass
 class CVResult:
     params: Dict[str, Any]
     fold_metrics: List[float]
-    mean_metric: float
-    std_metric: float
-    checkpoint_paths: List[str]
+    mean_metric: float = 0.0
+    std_metric: float = 0.0
+    checkpoint_paths: List[str] = field(default_factory=list)
 
+    def __post_init__(self):
+        self.mean_metric = float(np.mean(self.fold_metrics))
+        self.std_metric = float(np.std(self.fold_metrics))
+
+def aggregate_cv_results(results: List[Dict[str, Any]]):
+    """
+    The results are potentially from concurrent runs, and each is in the format of
+
+    {'combo_idx', 'fold_idx', 'combo', 'metric_value', 'model_prefix'}
+
+    This function aggregates them into CVResult objects by collecting fold results for each combo_idx.
+    """
+    max_combo_idx = max(res['combo_idx'] for res in results)
+    tmp = [[[], [], []] for _ in range(max_combo_idx + 1)]
+    for res in results:
+        c_idx = res['combo_idx']
+        tmp[c_idx][0].append(res['combo'])
+        tmp[c_idx][1].append(res['metric_value'])
+        tmp[c_idx][2].append(res['model_prefix'])
+
+    cv_results = []
+    for combos, metrics, paths in tmp:
+        assert len(set(tuple(sorted(c.items())) for c in combos)) == 1, "Inconsistent combos for same combo_idx"
+        cv_results.append(CVResult(
+            params=combos[0],
+            fold_metrics=metrics,
+            checkpoint_paths=paths
+        ))
+
+    return cv_results
 
 def iter_param_grid(param_grid: Dict[str, Iterable[Any]]):
     """
@@ -132,7 +164,6 @@ def iter_param_grid(param_grid: Dict[str, Iterable[Any]]):
     values_lists = [param_grid[k] for k in keys]
     for values in product(*values_lists):
         yield dict(zip(keys, values))
-
 
 def set_by_dotted_key(d: Dict[str, Any], dotted_key: str, value: Any):
     """

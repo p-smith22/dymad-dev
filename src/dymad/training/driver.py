@@ -1,16 +1,106 @@
-from typing import Any, Dict, Iterable, List, Tuple, Type, Union
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import copy
 import logging
 import numpy as np
 import os
 import shutil
 import torch
+import torch.multiprocessing as mp
+from typing import Any, Dict, Iterable, List, Tuple, Type, Union
 
 from dymad.io import TrajectoryManager, TrajectoryManagerGraph
-from dymad.training.helper import CVResult, iter_param_grid, RunState, set_by_dotted_key
+from dymad.training.helper import aggregate_cv_results, CVResult, iter_param_grid, RunState, set_by_dotted_key
 from dymad.training.stacked_opt import StackedOpt
 from dymad.utils import config_logger, load_config
 
+# --------------------
+# Standalone single CV run for multi-processing compatibility
+# --------------------
+def _apply_combo_to_config(
+        combo_idx, fold_id: int, cfg: Dict[str, Any], combo: Dict[str, Any],
+        base_name, checkpoint_prefix, results_prefix) -> Dict[str, Any]:
+    """
+    Apply dotted-key hyperparameters in combo onto a deep-copied config.
+    """
+    cfg = copy.deepcopy(cfg)
+    for dotted_key, value in combo.items():
+        set_by_dotted_key(cfg, dotted_key, value)
+    _suffix = f"_c{combo_idx}_f{fold_id}"
+    cfg["model"]["name"] = f"{base_name}{_suffix}"
+    cfg.update({
+        "path" : {
+            "checkpoint_prefix": f"{checkpoint_prefix}/{_suffix}",
+            "results_prefix": f"{results_prefix}/{_suffix}"
+        }})
+    model_prefix = cfg["path"]["checkpoint_prefix"] + f"/{cfg['model']['name']}"
+    return cfg, model_prefix
+
+def _build_data_state(fold_id: int, cfg: Dict[str, Any], train_sets, valid_sets, device) -> RunState:
+    """Setup data loaders and datasets."""
+    # Config can contain different data transforms
+    # So we need to update the datasets accordingly
+    # The data transforms in valid set should be determined by train set
+    trainset: TrajectoryManager | TrajectoryManagerGraph = train_sets[fold_id]
+    trainset.update_config(cfg)
+    train_loader, train_set, train_md = trainset.process_data()
+
+    validset: TrajectoryManager | TrajectoryManagerGraph = valid_sets[fold_id]
+    validset.update_config(cfg)
+    validset.set_transforms(trajmgr=trainset)
+    valid_loader, valid_set, valid_md = validset.process_data()
+
+    return RunState(
+        config=cfg,
+        device=device,
+        train_loader=train_loader,
+        valid_loader=valid_loader,
+        train_set=train_set,
+        valid_set=valid_set,
+        train_md=train_md,
+        valid_md=valid_md,
+    )
+
+def run_cv_single(args: Dict[str, Any]):
+    # Apply hyperparameter overrides to this fold's config
+    cfg, model_prefix = _apply_combo_to_config(
+        args['combo_idx'],
+        args['fold_idx'],
+        args['fold_cfg'],
+        args['combo'],
+        args['base_name'],
+        args['checkpoint_prefix'],
+        args['results_prefix'])
+
+    # Build data-only RunState per fold+combo
+    data_state = _build_data_state(
+        args['fold_idx'],
+        cfg,
+        args['train_sets'],
+        args['valid_sets'],
+        args['device'])
+
+    # Run the optimizer with this config and data state
+    opt = StackedOpt(
+        config=cfg,
+        model_class=args['model_class'],
+        device=args['device'],
+        dtype=args['train_sets'][0].dtype,
+    )
+    results = opt.run(initial_state=data_state)
+
+    metric_value = results[-1].run_state.get_metric(args['metric'])
+
+    return {
+        'combo_idx': args['combo_idx'],
+        'fold_idx': args['fold_idx'],
+        'combo': args['combo'],
+        'metric_value': metric_value,
+        'model_prefix': model_prefix}
+
+
+# --------------------
+# The main driver of training
+# --------------------
 class DriverBase:
     """
     Base driver: loops over (parameter combos x folds) and calls the optimizer.
@@ -22,10 +112,12 @@ class DriverBase:
         model_class: Type[torch.nn.Module],
         config_mod: Dict[str, Any] | None = None,
         device: torch.device | None = None,
+        max_workers: int = 1,
     ):
         self.base_config = load_config(config_path, config_mod)
         self.model_class = model_class
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.max_workers = max_workers
 
         cv_config = self.base_config.get("cv", {})
         self.param_grid = cv_config.get("param_grid", None)   # None = single combo
@@ -52,7 +144,9 @@ class DriverBase:
         self._init_trajectory_managers()
         self._init_fold_split()
 
-    # -------- Abstract API to be implemented by subclasses --------
+    # --------------------
+    # Abstract methods to be implemented by subclasses
+    # --------------------
 
     def _init_trajectory_managers(self):
         """
@@ -75,7 +169,9 @@ class DriverBase:
         """
         raise NotImplementedError
 
-    # -------- Public API --------
+    # --------------------
+    # The main training loop
+    # --------------------
 
     def train(self) -> Tuple[int, CVResult, List[CVResult]]:
         """
@@ -84,53 +180,37 @@ class DriverBase:
         Returns:
           best_result, all_results
         """
-        all_results: List[CVResult] = []
-
         # empty grid => treat as single combo with no overrides
         if self.param_grid is None:
             combos = [ {} ]
         else:
             combos = list(iter_param_grid(self.param_grid))
 
+        trial_args_list = []
         for combo_idx, combo in enumerate(combos):
-            self.cv_logger.info(f"=== Hyperparam combo {combo_idx+1}/{len(combos)}: {combo} ===")
-            fold_metrics: List[float] = []
+            for fold_idx, fold_cfg in self.iter_folds():
+                args = {
+                    'combo_idx': combo_idx,
+                    'fold_idx': fold_idx,
+                    'fold_cfg': fold_cfg,
+                    'combo': combo,
+                    'base_name': self.base_name,
+                    'checkpoint_prefix': self.checkpoint_prefix,
+                    'results_prefix': self.results_prefix,
+                    'train_sets': self.train_sets,
+                    'valid_sets': self.valid_sets,
+                    'model_class': self.model_class,
+                    'device': self.device,
+                    'metric': self.metric,
+                }
+                trial_args_list.append(args)
 
-            paths = []
-            for fold_id, fold_cfg in self.iter_folds():
-                self.cv_logger.info(f"--- Fold {fold_id} ---")
+        if self.max_workers > 1:
+            all_results = self._parallel_run(trial_args_list)
+        else:
+            all_results = self._serial_run(trial_args_list)
 
-                # Apply hyperparameter overrides to this fold's config
-                cfg, model_prefix = self._apply_combo_to_config(combo_idx, fold_id, fold_cfg, combo)
-                paths.append(model_prefix)
-
-                # Build data-only RunState per fold+combo
-                data_state = self._build_data_state(fold_id, cfg)
-
-                # Run the optimizer with this config and data state
-                opt = StackedOpt(
-                    config=cfg,
-                    model_class=self.model_class,
-                    device=self.device,
-                    dtype=self.dtype,
-                )
-                results = opt.run(initial_state=data_state)
-
-                metric_value = results[-1].run_state.get_metric(self.metric)
-                fold_metrics.append(metric_value)
-
-                self.cv_logger.info(f"Combo {combo_idx+1}, fold {fold_id}: {self.metric} = {metric_value:.4e}")
-
-            mean_metric = float(np.mean(fold_metrics))
-            std_metric = float(np.std(fold_metrics))
-            self.cv_logger.info(f"Combo {combo_idx+1}: mean {self.metric} = {mean_metric:.4e} ± {std_metric:.4e}")
-            all_results.append(
-                CVResult(
-                    combo, fold_metrics, mean_metric, std_metric,
-                    checkpoint_paths=paths
-                ))
-
-        # Select best (assume lower is better; you can generalize if needed)
+        # Select best, assuming lower is better
         best_idx = int(np.argmin([r.mean_metric for r in all_results]))
         best_result = all_results[best_idx]
         self.cv_logger.info(f"Best combo: {best_result.params} with {self.metric} = {best_result.mean_metric:.4e}")
@@ -150,7 +230,9 @@ class DriverBase:
 
         return best_idx, best_result, all_results
 
-    # -------- helpers --------
+    # --------------------
+    # Helper functions
+    # --------------------
 
     def _create_trajectory_manager(self, data_key: str) -> Union[TrajectoryManager, TrajectoryManagerGraph]:
         md = {'config': copy.deepcopy(self.base_config)}
@@ -161,48 +243,35 @@ class DriverBase:
         tm.prepare_data()
         return tm
 
-    def _build_data_state(self, fold_id: int, cfg: Dict[str, Any]) -> RunState:
-        """Setup data loaders and datasets."""
-        # Config can contain different data transforms
-        # So we need to update the datasets accordingly
-        # The data transforms in valid set should be determined by train set
-        trainset: TrajectoryManager | TrajectoryManagerGraph = self.train_sets[fold_id]
-        trainset.update_config(cfg)
-        train_loader, train_set, train_md = trainset.process_data()
+    def _parallel_run(self, trial_args_list: List[Dict[str, Any]]) -> List[CVResult]:
+        results = []
+        with ProcessPoolExecutor(max_workers=self.max_workers) as ex:
+            futures = [
+                ex.submit(run_cv_single, args)
+                for args in trial_args_list
+            ]
 
-        validset: TrajectoryManager | TrajectoryManagerGraph = self.valid_sets[fold_id]
-        validset.update_config(cfg)
-        validset.set_transforms(trajmgr=trainset)
-        valid_loader, valid_set, valid_md = validset.process_data()
+            for fut in as_completed(futures):
+                res = fut.result()
+                results.append(res)
 
-        self.dtype = trainset.dtype
-        return RunState(
-            config=cfg,
-            device=self.device,
-            train_loader=train_loader,
-            valid_loader=valid_loader,
-            train_set=train_set,
-            valid_set=valid_set,
-            train_md=train_md,
-            valid_md=valid_md,
-        )
+                self.cv_logger.info(
+                    f"Combo {res['combo_idx']}, fold {res['fold_idx']}: "
+                    f"{self.metric} = {res['metric_value']:.4e}")
+        all_results = aggregate_cv_results(results)
+        return all_results
 
-    def _apply_combo_to_config(self, combo_idx, fold_id: int, cfg: Dict[str, Any], combo: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Apply dotted-key hyperparameters in combo onto a deep-copied config.
-        """
-        cfg = copy.deepcopy(cfg)
-        for dotted_key, value in combo.items():
-            set_by_dotted_key(cfg, dotted_key, value)
-        _suffix = f"_c{combo_idx}_f{fold_id}"
-        cfg["model"]["name"] = f"{self.base_name}{_suffix}"
-        cfg.update({
-            "path" : {
-                "checkpoint_prefix": f"{self.checkpoint_prefix}/{_suffix}",
-                "results_prefix": f"{self.results_prefix}/{_suffix}"
-            }})
-        model_prefix = cfg["path"]["checkpoint_prefix"] + f"/{cfg['model']['name']}"
-        return cfg, model_prefix
+    def _serial_run(self, trial_args_list: List[Dict[str, Any]]) -> List[CVResult]:
+        results = []
+        for args in trial_args_list:
+            res = run_cv_single(args)
+            results.append(res)
+
+            self.cv_logger.info(
+                f"Combo {res['combo_idx']}, fold {res['fold_idx']}: "
+                f"{self.metric} = {res['metric_value']:.4e}")
+        all_results = aggregate_cv_results(results)
+        return all_results
 
 
 class KFoldDriver(DriverBase):
@@ -214,12 +283,14 @@ class KFoldDriver(DriverBase):
         base_seed: int = 123,
         config_mod: Dict[str, Any] | None = None,
         device: torch.device | None = None,
+        max_workers: int = 1,
     ):
         super().__init__(
             config_path=config_path,
             model_class=model_class,
             config_mod=config_mod,
             device=device,
+            max_workers=max_workers
         )
         self.k_folds = k_folds
         self.base_seed = base_seed
@@ -251,12 +322,14 @@ class SingleSplitDriver(DriverBase):
         model_class: Type[torch.nn.Module],
         config_mod: Dict[str, Any] | None = None,
         device: torch.device | None = None,
+        max_workers: int = 1,
     ):
         super().__init__(
             config_path=config_path,
             model_class=model_class,
             config_mod=config_mod,
             device=device,
+            max_workers=max_workers
         )
 
     def iter_folds(self):

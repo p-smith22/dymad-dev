@@ -16,13 +16,15 @@ class NODETrainer(SingleSplitDriver):
         config_path: str,
         model_class: Type[torch.nn.Module],
         config_mod: Dict[str, Any] | None = None,
-        device: torch.device | None = None
+        device: torch.device | None = None,
+        max_workers: int = 1,
         ):
         super().__init__(
             config_path=config_path,
             model_class=model_class,
             config_mod=config_mod,
             device=device,
+            max_workers=max_workers,
         )
 
         # By default, we don't specify the phases
@@ -42,13 +44,15 @@ class WeakFormTrainer(SingleSplitDriver):
         config_path: str,
         model_class: Type[torch.nn.Module],
         config_mod: Dict[str, Any] | None = None,
-        device: torch.device | None = None
+        device: torch.device | None = None,
+        max_workers: int = 1,
         ):
         super().__init__(
             config_path=config_path,
             model_class=model_class,
             config_mod=config_mod,
             device=device,
+            max_workers=max_workers,
         )
 
         # By default, we don't specify the phases
@@ -68,13 +72,15 @@ class LinearTrainer(SingleSplitDriver):
         config_path: str,
         model_class: Type[torch.nn.Module],
         config_mod: Dict[str, Any] | None = None,
-        device: torch.device | None = None
+        device: torch.device | None = None,
+        max_workers: int = 1,
         ):
         super().__init__(
             config_path=config_path,
             model_class=model_class,
             config_mod=config_mod,
             device=device,
+            max_workers=max_workers,
         )
 
         # By default, we don't specify the phases
@@ -96,11 +102,13 @@ class StackedTrainer(SingleSplitDriver):
         config_path: str,
         model_class: Type[torch.nn.Module],
         config_mod: Dict[str, Any] | None = None,
-        device: torch.device | None = None
+        device: torch.device | None = None,
+        max_workers: int = 1,
         ):
         super().__init__(
             config_path=config_path,
             model_class=model_class,
             config_mod=config_mod,
             device=device,
+            max_workers=max_workers,
         )
