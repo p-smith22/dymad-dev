@@ -1,4 +1,3 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -6,7 +5,7 @@ import torch
 from dymad.io import load_model
 from dymad.models import KBF
 from dymad.training import NODETrainer
-from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_summary, plot_trajectory, TrajectorySampler
 
 B = 256
 N = 301
@@ -34,8 +33,6 @@ trn_ref = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ode_method": "dopri5",
     "ode_args": {
         "rtol": 1.e-7,
@@ -77,14 +74,12 @@ if iftrn:
     for i in IDX:
         opt = {"model": mdl_kb, "training": trn_opts[i]}
         opt["model"]["name"] = f"kp_nd{i+1}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = NODETrainer(config_path, KBF, config_mod=opt)
         trainer.train()
 
 if ifplt:
     labels = [f"nd{i+1}" for i in IDX]
-    npz_files = [f'results/kp_{l}_summary.npz' for l in labels]
+    npz_files = [f'kp_{l}' for l in labels]
     npzs = plot_summary(npz_files, labels=labels, ifscl=False, ifclose=False)
 
     for i in IDX:
@@ -100,7 +95,7 @@ if ifprd:
     for i in IDX:
         opt = {"model": mdl_kb, "training": trn_opts[i]}
         opt["model"]["name"] = f"kp_nd{i+1}"
-        _, prd_func = load_model(KBF, f'kp_nd{i+1}.pt', f'kp_model.yaml', config_mod=opt)
+        _, prd_func = load_model(KBF, f'kp_nd{i+1}.pt')
         with torch.no_grad():
             pred = prd_func(x_data, t_data)
         res.append(pred)

@@ -1,4 +1,3 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -6,7 +5,7 @@ import torch
 from dymad.io import load_model
 from dymad.models import LDM, KBF
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
-from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_summary, plot_multi_trajs, TrajectorySampler
 
 B = 256
 N = 301
@@ -24,6 +23,7 @@ mdl_kb = {
     "decoder_layers" : 2,
     "latent_dimension" : 32,
     "koopman_dimension" : 4,
+    "autoencoder_type": "cat",
     "activation" : "prelu",
     "weight_init" : "xavier_uniform"}
 mdl_ld = {
@@ -32,6 +32,7 @@ mdl_ld = {
     "processor_layers": 2,
     "decoder_layers": 0,
     "latent_dimension": 32,
+    "autoencoder_type": "smp",
     "activation": "prelu",
     "weight_init": "xavier_uniform"}
 mdl_kl = {
@@ -40,8 +41,8 @@ mdl_kl = {
     "decoder_layers" : 1,
     "latent_dimension" : 32,
     "koopman_dimension" : 8,
-    "activation" : "tanh",
     "autoencoder_type" : "cat",
+    "activation" : "tanh",
     "weight_init" : "xavier_uniform"}
 
 trn_wf = {
@@ -50,8 +51,6 @@ trn_wf = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "weak_form_params": {
         "N": 13,
         "dN": 2,
@@ -64,18 +63,16 @@ trn_nd = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [30, 50, 100, 200, 301],
     "sweep_epoch_step": 400,
     "ode_method": "dopri5",
     "ode_args": {
         "rtol": 1.e-7,
         "atol": 1.e-9},
-    "ls_update": {
-        "method": "full",
-        "interval": 200,
-        "times": 4}
+    # "ls_update": {
+    #     "method": "full",
+    #     "interval": 200,
+    #     "times": 4}
     }
 trn_ln = {
     "n_epochs": 1,
@@ -83,8 +80,6 @@ trn_ln = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ls_update": {
         "method": "truncated",
         "params": 8}
@@ -101,7 +96,7 @@ cfgs = [
 
 # IDX = [0, 1]
 # IDX = [2, 3]
-IDX = [2]
+IDX = [0, 1, 2, 3, 4]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
@@ -135,13 +130,11 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"kp_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
 if ifplt:
-    npz_files = [f'results/kp_{l}_summary.npz' for l in labels]
+    npz_files = [f'kp_{l}' for l in labels]
     npzs = plot_summary(npz_files, labels=labels, ifclose=False)
 
     for lbl, npz in zip(labels, npzs):
@@ -149,20 +142,18 @@ if ifplt:
 
 if ifprd:
     sampler = TrajectorySampler(f, config='kp_data.yaml')
-    ts, xs, ys = sampler.sample(t_grid, batch=1)
-    x_data = xs[0]
-    t_data = ts[0]
+    ts, xs, ys = sampler.sample(t_grid, batch=3)
 
-    res = [x_data]
+    res = [xs]
     for i in IDX:
         mdl, MDL, _, _ = cfgs[i]
         _, prd_func = load_model(MDL, f'kp_{mdl}.pt')
         with torch.no_grad():
-            pred = prd_func(x_data, t_data)
+            pred = prd_func(xs, ts)
         res.append(pred)
 
-    plot_trajectory(
-        np.array(res), t_data, "KP",
+    plot_multi_trajs(
+        np.array(res), ts[0], "KP",
         labels=['Truth'] + labels, ifclose=False)
 
 plt.show()
