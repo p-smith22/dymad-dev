@@ -120,6 +120,7 @@ class CVResult:
     fold_metrics: List[float]
     mean_metric: float
     std_metric: float
+    checkpoint_paths: List[str]
 
 
 def iter_param_grid(param_grid: Dict[str, Iterable[Any]]):

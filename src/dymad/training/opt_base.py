@@ -69,8 +69,8 @@ class OptBase:
 
         # Setup paths
         self.model_name = self.config["model"]["name"]
-        self.checkpoint_path = self.config["path"]["checkpoint_prefix"] + "_checkpoint.pt"
-        self.best_model_path = self.config["path"]["checkpoint_prefix"] + ".pt"
+        self.checkpoint_path = self.config["path"]["checkpoint_prefix"] + f"/{self.model_name}_checkpoint.pt"
+        self.best_model_path = self.config["path"]["checkpoint_prefix"] + f"/{self.model_name}.pt"
         os.makedirs(self.config["path"]["results_prefix"], exist_ok=True)
         self.results_prefix  = self.config["path"]["results_prefix"]
 

@@ -3,6 +3,7 @@ import copy
 import logging
 import numpy as np
 import os
+import shutil
 import torch
 
 from dymad.io import TrajectoryManager, TrajectoryManagerGraph
@@ -34,10 +35,9 @@ class DriverBase:
         self.base_name = self.base_config['model']['name']
         _dir = os.path.dirname(config_path)
         _dir = '.' if _dir == '' else _dir
-        os.makedirs(f'{_dir}/checkpoints', exist_ok=True)
-        self.checkpoint_prefix = f'{_dir}/checkpoints/{self.base_name}'
-        os.makedirs(f'{_dir}/results', exist_ok=True)
-        self.results_prefix = f'{_dir}/results/{self.base_name}'
+        os.makedirs(f'{_dir}/{self.base_name}', exist_ok=True)
+        self.checkpoint_prefix = f'{_dir}/{self.base_name}'
+        self.results_prefix = f'{_dir}/{self.base_name}'
 
         # Setup logging
         log_config = self.base_config.get("log", {})
@@ -46,7 +46,7 @@ class DriverBase:
         config_logger(
             self.cv_logger,
             mode=log_config.get("level", "info"),
-            prefix='' if ifstdout else self.results_prefix + "_cv")
+            prefix='' if ifstdout else f"{self.results_prefix}/{self.base_name}_cv")
 
         # Initialize data sets
         self._init_trajectory_managers()
@@ -96,11 +96,13 @@ class DriverBase:
             self.cv_logger.info(f"=== Hyperparam combo {combo_idx+1}/{len(combos)}: {combo} ===")
             fold_metrics: List[float] = []
 
+            paths = []
             for fold_id, fold_cfg in self.iter_folds():
                 self.cv_logger.info(f"--- Fold {fold_id} ---")
 
                 # Apply hyperparameter overrides to this fold's config
-                cfg = self._apply_combo_to_config(combo_idx, fold_id, fold_cfg, combo)
+                cfg, model_prefix = self._apply_combo_to_config(combo_idx, fold_id, fold_cfg, combo)
+                paths.append(model_prefix)
 
                 # Build data-only RunState per fold+combo
                 data_state = self._build_data_state(fold_id, cfg)
@@ -117,17 +119,34 @@ class DriverBase:
                 metric_value = results[-1].run_state.get_metric(self.metric)
                 fold_metrics.append(metric_value)
 
-                self.cv_logger.info(f"Combo {combo_idx+1}, fold {fold_id}: {self.metric} = {metric_value:.6f}")
+                self.cv_logger.info(f"Combo {combo_idx+1}, fold {fold_id}: {self.metric} = {metric_value:.4e}")
 
             mean_metric = float(np.mean(fold_metrics))
             std_metric = float(np.std(fold_metrics))
-            self.cv_logger.info(f"Combo {combo_idx+1}: mean {self.metric} = {mean_metric:.6f} ± {std_metric:.6f}")
-            all_results.append(CVResult(combo, fold_metrics, mean_metric, std_metric))
+            self.cv_logger.info(f"Combo {combo_idx+1}: mean {self.metric} = {mean_metric:.4e} ± {std_metric:.4e}")
+            all_results.append(
+                CVResult(
+                    combo, fold_metrics, mean_metric, std_metric,
+                    checkpoint_paths=paths
+                ))
 
         # Select best (assume lower is better; you can generalize if needed)
         best_idx = int(np.argmin([r.mean_metric for r in all_results]))
         best_result = all_results[best_idx]
-        self.cv_logger.info(f"Best combo: {best_result.params} with {self.metric} = {best_result.mean_metric:.6f}")
+        self.cv_logger.info(f"Best combo: {best_result.params} with {self.metric} = {best_result.mean_metric:.4e}")
+
+        # Save CV results
+        file_name = f"{self.results_prefix}/{self.base_name}_cv.npz"
+        np.savez_compressed(file_name, all_results=all_results)
+        self.cv_logger.info(f"Saved CV results to {file_name}")
+
+        # Copy best model checkpoint to a separate file
+        best_checkpoint = best_result.checkpoint_paths[0]
+        best_model = f"{self.checkpoint_prefix}/{self.base_name}.pt"
+        best_summary = f"{self.checkpoint_prefix}/{self.base_name}_summary.npz"
+        shutil.copy2(best_checkpoint + '.pt', best_model)
+        shutil.copy2(best_checkpoint + '_summary.npz', best_summary)
+        self.cv_logger.info(f"Copied best model {best_checkpoint} to {best_model} and {best_summary}")
 
         return best_idx, best_result, all_results
 
@@ -179,10 +198,11 @@ class DriverBase:
         cfg["model"]["name"] = f"{self.base_name}{_suffix}"
         cfg.update({
             "path" : {
-                "checkpoint_prefix": f"{self.checkpoint_prefix}{_suffix}",
-                "results_prefix": f"{self.results_prefix}{_suffix}"
+                "checkpoint_prefix": f"{self.checkpoint_prefix}/{_suffix}",
+                "results_prefix": f"{self.results_prefix}/{_suffix}"
             }})
-        return cfg
+        model_prefix = cfg["path"]["checkpoint_prefix"] + f"/{cfg['model']['name']}"
+        return cfg, model_prefix
 
 
 class KFoldDriver(DriverBase):

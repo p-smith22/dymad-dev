@@ -1,4 +1,3 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.integrate as spi
@@ -7,7 +6,7 @@ import torch
 from dymad.io import load_model
 from dymad.models import DKM, DKMSK, KM
 from dymad.training import LinearTrainer, NODETrainer
-from dymad.utils import setup_logging, TrajectorySampler
+from dymad.utils import plot_multi_trajs, TrajectorySampler
 
 B = 50
 N = 81
@@ -129,9 +128,9 @@ smpl = {'x0': {
 config_path = 'ker_model.yaml'
 
 cfgs = [
-    ('km_ln',  KM,     LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
+    # ('km_ln',  KM,     LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
     # ('km_nd',  KM,     NODETrainer,       {"model": mdl_kl, "training" : trn_ct}),
-    # ('dkm_ln', DKM,    LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
+    ('dkm_ln', DKM,    LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
     # ('dkm_nd', DKM,    NODETrainer,       {"model": mdl_kl, "training" : trn_dt}),
     # ('dks_ln', DKMSK,  LinearTrainer,     {"model": mdl_kl, "training" : trn_ln}),
     # ('dks_nd', DKMSK,  NODETrainer,       {"model": mdl_kl, "training" : trn_dt}),
@@ -144,7 +143,7 @@ IDX = [0]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
-iftrn = 1
+iftrn = 0
 ifprd = 1
 
 if ifdat:
@@ -159,8 +158,6 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"ker_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
@@ -174,7 +171,7 @@ if ifprd:
     res = [x_data]
     for i in IDX:
         mdl, MDL, _, _ = cfgs[i]
-        _, prd_func = load_model(MDL, f'ker_{mdl}_c0_f0.pt')
+        _, prd_func = load_model(MDL, f'ker_{mdl}.pt')
         with torch.no_grad():
             pred = prd_func(x_data, t_data)
         res.append(pred)
@@ -182,15 +179,8 @@ if ifprd:
     for _i in range(1, len(res)):
         print(labels[_i-1], np.linalg.norm(res[_i]-res[0])/np.linalg.norm(res[0]))
 
-    stys = ['b-', 'r--', 'g:', 'm-.', 'c--', 'y:', 'k-.']
-    f, ax = plt.subplots(nrows=2, sharex=True)
-    for _i in range(J):
-        for _j in range(len(res)):
-            ax[0].plot(t_data, res[_j][_i][:, 0], stys[_j])
-            ax[1].plot(t_data, res[_j][_i][:, 1], stys[_j])
-
-    # plot_trajectory(
-    #     np.array(res), t_data, "SA",
-    #     labels=['Truth'] + labels, ifclose=False)
+    plot_multi_trajs(
+        np.array(res), t_data, "SA",
+        labels=['Truth'] + labels, ifclose=False)
 
 plt.show()

@@ -223,7 +223,7 @@ def plot_summary(npz_files, labels=None, ifscl=True, ifclose=True, prefix='.'):
         ifclose (bool): Whether to close the plot after saving.
         prefix (str): Directory prefix for saving the plot.
     """
-    _files = [f"results/{npz}/{npz}_summary.npz" for npz in npz_files]
+    _files = [f"{npz}/{npz}_summary.npz" for npz in npz_files]
     npzs = [np.load(_f, allow_pickle=True) for _f in _files]
     ax = None
     for idx, npz in enumerate(npzs):

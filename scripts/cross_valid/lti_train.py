@@ -1,4 +1,3 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -6,7 +5,7 @@ import torch
 from dymad.io import load_model
 from dymad.models import KBF
 from dymad.training import NODETrainer, WeakFormTrainer, StackedTrainer
-from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_summary, plot_multi_trajs, TrajectorySampler
 
 B = 128
 N = 501
@@ -45,7 +44,7 @@ cases = [
     {"name": "kbf_mcri", "model" : KBF, "trainer": StackedTrainer,  "config": 'lti_kbf_mcri.yaml'},
     {"name": "kbf_cv",   "model" : KBF, "trainer": WeakFormTrainer, "config": 'lti_kbf_cv.yaml'},
 ]
-IDX = [4]
+IDX = [0]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0
@@ -68,30 +67,26 @@ if iftrn:
         trainer.train()
 
 if ifplt:
-    npz_files = [f'lti_{mdl}_c0_f0' for mdl in labels]
+    npz_files = [f'lti_{mdl}' for mdl in labels]
     npzs = plot_summary(npz_files, labels = labels, ifclose=False)
     for lbl, npz in zip(labels, npzs):
         print(f"Epoch time: {lbl} - {npz['avg_epoch_time']}")
 
 if ifprd:
     sampler = TrajectorySampler(f, g, config='lti_data.yaml', config_mod=config_gau)
+    ts, xs, us, ys = sampler.sample(t_grid, batch=3)
 
-    ts, xs, us, ys = sampler.sample(t_grid, batch=1)
-    x_data = xs[0]
-    t_data = ts[0]
-    u_data = us[0]
-
-    res = [x_data]
+    res = [xs]
     for _i in IDX:
         mdl, MDL = cases[_i]['name'], cases[_i]['model']
-        _, prd_func = load_model(MDL, f'lti_{mdl}_c0_f0.pt')
+        _, prd_func = load_model(MDL, f'lti_{mdl}.pt')
 
         with torch.no_grad():
-            _pred = prd_func(x_data, t_data, u=u_data)
+            _pred = prd_func(xs, ts, u=us)
         res.append(_pred)
 
-    plot_trajectory(
-        np.array(res), t_data, "LTI",
-        us=u_data, labels=['Truth']+labels, ifclose=False)
+    plot_multi_trajs(
+        np.array(res), ts[0], "LTI",
+        us=us, labels=['Truth']+labels, ifclose=False)
 
 plt.show()
