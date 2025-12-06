@@ -217,7 +217,7 @@ class DriverBase:
 
         # Save CV results
         file_name = f"{self.results_prefix}/{self.base_name}_cv.npz"
-        np.savez_compressed(file_name, all_results=all_results)
+        np.savez_compressed(file_name, all_results=all_results, metric_name=self.metric, best_idx=best_idx)
         self.cv_logger.info(f"Saved CV results to {file_name}")
 
         # Copy best model checkpoint to a separate file

@@ -6,7 +6,7 @@ import torch.multiprocessing as mp
 from dymad.io import load_model
 from dymad.models import KBF
 from dymad.training import WeakFormTrainer
-from dymad.utils import plot_summary, plot_multi_trajs, TrajectorySampler
+from dymad.utils import plot_cv_results, plot_summary, plot_multi_trajs, TrajectorySampler
 
 B = 128
 N = 501
@@ -36,13 +36,12 @@ IDX = [0]
 labels = [cases[i]['name'] for i in IDX]
 
 if __name__ == "__main__":
-    mp.set_start_method("spawn", force=True)
-
-    iftrn = 1
-    ifplt = 0
+    iftrn = 0
+    ifplt = 1
     ifprd = 0
 
     if iftrn:
+        mp.set_start_method("spawn", force=True)
         for _i in IDX:
             Model = cases[_i]['model']
             Trainer = cases[_i]['trainer']
@@ -52,10 +51,11 @@ if __name__ == "__main__":
             trainer.train()
 
     if ifplt:
-        npz_files = [f'lti_{mdl}' for mdl in labels]
-        npzs = plot_summary(npz_files, labels = labels, ifclose=False)
-        for lbl, npz in zip(labels, npzs):
-            print(f"Epoch time: {lbl} - {npz['avg_epoch_time']}")
+        mdl = cases[0]['name']
+        # keys = ['model.koopman_dimension', 'training.weak_form_params.N']
+        # keys = ['model.koopman_dimension']
+        keys = None
+        plot_cv_results(f'lti_{mdl}', keys, ifclose=False)
 
     if ifprd:
         sampler = TrajectorySampler(f, g, config='lti_data.yaml', config_mod=config_gau)

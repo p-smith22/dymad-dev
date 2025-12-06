@@ -1,6 +1,8 @@
 import imageio
 import logging
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import os
 
@@ -308,6 +310,103 @@ def plot_hist(hist, crit, crit_name, model_name, ifclose=True, prefix='.'):
 
     if ifclose:
         plt.close()
+
+def plot_cv_results(cv_file, keys=None, ifclose=True, prefix='.'):
+    """
+    Plot cross-validation results.
+
+    Args:
+        cv_results (list): List of CVResult objects.
+        metric_name (str): Name of the metric to plot.
+        ifclose (bool): Whether to close the plot after saving.
+        prefix (str): Directory prefix for saving the plot.
+    """
+    if keys is None:
+        params, metrics, metric_name, best_idx = _collect_cv_results(cv_file, [])
+        params = np.arange(len(metrics))
+        mode = '1d'
+        key_labels = ['Hyperparameter Index']
+    elif len(keys) < 4:
+        params, metrics, metric_name, best_idx = _collect_cv_results(cv_file, keys)
+        if len(keys) == 1:
+            params = params.flatten()
+            mode = '1d'
+        elif len(keys) == 2:
+            mode = '2d'
+        elif len(keys) == 3:
+            mode = '3d'
+        key_labels = [_k.split('.')[-1] for _k in keys]
+    else:
+        raise ValueError("Can only plot up to 3 hyperparameters at once.  Try keys=None.")
+    best_label = f"Best: {metric_name} = {metrics[best_idx,0]:.3e} ± {metrics[best_idx,1]:.3e}"
+
+    means = metrics[:, 0]
+    stds  = metrics[:, 1]
+    if mode == '1d':
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.plot(params, means, 'ko', markerfacecolor='none', label='Mean', markersize=8)
+        ax.errorbar(params, means, yerr=stds, fmt='o', color='black', capsize=5, label='Std Dev')
+        ax.plot(params[best_idx], means[best_idx], 'rs', label=best_label, markersize=8)
+        ax.set_xticks(params)
+        ax.set_xlabel(key_labels[0])
+        ax.set_ylabel(metric_name)
+        ax.legend()
+
+    elif mode == '2d':
+        fig, ax = plt.subplots(figsize=(8, 6))
+        sc = ax.scatter(params[:, 0], params[:, 1], c=means, s=100, cmap='viridis')
+        ax.scatter(
+            params[best_idx, 0], params[best_idx, 1],
+            c='red', s=150, marker='s', label=best_label)
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.1)
+        cbar = fig.colorbar(sc, cax=cax)
+        cbar.set_label(f'Mean {metric_name}')
+        ax.set_xticks(np.unique(params[:, 0]))
+        ax.set_yticks(np.unique(params[:, 1]))
+        ax.set_xlabel(key_labels[0])
+        ax.set_ylabel(key_labels[1])
+        ax.legend()
+
+    elif mode == '3d':
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection='3d')
+        p = ax.scatter(params[:, 0], params[:, 1], params[:, 2], c=means, s=100, cmap='viridis')
+        ax.scatter(
+            params[best_idx, 0], params[best_idx, 1], params[best_idx, 2],
+            c='red', s=150, marker='s', label=best_label)
+        cbar = fig.colorbar(p)
+        cbar.set_label(f'Mean {metric_name}')
+        ax.set_xticks(np.unique(params[:, 0]))
+        ax.set_yticks(np.unique(params[:, 1]))
+        ax.set_zticks(np.unique(params[:, 2]))
+        ax.set_xlabel(key_labels[0])
+        ax.set_ylabel(key_labels[1])
+        ax.set_zlabel(key_labels[2])
+        ax.legend()
+    ax.set_title(f'Cross-Validation Results - Metric: {metric_name}')
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    if prefix != '.':
+        os.makedirs(prefix, exist_ok=True)
+    plt.savefig(f'{prefix}/cv_results.png', dpi=150, bbox_inches='tight',
+                facecolor='white', edgecolor='none')
+    if ifclose:
+        plt.close()
+
+def _collect_cv_results(cv_file, keys):
+    tmp = np.load(f"{cv_file}/{cv_file}_cv.npz", allow_pickle=True)
+    cv_res = tmp['all_results']
+    metric_name = tmp['metric_name']
+    best_idx = tmp['best_idx']
+
+    params, metrics = [], []
+    for res in cv_res:
+        params.append([res.params[k] for k in keys])
+        metrics.append([res.mean_metric, res.std_metric])
+
+    return np.array(params), np.array(metrics), metric_name, best_idx
 
 def _get_contour_func(ax, mode):
     if mode == 'contour':
