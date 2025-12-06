@@ -64,8 +64,6 @@ if iftrn:
         Trainer = cases[_i]['trainer']
         config_path = cases[_i]['config']
 
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, Model)
         trainer.train()
 

@@ -8,9 +8,7 @@ import torch
 from dymad.io import TrajectoryManager, TrajectoryManagerGraph
 from dymad.training.helper import CVResult, iter_param_grid, RunState, set_by_dotted_key
 from dymad.training.stacked_opt import StackedOpt
-from dymad.utils import load_config
-
-logger = logging.getLogger(__name__)
+from dymad.utils import config_logger, load_config
 
 class DriverBase:
     """
@@ -28,9 +26,9 @@ class DriverBase:
         self.model_class = model_class
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.cv_config = self.base_config.get("cv", {})
-        self.param_grid = self.cv_config.get("param_grid", None)   # None = single combo
-        self.metric = self.cv_config.get("metric", "total")
+        cv_config = self.base_config.get("cv", {})
+        self.param_grid = cv_config.get("param_grid", None)   # None = single combo
+        self.metric = cv_config.get("metric", "total")
 
         # Setup paths
         self.base_name = self.base_config['model']['name']
@@ -40,6 +38,15 @@ class DriverBase:
         self.checkpoint_prefix = f'{_dir}/checkpoints/{self.base_name}'
         os.makedirs(f'{_dir}/results', exist_ok=True)
         self.results_prefix = f'{_dir}/results/{self.base_name}'
+
+        # Setup logging
+        log_config = self.base_config.get("log", {})
+        ifstdout = log_config.get("stdout", False)
+        self.cv_logger = logging.getLogger("dymad.cv")
+        config_logger(
+            self.cv_logger,
+            mode=log_config.get("level", "info"),
+            prefix='' if ifstdout else self.results_prefix + "_cv")
 
         # Initialize data sets
         self._init_trajectory_managers()
@@ -86,11 +93,11 @@ class DriverBase:
             combos = list(iter_param_grid(self.param_grid))
 
         for combo_idx, combo in enumerate(combos):
-            logger.info(f"=== Hyperparam combo {combo_idx+1}/{len(combos)}: {combo} ===")
+            self.cv_logger.info(f"=== Hyperparam combo {combo_idx+1}/{len(combos)}: {combo} ===")
             fold_metrics: List[float] = []
 
             for fold_id, fold_cfg in self.iter_folds():
-                logger.info(f"--- Fold {fold_id} ---")
+                self.cv_logger.info(f"--- Fold {fold_id} ---")
 
                 # Apply hyperparameter overrides to this fold's config
                 cfg = self._apply_combo_to_config(combo_idx, fold_id, fold_cfg, combo)
@@ -110,18 +117,17 @@ class DriverBase:
                 metric_value = results[-1].run_state.get_metric(self.metric)
                 fold_metrics.append(metric_value)
 
-                logger.info(f"Combo {combo_idx+1}, fold {fold_id}: {self.metric} = {metric_value:.6f}")
+                self.cv_logger.info(f"Combo {combo_idx+1}, fold {fold_id}: {self.metric} = {metric_value:.6f}")
 
             mean_metric = float(np.mean(fold_metrics))
             std_metric = float(np.std(fold_metrics))
-            logger.info(f"Combo {combo_idx+1}: mean {self.metric} = {mean_metric:.6f} ± {std_metric:.6f}")
-
+            self.cv_logger.info(f"Combo {combo_idx+1}: mean {self.metric} = {mean_metric:.6f} ± {std_metric:.6f}")
             all_results.append(CVResult(combo, fold_metrics, mean_metric, std_metric))
 
         # Select best (assume lower is better; you can generalize if needed)
         best_idx = int(np.argmin([r.mean_metric for r in all_results]))
         best_result = all_results[best_idx]
-        logger.info(f"Best combo: {best_result.params} with {self.metric} = {best_result.mean_metric:.6f}")
+        self.cv_logger.info(f"Best combo: {best_result.params} with {self.metric} = {best_result.mean_metric:.6f}")
 
         return best_idx, best_result, all_results
 

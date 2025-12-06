@@ -1,15 +1,15 @@
-from typing import Dict, Any, Type
 import copy
 import logging
+import os
 import torch
+from typing import Dict, Any, Type
 
 from dymad.training.helper import RunState
 from dymad.training.opt_base import OptBase
 from dymad.training.opt_linear import OptLinear
 from dymad.training.opt_node import OptNODE
 from dymad.training.opt_weak_form import OptWeakForm
-
-logger = logging.getLogger(__name__)
+from dymad.utils import config_logger
 
 OPT_REGISTRY: Dict[str, Type[OptBase]] = {
     "NODE": OptNODE,
@@ -57,12 +57,23 @@ class StackedOpt:
         results = []
         current_state = initial_state
 
+        log_config = self.config.get("log", {})
+        ifstdout = log_config.get("stdout", False)
+        self.logger = logging.getLogger('dymad')
+        path = current_state.config['path']['results_prefix']
+        os.makedirs(path, exist_ok=True)
+        path += '/' + path.split('/')[-1]
+        config_logger(
+            self.logger,
+            mode=log_config.get("level", "info"),
+            prefix='' if ifstdout else path)
+
         for i, phase_cfg in enumerate(self.phases):
             phase_name  = phase_cfg.get("name", f"phase_{i}")
             trainer_key = phase_cfg["trainer"]
             trainer_cls = OPT_REGISTRY[trainer_key]
 
-            logger.info(f"=== Starting phase '{phase_name}' with trainer '{trainer_key}' ===")
+            self.logger.info(f"=== Starting phase '{phase_name}' with trainer '{trainer_key}' ===")
 
             # Instantiate trainer; it will attach to provided RunState (data-only or full).
             trainer = trainer_cls(
@@ -84,5 +95,8 @@ class StackedOpt:
                 run_state=current_state,
                 hist=trainer.hist,
             ))
+
+        self.logger.info("=== All phases completed ===")
+        self.logger.removeHandler(self.logger.handlers[0])
 
         return results

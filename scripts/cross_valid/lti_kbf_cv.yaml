@@ -17,7 +17,7 @@ dataloader:
   batch_size: 64
 
 model:
-  name: 'lti_kbf_wf'
+  name: 'lti_kbf_cv'
   encoder_layers: 1
   decoder_layers: 1
   latent_dimension: 32
@@ -47,5 +47,5 @@ training:
 cv:
   param_grid:
     model.koopman_dimension: [4, 6]
-    training.weak_form_params.N: [9]
+    training.weak_form_params.N: [9, 13]
   metric: "total"
