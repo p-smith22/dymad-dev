@@ -34,7 +34,7 @@ criterion:
     weight: 1.0
 
 training:
-  n_epochs: 10
+  n_epochs: 300
   save_interval: 10
   load_checkpoint: false
   learning_rate: 5e-3
@@ -46,6 +46,6 @@ training:
 
 cv:
   param_grid:
-    model.koopman_dimension: [4, 6]
-    training.weak_form_params.N: [9, 13]
+    model.koopman_dimension: [3, 4, 5, 6]
+    training.weak_form_params.N: [9, 11, 13, 15, 17]
   metric: "total"

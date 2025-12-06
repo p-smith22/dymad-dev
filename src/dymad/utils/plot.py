@@ -2,6 +2,7 @@ import imageio
 import logging
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+import matplotlib.colors as colors
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import os
@@ -311,7 +312,7 @@ def plot_hist(hist, crit, crit_name, model_name, ifclose=True, prefix='.'):
     if ifclose:
         plt.close()
 
-def plot_cv_results(cv_file, keys=None, ifclose=True, prefix='.'):
+def plot_cv_results(cv_file, keys=None, ifclose=True, prefix='.', value_scale='log'):
     """
     Plot cross-validation results.
 
@@ -347,6 +348,7 @@ def plot_cv_results(cv_file, keys=None, ifclose=True, prefix='.'):
         ax.plot(params, means, 'ko', markerfacecolor='none', label='Mean', markersize=8)
         ax.errorbar(params, means, yerr=stds, fmt='o', color='black', capsize=5, label='Std Dev')
         ax.plot(params[best_idx], means[best_idx], 'rs', label=best_label, markersize=8)
+        ax.set_yscale(value_scale)
         ax.set_xticks(params)
         ax.set_xlabel(key_labels[0])
         ax.set_ylabel(metric_name)
@@ -361,6 +363,8 @@ def plot_cv_results(cv_file, keys=None, ifclose=True, prefix='.'):
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("right", size="5%", pad=0.1)
         cbar = fig.colorbar(sc, cax=cax)
+        if value_scale == 'log':
+            sc.set_norm(colors.LogNorm(vmin=means.min(), vmax=means.max()))
         cbar.set_label(f'Mean {metric_name}')
         ax.set_xticks(np.unique(params[:, 0]))
         ax.set_yticks(np.unique(params[:, 1]))
