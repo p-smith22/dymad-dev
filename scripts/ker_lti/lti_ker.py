@@ -1,4 +1,3 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -6,7 +5,7 @@ import torch
 from dymad.io import load_model
 from dymad.models import DKM, DKMSK, KM
 from dymad.training import NODETrainer, LinearTrainer
-from dymad.utils import plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_trajectory, TrajectorySampler
 
 B = 30
 N = 41
@@ -78,8 +77,6 @@ trn_ln = {
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ls_update": {
         "method": "raw",
         "interval": 500,
@@ -91,8 +88,6 @@ trn_ct = {
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [4],
     "chop_mode": "initial",
     "chop_step": 0.5,
@@ -108,8 +103,6 @@ trn_dt = {
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ls_update": {
         "method": "raw",
         "interval": 100,
@@ -131,7 +124,7 @@ cfgs = [
 # IDX = [0, 1, 2, 3, 4, 5]
 # IDX = [0, 1]
 # IDX = [2, 3]
-IDX = [4]
+IDX = [0, 2, 4]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
@@ -149,8 +142,6 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"ker_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 

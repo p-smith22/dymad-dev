@@ -367,17 +367,20 @@ class SingleSplitDriver(DriverBase):
         # Otherwise, split the training dataset into train/valid
         split_cfg = self.base_config.get("split", {})
         train_frac = split_cfg.get("train_frac", 0.75)
-        assert 0.0 < train_frac < 1.0, f"train_frac must be in (0, 1). Got: {train_frac}"
-
         n_samples = self.train_sets[0].metadata['n_samples']
-        n_train = int(n_samples * train_frac)
-        n_val = n_samples - n_train
+        if train_frac >= 1.0:
+            n_train = n_samples
+            n_val = n_samples
+            self.train_set_index = torch.arange(n_samples)
+            self.valid_set_index = torch.arange(n_samples)
+        else:
+            n_train = int(n_samples * train_frac)
+            n_val = n_samples - n_train
+            perm = torch.randperm(n_samples)
+            self.train_set_index = perm[:n_train]
+            self.valid_set_index = perm[n_train:]
         assert n_train > 0, f"Training set must have at least one sample. Got {n_train}."
         assert n_val > 0, f"Validation set must have at least one sample. Got {n_val}."
-
-        perm = torch.randperm(n_samples)
-        self.train_set_index = perm[:n_train]
-        self.valid_set_index = perm[n_train:]
 
         self.train_sets[0].set_data_index(self.train_set_index)
         self.valid_sets[0].set_data_index(self.valid_set_index)
