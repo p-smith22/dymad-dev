@@ -1,4 +1,3 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -6,7 +5,7 @@ import torch
 from dymad.io import load_model
 from dymad.models import LDM, KBF
 from dymad.training import WeakFormTrainer, NODETrainer
-from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_summary, plot_trajectory, TrajectorySampler
 
 B = 128
 N = 501
@@ -38,7 +37,14 @@ config_gau = {
             "dt":   0.2,
             "mode": "zoh"}}}
 
-cfgs = [(LDM, 'ldm'), (KBF, 'kbf')]
+cases = [
+    {"name": "ldm_wf",   "model" : LDM, "trainer": WeakFormTrainer, "config": 'ltd_ldm_wf.yaml'},
+    {"name": "ldm_node", "model" : LDM, "trainer": NODETrainer,     "config": 'ltd_ldm_node.yaml'},
+    {"name": "kbf_wf",   "model" : KBF, "trainer": WeakFormTrainer, "config": 'ltd_kbf_wf.yaml'},
+    {"name": "kbf_node", "model" : KBF, "trainer": NODETrainer,     "config": 'ltd_kbf_node.yaml'}
+]
+IDX = [0, 1, 2, 3]
+labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0
 iftrn = 1
@@ -51,29 +57,18 @@ if ifdat:
     np.savez_compressed('./data/ltd.npz', t=ts, x=ys, u=us)
 
 if iftrn:
-    cases = [
-        {"model" : LDM, "trainer": WeakFormTrainer, "config": 'ltd_ldm_wf.yaml'},
-        {"model" : LDM, "trainer": NODETrainer,     "config": 'ltd_ldm_node.yaml'},
-        {"model" : KBF, "trainer": WeakFormTrainer, "config": 'ltd_kbf_wf.yaml'},
-        {"model" : KBF, "trainer": NODETrainer,     "config": 'ltd_kbf_node.yaml'}
-    ]
-
-    for _i in [0, 1, 2, 3]:
+    for _i in IDX:
         Model = cases[_i]['model']
         Trainer = cases[_i]['trainer']
         config_path = cases[_i]['config']
-
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, Model)
         trainer.train()
 
 if ifplt:
-    for cfg in cfgs:
-        MDL, mdl = cfg
-        npz_files = [f'results/ltd_{mdl}_node_summary.npz', f'results/ltd_{mdl}_wf_summary.npz']
-        npzs = plot_summary(npz_files, labels = [f'{mdl}/NODE', f'{mdl}/WF'], ifclose=False)
-        print("Epoch time NODE/WF:", npzs[0]['avg_epoch_time']/npzs[1]['avg_epoch_time'])
+    npz_files = [f'ltd_{mdl}' for mdl in labels]
+    npzs = plot_summary(npz_files, labels = labels, ifclose=False)
+    for lbl, npz in zip(labels, npzs):
+        print(f"Epoch time: {lbl} - {npz['avg_epoch_time']}")
 
 if ifprd:
     sampler = TrajectorySampler(f, g, config='ltd_data.yaml', config_mod=config_gau)
@@ -83,18 +78,17 @@ if ifprd:
     t_data = ts[0]
     u_data = us[0]
 
-    for cfg in cfgs:
-        MDL, mdl = cfg
-
-        mdl_wf, prd_wf = load_model(MDL, f'ltd_{mdl}_wf.pt', f'ltd_{mdl}_wf.yaml')
-        mdl_nd, prd_nd = load_model(MDL, f'ltd_{mdl}_node.pt', f'ltd_{mdl}_node.yaml')
+    res = [x_data]
+    for _i in IDX:
+        mdl, MDL = cases[_i]['name'], cases[_i]['model']
+        _, prd_func = load_model(MDL, f'ltd_{mdl}.pt')
 
         with torch.no_grad():
-            weak_pred = prd_wf(x_data, t_data[:-1], u=u_data)
-            node_pred = prd_nd(x_data, t_data[:-1], u=u_data)
+            _pred = prd_func(x_data, t_data[:-1], u=u_data)
+        res.append(_pred)
 
-        plot_trajectory(
-            np.array([x_data, weak_pred, node_pred]), t_data, "LTD",
-            us=u_data, labels=['Truth', 'Weak Form', 'NODE'], ifclose=False)
+    plot_trajectory(
+        np.array(res), t_data, "LTI",
+        us=u_data, labels=['Truth']+labels, ifclose=False)
 
 plt.show()
