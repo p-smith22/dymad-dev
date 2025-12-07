@@ -1,5 +1,4 @@
 import copy
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.linalg as spl
@@ -10,7 +9,7 @@ from dymad.models import DKBF, KBF
 from dymad.numerics import complex_plot
 from dymad.sako import estimate_pseudospectrum, resolvent_analysis, SpectralAnalysis
 from dymad.training import LinearTrainer, NODETrainer
-from dymad.utils import plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_trajectory, TrajectorySampler
 
 B = 64
 N = 21
@@ -73,8 +72,6 @@ trn_nd = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [2, 4],
     "sweep_epoch_step": 100,
     "ls_update": {
@@ -120,7 +117,7 @@ IDX = [0, 1, 2, 3, 4]
 # IDX = [2, 3, 4]
 labels = [cfgs[i][0] for i in IDX]
 
-ifdat = 1
+ifdat = 0
 iftrn = 1
 ifprd = 1
 ifint = 1
@@ -133,8 +130,6 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"sa_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 

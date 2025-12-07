@@ -1,5 +1,4 @@
 import copy
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.integrate as spi
@@ -10,7 +9,7 @@ from dymad.models import DKBF, KBF
 from dymad.numerics import complex_plot
 from dymad.sako import per_state_err, SpectralAnalysis
 from dymad.training import LinearTrainer, NODETrainer
-from dymad.utils import plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_trajectory, TrajectorySampler
 
 B = 500
 N = 81
@@ -69,14 +68,16 @@ trn_kl = [
         {"type": "lift", "fobs": "poly", "Ks": [10, 10]}
     ]
 
+crit = {
+    "dynamics": {"weight": 1.0},
+    "recon":    {"weight": 1.0},
+}
 trn_dt = {
     "n_epochs": 5000,
     "save_interval": 100,
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ls_update": {
         "method": "full",
         "interval": 500,
@@ -112,21 +113,21 @@ smpl = {'x0': {
 config_path = 'sa_model.yaml'
 
 cfgs = [
-    ('kbf_nd',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_ct}),
-    ('dkbf_nd', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt}),
+    ('kbf_nd',  KBF,  NODETrainer,     {"model": mdl_kb, "criterion": crit, "training" : trn_ct}),
+    ('dkbf_nd', DKBF, NODETrainer,     {"model": mdl_kb, "criterion": crit, "training" : trn_dt}),
     ('dkbf_ln', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_ln}),
     ('dkbf_tr', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_tr}),
     ('dkbf_sa', DKBF, LinearTrainer,   {"model": mdl_kl, "transform_x" : trn_kl, "training" : trn_sa}),
     ]
 
-# IDX = [0, 1, 2, 3, 4]
-IDX = [0, 1]
+IDX = [0, 1, 2, 3, 4]
+# IDX = [0, 1]
 # IDX = [2, 3, 4]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
-iftrn = 0
-ifprd = 0
+iftrn = 1
+ifprd = 1
 ifint = 1
 
 if ifdat:
@@ -141,8 +142,6 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"sa_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 

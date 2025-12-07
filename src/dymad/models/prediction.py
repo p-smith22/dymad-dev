@@ -214,6 +214,9 @@ def predict_continuous_exp(
 
     Autonomous case using matrix exponential.  In continuous-time, we compute exp(A*dt).
 
+    The step size is assumed to be constant, so when there are batched time series,
+    we just take the first one to compute dt.
+
     Currently only for KBF-type models with linear dynamics.
     """
     _x0, _, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
@@ -232,7 +235,10 @@ def predict_continuous_exp(
     z0 = model.encoder(_ws.get_step(0).set_x(_x0))
 
     logger.debug(f"predict_continuous_exp: Starting ODE integration with shape {z0.shape}")
-    dt = ts - ts[0]  # (n_steps,)
+    if ts.dim() == 2:
+        dt = ts[0] - ts[0,0]
+    else:
+        dt = ts - ts[0]  # (n_steps,)
     if len(W) == 1:
         z_traj = expm_full_rank(W[0].T, dt, z0)
     elif len(W) == 2:
