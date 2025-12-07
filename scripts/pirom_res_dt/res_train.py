@@ -1,5 +1,4 @@
 import jax.numpy as jnp
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -9,7 +8,7 @@ from dymad.io import load_model
 from dymad.models import TemplateCorrAlg
 from dymad.numerics import rk4_step
 from dymad.training import NODETrainer
-from dymad.utils import JaxWrapper, plot_multi_trajs, plot_summary, setup_logging, TrajectorySampler
+from dymad.utils import JaxWrapper, plot_multi_trajs, plot_summary, TrajectorySampler
 
 B = 16
 N = 301
@@ -123,13 +122,11 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"res_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
 if ifplt:
-    npz_files = [f'results/res_{l}_summary.npz' for l in labels]
+    npz_files = [f'res_{l}' for l in labels]
     npzs = plot_summary(npz_files, labels=labels, ifclose=False)
 
     for lbl, npz in zip(labels, npzs):

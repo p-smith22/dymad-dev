@@ -1,5 +1,4 @@
 import jax.numpy as jnp
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -8,7 +7,7 @@ from typing import Tuple, Union
 from dymad.io import load_model
 from dymad.models import TemplateCorrDif
 from dymad.training import NODETrainer
-from dymad.utils import JaxWrapper, plot_multi_trajs, setup_logging, TrajectorySampler
+from dymad.utils import JaxWrapper, plot_multi_trajs, TrajectorySampler
 
 B = 32
 N = 101
@@ -92,7 +91,7 @@ cfgs = [
     ('dj_nd', DPJ, NODETrainer,     {"model": mdl_kl, "training" : trn_nd}),
     ]
 
-IDX = [1]
+IDX = [0, 1]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
@@ -112,8 +111,6 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"dyn_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
