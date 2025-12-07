@@ -1,3 +1,4 @@
+import copy
 import logging
 import numpy as np
 import os
@@ -194,8 +195,11 @@ class DataInterface:
     def _init_metadata(self, checkpoint_path, config_path, config_mod) -> Tuple[Dict, bool]:
         """Initialize metadata from config or checkpoint."""
         if checkpoint_path is not None:
-            assert os.path.exists(checkpoint_path), "Checkpoint path does not exist."
-            return torch.load(checkpoint_path, weights_only=False)['metadata'], True
+            path = checkpoint_path
+            if not os.path.exists(path):
+                path = os.path.join(path.split('.')[0], path)
+            assert os.path.exists(path), "Checkpoint path does not exist."
+            return torch.load(path, weights_only=False), True
         _config = load_config(config_path, config_mod)
         return {'config': _config}, False
 
@@ -204,20 +208,33 @@ class DataInterface:
 
         Striped from TrainerBase.
         """
-        tm = TrajectoryManager(metadata, device=self.device)
-        _dataloaders, _, _ = tm.process_all()
+        if 'train_md' in metadata:
+            # Previously processed
+            cfg = copy.deepcopy(metadata['train_md'])
+            cfg['config']['dataloader']['shuffle'] = False   # Turn off shuffling to ensure fixed order of samples
+            train = TrajectoryManager(cfg, data_key='train', device=self.device)
+            self.train_loader, dataset, _ = train.process_all()
 
-        # Turn off shuffling to ensure fixed order of samples
-        self.train_loader = torch.utils.data.DataLoader(
-            _dataloaders[0].dataset, batch_size=_dataloaders[0].batch_size, shuffle=False, collate_fn=DynData.collate)
-        self.validation_loader = torch.utils.data.DataLoader(
-            _dataloaders[1].dataset, batch_size=_dataloaders[1].batch_size, shuffle=False, collate_fn=DynData.collate)
-        self.test_loader = torch.utils.data.DataLoader(
-            _dataloaders[2].dataset, batch_size=_dataloaders[2].batch_size, shuffle=False, collate_fn=DynData.collate)
+            cfg = copy.deepcopy(metadata['valid_md'])
+            cfg['config']['dataloader']['shuffle'] = False   # Turn off shuffling to ensure fixed order of samples
+            valid = TrajectoryManager(cfg, data_key='valid', device=self.device)
+            self.valid_loader = valid.process_all()[0]
+
+            self.t = dataset[0].t[0].clone().detach()
+            tm = train
+        else:
+            # Simple config
+            tm = TrajectoryManager(metadata, device=self.device)
+            _dataloaders, _, _ = tm.process_all()
+            # Turn off shuffling to ensure fixed order of samples
+            self.train_loader = torch.utils.data.DataLoader(
+                _dataloaders[0].dataset, batch_size=_dataloaders[0].batch_size, shuffle=False, collate_fn=DynData.collate)
+            self.validation_loader = torch.utils.data.DataLoader(
+                _dataloaders[1].dataset, batch_size=_dataloaders[1].batch_size, shuffle=False, collate_fn=DynData.collate)
+
+            self.t = _dataloaders[0].dataset[0].t[0].clone().detach()
 
         self.dtype = tm.dtype
-        self.t = torch.tensor(tm.t[0])
-
         self._trans_x = tm._data_transform_x
         self._trans_u = tm._data_transform_u
 

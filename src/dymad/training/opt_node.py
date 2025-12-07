@@ -86,6 +86,8 @@ class OptNODE(OptBase):
         base class aggregate according to config["training"]["loss_weights"].
         """
         num_steps = self.schedulers[1].get_length()
+        if num_steps is None:
+            num_steps = batch.x.size(1)
 
         # Chop trajectories
         if self.chop_mode == "initial":
