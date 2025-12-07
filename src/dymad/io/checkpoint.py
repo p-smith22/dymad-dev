@@ -224,15 +224,15 @@ class DataInterface:
             tm = train
         else:
             # Simple config
-            tm = TrajectoryManager(metadata, device=self.device)
-            _dataloaders, _, _ = tm.process_all()
+            # Here we just let train and valid be the same
+            tm = TrajectoryManager(metadata, data_key='train', device=self.device)
+            _dataloader, _dataset, _ = tm.process_all()
             # Turn off shuffling to ensure fixed order of samples
             self.train_loader = torch.utils.data.DataLoader(
-                _dataloaders[0].dataset, batch_size=_dataloaders[0].batch_size, shuffle=False, collate_fn=DynData.collate)
-            self.validation_loader = torch.utils.data.DataLoader(
-                _dataloaders[1].dataset, batch_size=_dataloaders[1].batch_size, shuffle=False, collate_fn=DynData.collate)
+                _dataset, batch_size=_dataloader.batch_size, shuffle=False, collate_fn=DynData.collate)
+            self.valid_loader = self.train_loader
 
-            self.t = _dataloaders[0].dataset[0].t[0].clone().detach()
+            self.t = _dataset[0].t[0].clone().detach()
 
         self.dtype = tm.dtype
         self._trans_x = tm._data_transform_x

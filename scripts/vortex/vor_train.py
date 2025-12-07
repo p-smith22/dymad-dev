@@ -1,5 +1,4 @@
 import copy
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -35,14 +34,16 @@ mdl_kl = {
     "ridge_init": 1e-10
     }
 
+crit = {
+    "dynamics": {"weight": 1.0},
+    "recon":    {"weight": 1.0},
+}
 trn_nd = {
     "n_epochs": 200,
     "save_interval": 50,
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [2],
     "sweep_epoch_step": 100,
     "chop_mode": "unfold",
@@ -99,9 +100,9 @@ trn_dmf = {
 config_path = 'vor_model.yaml'
 
 cfgs = [
-    ('kbf_node', KBF,  NODETrainer,     {"model": gen_mdl_kb(0,0,13), "training" : trn_nd, "transform_x" : [trn_svd, trn_add]}),
+    ('kbf_node', KBF,  NODETrainer,     {"model": gen_mdl_kb(0,0,13), "criterion": crit, "training" : trn_nd, "transform_x" : [trn_svd, trn_add]}),
     ('dkbf_ln',  DKBF, LinearTrainer,   {"model": gen_mdl_kb(0,0,13), "training" : trn_ln, "transform_x" : [trn_svd, trn_add]}),
-    ('dkbf_ae',  DKBF, NODETrainer,     {"model": gen_mdl_kb(3,64,3), "training" : trn_ae, "transform_x" : [trn_svd]}),
+    ('dkbf_ae',  DKBF, NODETrainer,     {"model": gen_mdl_kb(3,64,3), "criterion": crit, "training" : trn_ae, "transform_x" : [trn_svd]}),
     ('dkbf_dm',  DKBF, LinearTrainer,   {"model": gen_mdl_kb(0,0,3),  "training" : trn_ln, "transform_x" : [trn_svd, trn_dmf]}),
     ('dks_ln',  DKMSK, LinearTrainer,   {"model": mdl_kl, "training" : trn_rw, "transform_x" : [trn_svd, trn_scl]}),
     ]
@@ -116,14 +117,12 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"kp_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
 if ifplt:
     labels = [cfgs[i][0] for i in IDX]
-    npz_files = [f'results/kp_{l}_summary.npz' for l in labels]
+    npz_files = [f'kp_{l}' for l in labels]
     npzs = plot_summary(npz_files, labels=labels, ifclose=False)
 
 if ifprd:
@@ -134,9 +133,8 @@ if ifprd:
 
     res = [x_data]
     for i in IDX:
-        mdl, MDL, Trainer, opt = cfgs[i]
-        opt["model"]["name"] = f"kp_{mdl}"
-        model, prd_func = load_model(MDL, f'kp_{mdl}.pt', f'vor_model.yaml', config_mod=opt)
+        mdl, MDL, Trainer, _ = cfgs[i]
+        model, prd_func = load_model(MDL, f'kp_{mdl}.pt')
         with torch.no_grad():
             pred = prd_func(x_data, t_data)
         res.append(pred)
