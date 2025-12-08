@@ -2,6 +2,7 @@ import copy
 import numpy as np
 import os
 import pytest
+import shutil
 import torch
 
 from dymad.io import load_model
@@ -39,8 +40,6 @@ trn_nd1 = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [2, 4],
     "sweep_epoch_step": 100,
     "ls_update": {
@@ -104,7 +103,7 @@ def train_case(idx, data, path):
 def predict_case(idx, sample, path):
     x_data, t_data = sample
     mdl, MDL, _, opt = cfgs[idx]
-    _, prd_func = load_model(MDL, path/'sa_model.pt', path/'sa_model.yaml', config_mod=opt)
+    _, prd_func = load_model(MDL, path/'sa_model/sa_model.pt')
     with torch.no_grad():
         _prd = prd_func(x_data, t_data)
         _err = np.linalg.norm(_prd - x_data) / np.linalg.norm(x_data)
@@ -120,7 +119,7 @@ def predict_case(idx, sample, path):
 
 def sa_case(idx, path):
     _, MDL, _, _ = cfgs[idx]
-    _s = SpectralAnalysis(MDL, path/f'sa_model.pt', dt=dt, reps=1e-10, etol=1e-12)
+    _s = SpectralAnalysis(MDL, path/f'sa_model/sa_model.pt', dt=dt, reps=1e-10, etol=1e-12)
 
     xs = np.linspace(-1.3, 1.3, 4)
     gg = np.vstack([xs, xs])
@@ -143,5 +142,5 @@ def test_sa(sa_lti_data, sa_lti_test, env_setup, idx):
     train_case(idx, sa_lti_data, env_setup)
     predict_case(idx, sa_lti_test, env_setup)
     sa_case(idx, env_setup)
-    if os.path.exists(env_setup/'sa_model.pt'):
-        os.remove(env_setup/'sa_model.pt')
+    if os.path.exists(env_setup/'sa_model'):
+        shutil.rmtree(env_setup/'sa_model')

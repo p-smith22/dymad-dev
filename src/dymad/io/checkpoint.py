@@ -32,11 +32,12 @@ def load_model(model_class, checkpoint_path):
         - callable: A function to predict trajectories in data space.
     """
     # If checkpoint_path does not exist, try adding directory prefix based on filename
-    if not os.path.exists(checkpoint_path):
-        checkpoint_path = os.path.join(checkpoint_path.split('.')[0], checkpoint_path)
-        if not os.path.exists(checkpoint_path):
-            raise FileNotFoundError(f"Checkpoint file not found at {checkpoint_path}.")
-    chkpt = torch.load(checkpoint_path, weights_only=False)
+    chkpt_path = str(checkpoint_path)
+    if not os.path.exists(chkpt_path):
+        chkpt_path = os.path.join(chkpt_path.split('.')[0], chkpt_path)
+        if not os.path.exists(chkpt_path):
+            raise FileNotFoundError(f"Checkpoint file not found at {chkpt_path}.")
+    chkpt = torch.load(chkpt_path, weights_only=False)
     cfg = chkpt['config']
     md = chkpt['train_md']
     dtype = torch.double if cfg['data'].get('double_precision', False) else torch.float

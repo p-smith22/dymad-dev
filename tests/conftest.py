@@ -3,7 +3,6 @@ import os
 from pathlib import Path
 import pytest
 import shutil
-import torch
 
 from dymad.utils import adj_to_edge, TrajectorySampler
 

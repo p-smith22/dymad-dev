@@ -13,6 +13,7 @@ Sweep mode included for NODE training.
 import copy
 import os
 import pytest
+import shutil
 import torch
 
 from dymad.io import load_model
@@ -68,8 +69,6 @@ trn_wf = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "weak_form_params": {
         "N": 13,
         "dN": 2,
@@ -83,8 +82,6 @@ trn_nd = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [200, 501],
     "sweep_epoch_step": 5,
     "ode_method": "dopri5",
@@ -99,8 +96,6 @@ trn_dt = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [3, 5],
     "sweep_epoch_step": 5,
     "chop_mode": "unfold",
@@ -113,8 +108,6 @@ trn_ln = {
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ls_update": {
         "method": "truncated",
         "params": 2
@@ -148,7 +141,7 @@ def train_case(idx, data, path):
 def predict_case(idx, sample, path, ifdl = False):
     x_data, t_data, u_data = sample
     _, MDL, _, opt = cfgs[idx]
-    _, prd_func = load_model(MDL, path/'lti_model.pt', path/'lti_model.yaml', config_mod=opt)
+    _, prd_func = load_model(MDL, path/'lti_model/lti_model.pt')
     with torch.no_grad():
         if ifdl:
             prd_func(x_data, t_data[:-1], u=u_data)
@@ -160,5 +153,5 @@ def test_lti(lti_data, lti_gau, env_setup, idx):
     ifdl = idx in IDX_DL
     train_case(idx, lti_data, env_setup)
     predict_case(idx, lti_gau, env_setup, ifdl=ifdl)
-    if os.path.exists(env_setup/'lti_model.pt'):
-        os.remove(env_setup/'lti_model.pt')
+    if os.path.exists(env_setup/'lti_model'):
+        shutil.rmtree(env_setup/'lti_model')

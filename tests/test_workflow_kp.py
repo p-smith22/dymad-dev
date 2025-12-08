@@ -11,6 +11,7 @@ Also KBF/DKBF with linear training.
 import copy
 import os
 import pytest
+import shutil
 import torch
 
 from dymad.io import load_model
@@ -56,8 +57,6 @@ trn_wf = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "weak_form_params": {
         "N": 13,
         "dN": 2,
@@ -71,8 +70,6 @@ trn_nd = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [10, 20],
     "sweep_epoch_step": 5,
     "ode_method": "dopri5",
@@ -88,8 +85,6 @@ trn_dt = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [3, 5],
     "sweep_epoch_step": 5,
     "chop_mode": "initial"}
@@ -101,8 +96,6 @@ trn_ln = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ls_update": {
         "method": "truncated",
         "params": 2
@@ -125,8 +118,6 @@ cfgs = [
 def train_case(idx, data, path, chkpt=None):
     _, MDL, Trainer, opt = cfgs[idx]
     opt.update({"data": {"path": data}})
-    if chkpt is not None:
-        opt["training"]["load_checkpoint"] = path/chkpt
     config_path = path/'kp_model.yaml'
     trainer = Trainer(config_path, MDL, config_mod=opt)
     trainer.train()
@@ -134,7 +125,7 @@ def train_case(idx, data, path, chkpt=None):
 def predict_case(idx, sample, path):
     x_data, t_data = sample
     _, MDL, _, opt = cfgs[idx]
-    _, prd_func = load_model(MDL, path/'kp_model.pt', path/'kp_model.yaml', config_mod=opt)
+    _, prd_func = load_model(MDL, path/'kp_model/kp_model.pt')
     with torch.no_grad():
         prd_func(x_data, t_data)
 
@@ -142,12 +133,5 @@ def predict_case(idx, sample, path):
 def test_kp(kp_data, kp_test, env_setup, idx):
     train_case(idx, kp_data, env_setup)
     predict_case(idx, kp_test, env_setup)
-    if os.path.exists(env_setup/'kp_model.pt'):
-        os.remove(env_setup/'kp_model.pt')
-
-def test_kp_rst(kp_data, kp_test, env_setup):
-    train_case(0, kp_data, env_setup)
-    train_case(1, kp_data, env_setup, chkpt='checkpoints/kp_model_checkpoint.pt')
-    predict_case(1, kp_test, env_setup)
-    if os.path.exists(env_setup/'kp_model.pt'):
-        os.remove(env_setup/'kp_model.pt')
+    if os.path.exists(env_setup/'kp_model'):
+        shutil.rmtree(env_setup/'kp_model')
