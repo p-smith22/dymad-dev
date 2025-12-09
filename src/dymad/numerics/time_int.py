@@ -1,9 +1,9 @@
 def fe_step(f, t, x, dt, **kwargs):
-    """
+    r"""
     Perform a single Forward Euler integration step.
 
     Args:
-        f: Function that computes the derivative dx/dt = f(t, x, **kwargs).
+        f: Function that computes the derivative dx/dt = f(t, x, \*\*kwargs).
         t: Current time.
         x: Current state vector.
         dt: Time step for the integration.
@@ -12,11 +12,11 @@ def fe_step(f, t, x, dt, **kwargs):
     return x + dt * f(t, x, **kwargs)
 
 def rk4_step(f, t, x, dt, **kwargs):
-    """
+    r"""
     Perform a single Runge-Kutta 4th order (RK4) integration step.
 
     Args:
-        f: Function that computes the derivative dx/dt = f(t, x, **kwargs).
+        f: Function that computes the derivative dx/dt = f(t, x, \*\*kwargs).
         t: Current time.
         x: Current state vector.
         dt: Time step for the integration.

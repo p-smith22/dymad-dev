@@ -312,10 +312,12 @@ class SingleSplitDriver(DriverBase):
     """
     Single fixed split; can still scan param_grid.
 
-    Extreme case:
+    Extreme case
+
       - schedule has only one phase,
       - param_grid empty or singleton,
-    => this is just “one trainer of one phase.”
+
+    Just "one trainer of one phase."
     """
 
     def __init__(

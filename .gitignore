@@ -8,6 +8,7 @@ build/
 src/dymad.egg-info/
 docs/_build
 docs/api
+docs/extra_files
 examples/**/*.npz
 examples/**/*.pkl
 scripts/**/*.npz

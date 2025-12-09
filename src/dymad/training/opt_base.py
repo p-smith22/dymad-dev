@@ -24,7 +24,8 @@ class OptBase:
     Note:
         This class is not meant to be used directly; one should use the Driver classes.
 
-    Key features of this class:
+    Key features of this class
+
       - Initialization in three modes: Data-only RunState (fresh start),
         Full RunState (continue from other opt), or from-checkpoint (restart from same opt).
       - Multiple training criteria are supported, and linearly combined via weights.
@@ -34,7 +35,8 @@ class OptBase:
       - All the history of criteria are stored and plotted during training for monitoring;
         similarly one random validation trajectory is predicted and plotted regularly.
 
-    Inderited Opt classes (NODE, WF, LR, ...) should:
+    Inderited Opt classes (NODE, WF, LR, ...) should
+
       - implement `_process_batch(batch)` (return list of losses),
       - optionally customize model / optimizer / schedulers via config.
 
@@ -331,7 +333,8 @@ class OptBase:
         Generic training loop for one epoch.
 
         Uses `_process_batch` + multi-loss aggregation.
-        Handles:
+        Handles
+
           - optimizer step,
           - scheduler step(eploss),
           - convergence flag,
