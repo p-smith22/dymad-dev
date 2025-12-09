@@ -359,7 +359,7 @@ def plot_cv_results(cv_file, keys=None, ifclose=True, prefix='.', value_scale='l
         sc = ax.scatter(params[:, 0], params[:, 1], c=means, s=100, cmap='viridis')
         ax.scatter(
             params[best_idx, 0], params[best_idx, 1],
-            c='red', s=150, marker='s', label=best_label)
+            facecolors='none', edgecolors='red', s=150, marker='s', linewidths=2, label=best_label)
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("right", size="5%", pad=0.1)
         cbar = fig.colorbar(sc, cax=cax)

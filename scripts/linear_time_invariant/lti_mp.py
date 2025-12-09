@@ -6,7 +6,7 @@ import torch.multiprocessing as mp
 from dymad.io import load_model
 from dymad.models import KBF
 from dymad.training import WeakFormTrainer
-from dymad.utils import plot_cv_results, plot_summary, plot_multi_trajs, TrajectorySampler
+from dymad.utils import plot_cv_results, plot_multi_trajs, TrajectorySampler
 
 B = 128
 N = 501
@@ -36,9 +36,9 @@ IDX = [0]
 labels = [cases[i]['name'] for i in IDX]
 
 if __name__ == "__main__":
-    iftrn = 0
+    iftrn = 1
     ifplt = 1
-    ifprd = 0
+    ifprd = 1
 
     if iftrn:
         mp.set_start_method("spawn", force=True)
@@ -47,14 +47,14 @@ if __name__ == "__main__":
             Trainer = cases[_i]['trainer']
             config_path = cases[_i]['config']
 
-            trainer = Trainer(config_path, Model, max_workers=2)
+            trainer = Trainer(config_path, Model, max_workers=4)
             trainer.train()
 
     if ifplt:
         mdl = cases[0]['name']
-        # keys = ['model.koopman_dimension', 'training.weak_form_params.N']
+        keys = ['model.koopman_dimension', 'training.weak_form_params.N']
         # keys = ['model.koopman_dimension']
-        keys = None
+        # keys = None
         plot_cv_results(f'lti_{mdl}', keys, ifclose=False)
 
     if ifprd:

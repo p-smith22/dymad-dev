@@ -4,7 +4,7 @@ import torch
 
 from dymad.io import load_model
 from dymad.models import KBF
-from dymad.training import NODETrainer, WeakFormTrainer, StackedTrainer
+from dymad.training import StackedTrainer
 from dymad.utils import plot_summary, plot_multi_trajs, TrajectorySampler
 
 B = 128
@@ -41,12 +41,12 @@ cases = [
     {"name": "kbf_two",  "model" : KBF, "trainer": StackedTrainer,  "config": 'lti_kbf_two.yaml'},
     {"name": "kbf_mcri", "model" : KBF, "trainer": StackedTrainer,  "config": 'lti_kbf_mcri.yaml'},
 ]
-IDX = [0]
+IDX = [1]
 labels = [cases[i]['name'] for i in IDX]
 
 iftrn = 1
-ifplt = 0
-ifprd = 0
+ifplt = 1
+ifprd = 1
 
 if iftrn:
     for _i in IDX:
