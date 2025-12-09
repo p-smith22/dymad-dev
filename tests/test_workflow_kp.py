@@ -3,7 +3,6 @@ Test cases for autonomous dynamics.
 
 `ct`: Continuous time models, GLDM and GKBF, with NODE and weak form training.
 `dt`: Discrete time models, DGLDM and DGKBF, with NODE training.
-`rst`: Restart training from checkpoint.
 
 Also KBF/DKBF with linear training.
 """
@@ -16,7 +15,7 @@ import torch
 
 from dymad.io import load_model
 from dymad.models import DKBF, DLDM, KBF, LDM
-from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
+from dymad.training import LinearTrainer, NODETrainer, StackedTrainer, WeakFormTrainer
 
 mdl_kb = {
     "name" : 'kp_model',
@@ -45,6 +44,30 @@ mdl_kl = {
     "activation" : "tanh",
     "autoencoder_type" : "cat",
     "weight_init" : "xavier_uniform"}
+
+crit_part = {
+    "dynamics" : {"weight": 1.0},
+    "recon" : {"weight": 1.0}
+}
+crit_full = {
+    "dynamics" : {
+        "type": "wmse",
+        "weight": 1.0,
+        "params": {
+            "alpha": 0.5
+        }},
+    "recon" : {
+        "type": "mse",
+        "weight": 1.0,
+        "params": {
+            "reduction": "sum"
+        }}
+}
+crit_pred = {
+    "type": "wmse",
+    "params": {
+        "alpha": -0.5
+    }}
 
 ls_opt = {
     "method": "truncated",
@@ -100,17 +123,29 @@ trn_ln = {
         "method": "truncated",
         "params": 2
     }}
+trn_phase = [copy.deepcopy(trn_wf),
+            copy.deepcopy(trn_nd),]
+trn_phase[0]["trainer"] = "Weak"
+trn_phase[1]["trainer"] = "NODE"
+
+cv = {
+   "param_grid": {
+        "model.latent_dimension": [16, 32],
+        "training.sweep_epoch_step": [3, 5]
+    },
+    "metric": "total"
+}
 
 cfgs = [
-    ('ldm_wf',    LDM,  WeakFormTrainer, {"model": mdl_ld, "training" : trn_wf}),
-    ('ldm_node',  LDM,  NODETrainer,     {"model": mdl_ld, "training" : trn_nd}),
-    ('kbf_wf',    KBF,  WeakFormTrainer, {"model": mdl_kb, "training" : trn_wf}),
-    ('kbf_node',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_nd}),
+    ('ldm_wf',    LDM,  WeakFormTrainer, {"model": mdl_ld, "criterion": crit_part, "training" : trn_wf}),
+    ('ldm_node',  LDM,  NODETrainer,     {"model": mdl_ld, "criterion": crit_full, "training" : trn_nd}),
+    ('kbf_wf',    KBF,  WeakFormTrainer, {"model": mdl_kb, "prediction_criterion": crit_pred, "training" : trn_wf}),
+    ('kbf_node',  KBF,  StackedTrainer,  {"model": mdl_kb, "phases" : trn_phase}),
     ('kbf_wfls',  KBF,  WeakFormTrainer, {"model": mdl_kb, "training" : trn_wfls}),
     ('kbf_ndls',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_ndls}),
     ('kbf_ln',    KBF,  LinearTrainer,   {"model": mdl_kl, "training" : trn_ln}),
     ('dldm_nd',   DLDM, NODETrainer,     {"model": mdl_ld, "training" : trn_dt}),
-    ('dkbf_nd',   DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt}),
+    ('dkbf_nd',   DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt, "cv": cv}),
     ('dkbf_ndls', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dtls}),
     ('dkbf_ln',   DKBF, LinearTrainer,   {"model": mdl_kl, "training" : trn_ln}),
     ]

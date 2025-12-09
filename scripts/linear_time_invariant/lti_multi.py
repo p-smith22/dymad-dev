@@ -38,24 +38,15 @@ config_gau = {
             "mode": "zoh"}}}
 
 cases = [
-    {"name": "kbf_wf",   "model" : KBF, "trainer": WeakFormTrainer, "config": 'lti_kbf_wf.yaml'},
-    {"name": "kbf_node", "model" : KBF, "trainer": NODETrainer,     "config": 'lti_kbf_node.yaml'},
     {"name": "kbf_two",  "model" : KBF, "trainer": StackedTrainer,  "config": 'lti_kbf_two.yaml'},
     {"name": "kbf_mcri", "model" : KBF, "trainer": StackedTrainer,  "config": 'lti_kbf_mcri.yaml'},
-    {"name": "kbf_cv",   "model" : KBF, "trainer": WeakFormTrainer, "config": 'lti_kbf_cv.yaml'},
 ]
 IDX = [0]
 labels = [cases[i]['name'] for i in IDX]
 
-ifdat = 0
 iftrn = 1
 ifplt = 0
 ifprd = 0
-
-if ifdat:
-    sampler = TrajectorySampler(f, g, config='lti_data.yaml', config_mod=config_chr)
-    ts, xs, us, ys = sampler.sample(t_grid, batch=B)
-    np.savez_compressed('./data/lti.npz', t=ts, x=ys, u=us)
 
 if iftrn:
     for _i in IDX:
