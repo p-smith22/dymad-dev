@@ -295,6 +295,8 @@ class KFoldDriver(DriverBase):
         self.k_folds = k_folds
         self.base_seed = base_seed
 
+        raise NotImplementedError("KFoldDriver is not implemented yet.")
+
     def iter_folds(self):
         """
         For fold i, set data.split_seed = base_seed + i and yield the config.

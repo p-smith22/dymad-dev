@@ -8,9 +8,8 @@ build/
 src/dymad.egg-info/
 docs/_build
 docs/api
-examples/*/data/*.npz
-examples/*/data/*.pkl
-examples/*/results/*.npz
+examples/**/*.npz
+examples/**/*.pkl
 scripts/**/*.npz
 scripts/**/*.pkl
 tests/results/*.npz

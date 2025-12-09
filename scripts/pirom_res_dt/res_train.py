@@ -68,8 +68,6 @@ trn_nd = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [10],
     "sweep_epoch_step": 100,
     "chop_mode": "unfold",

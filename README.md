@@ -53,19 +53,17 @@ If there are API errors such as some files not found, try deleting the auto-gene
 - RNN plus graph
 - Demo on Kuramoto example
 
-- CV procedure by random search
-- VPT criteria
+- K-Fold CV
 - Demo on Lorenz
 - Demo on KS chaotic
 
 - two-stage implementation
 - N4SID
 - EnKF, EnKS, IEnKS
-- Interface to numpy and others
+- Interface to numpy
 
 - Torch-fy transform classes
 - Internal normalization in PIROM
-- RTD for PIROM DT case
 
 - Symmetry analysis
 - Torch-fy Manifold class
