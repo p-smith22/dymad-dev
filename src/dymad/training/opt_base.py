@@ -493,7 +493,7 @@ class OptBase:
 
         if evaluate_all:
             plot = False
-            dataset = dataset
+            # dataset = dataset
         else:
             dataset = [random.choice(dataset)]
 

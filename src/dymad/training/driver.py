@@ -5,7 +5,6 @@ import numpy as np
 import os
 import shutil
 import torch
-import torch.multiprocessing as mp
 from typing import Any, Dict, Iterable, List, Tuple, Type, Union
 
 from dymad.io import TrajectoryManager, TrajectoryManagerGraph
