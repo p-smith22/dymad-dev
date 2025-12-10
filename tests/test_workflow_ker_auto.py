@@ -6,6 +6,7 @@ import copy
 import numpy as np
 import os
 import pytest
+import shutil
 import torch
 
 from dymad.io import load_model
@@ -98,8 +99,6 @@ trn_ln = {
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ls_update": {
         "method": "raw",
         "interval": 500,
@@ -113,8 +112,6 @@ trn_dt = {
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ls_update": {
         "method": "raw",
         "interval": 5,
@@ -140,7 +137,7 @@ def train_case(idx, data, path):
 def predict_case(idx, sample, path):
     x_data, t_data = sample
     _, MDL, _, opt = cfgs[idx]
-    _, prd_func = load_model(MDL, path/'ker_model.pt', path/'ker_model_auto.yaml', config_mod=opt)
+    _, prd_func = load_model(MDL, path/'ker_model/ker_model.pt')
     with torch.no_grad():
         prd_func(x_data, t_data)
 
@@ -148,5 +145,5 @@ def predict_case(idx, sample, path):
 def test_ker(kp_data, kp_test, env_setup, idx):
     train_case(idx, kp_data, env_setup)
     predict_case(idx, kp_test, env_setup)
-    if os.path.exists(env_setup/'ker_model.pt'):
-        os.remove(env_setup/'ker_model.pt')
+    if os.path.exists(env_setup/'ker_model'):
+        shutil.rmtree(env_setup/'ker_model')

@@ -1,4 +1,3 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -8,7 +7,7 @@ from dymad.models import DKBF, KBF
 from dymad.numerics import complex_plot, scaled_eig
 from dymad.sako import SpectralAnalysis
 from dymad.training import LinearTrainer
-from dymad.utils import plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_trajectory, TrajectorySampler
 
 B = 64
 N = 21
@@ -86,7 +85,7 @@ IDX = [0, 1, 2]
 # IDX = [1]
 labels = [cfgs[i][0] for i in IDX]
 
-ifdat = 1
+ifdat = 0
 iftrn = 1
 ifprd = 1
 ifint = 1
@@ -117,8 +116,6 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"kp_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 

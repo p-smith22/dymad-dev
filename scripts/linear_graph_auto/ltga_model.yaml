@@ -25,14 +25,18 @@ model:
   activation: "tanh"
   weight_init: "xavier_uniform"
 
+criterion:
+  dynamics:
+    weight: 1.0
+  recon:
+    weight: 1.0
+
 training:
   n_epochs: 500
   save_interval: 10
   load_checkpoint: false
   learning_rate: 1e-2
   decay_rate: 0.999
-  reconstruction_weight: 1.0
-  dynamics_weight: 1.0
   weak_form_params:
     N: 13
     dN: 2

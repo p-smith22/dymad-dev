@@ -1,5 +1,4 @@
 import copy
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -7,7 +6,7 @@ import torch
 from dymad.io import load_model
 from dymad.models import DKMSK, KM, KMM
 from dymad.training import LinearTrainer
-from dymad.utils import plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import plot_trajectory, TrajectorySampler
 
 B = 1
 N = 201
@@ -133,7 +132,7 @@ cfgs = [
     ]
 
 # IDX = range(len(cfgs))
-IDX = [1, 2, 3, 4]
+IDX = [0, 1, 2, 3, 4]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
@@ -152,8 +151,6 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"ker_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 

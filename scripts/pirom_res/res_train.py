@@ -1,5 +1,4 @@
 import jax.numpy as jnp
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -8,7 +7,7 @@ from typing import Dict, Tuple, Union
 from dymad.io import load_model
 from dymad.models import TemplateCorrAlg
 from dymad.training import WeakFormTrainer, NODETrainer
-from dymad.utils import JaxWrapper, plot_multi_trajs, plot_summary, setup_logging, TrajectorySampler
+from dymad.utils import JaxWrapper, plot_multi_trajs, plot_summary, TrajectorySampler
 
 B = 16
 N = 301
@@ -57,8 +56,6 @@ trn_wf = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "weak_form_params": {
         "N": 29,
         "dN": 2,
@@ -71,8 +68,6 @@ trn_nd = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [5],
     "sweep_epoch_step": 500,
     "chop_mode": "unfold",
@@ -125,13 +120,11 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"res_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
 if ifplt:
-    npz_files = [f'results/res_{l}_summary.npz' for l in labels]
+    npz_files = [f'res_{l}' for l in labels]
     npzs = plot_summary(npz_files, labels=labels, ifclose=False)
 
     for lbl, npz in zip(labels, npzs):

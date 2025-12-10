@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-import importlib.metadata, sys, os
+import importlib.metadata, sys, os, shutil
 sys.path.insert(0, os.path.abspath(".."))
 
 project = 'dymad'
@@ -63,3 +63,19 @@ mathjax3_config = {
 
 html_theme = 'furo'
 html_static_path = ['_static']
+
+# -- Additional files -------------------------------------------------
+
+def copy_extra_files(extras):
+    here = os.path.dirname(__file__)
+    dst = os.path.join(here, "extra_files")
+    os.makedirs(dst, exist_ok=True)
+    for src in extras:
+        shutil.copy(os.path.join(here, "..", src), dst)
+
+html_extra_path = ['extra_files']
+
+extra_file_list = [
+    'examples/1d_oscillator/lti_kbf_cv.yaml',
+]
+copy_extra_files(extra_file_list)

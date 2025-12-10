@@ -1,0 +1,56 @@
+data:
+  path: './data/kp.npz'
+  n_samples: 256
+  n_steps: 301
+  double_precision: true
+
+transform_x:
+  type: "scaler"
+  mode: "std"
+
+transform_u:
+  type: "identity"
+
+split:
+  train_frac: 0.75
+
+dataloader:
+  batch_size: 256
+
+model:
+  name: 'kp_model'
+  encoder_layers: 0
+  processor_layers: 1
+  decoder_layers: 0
+  latent_dimension: 64
+  activation: "tanh"
+  weight_init: "xavier_uniform"
+
+criterion:
+  dynamics:
+    weight: 1.0
+  recon:
+    weight: 1.0
+
+phases:
+  - trainer: 'Weak'
+    n_epochs: 1000
+    save_interval: 50
+    learning_rate: 1e-2
+    weak_form_params:
+      N: 13
+      dN: 2
+      ordpol: 2
+      ordint: 2
+
+  - trainer: 'NODE'
+    n_epochs: 500
+    save_interval: 20
+    learning_rate: 1e-2
+    decay_rate: 0.999
+    sweep_lengths: [30, 50, 100, 200, 301]
+    sweep_epoch_step: 100
+    ode_method: 'dopri5'
+    ode_args:
+      rtol: 1.e-7
+      atol: 1.e-9

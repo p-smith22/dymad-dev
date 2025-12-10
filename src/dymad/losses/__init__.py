@@ -1,5 +1,9 @@
-from dymad.losses.evaluation import prediction_rmse
+from dymad.losses.losses import LOSS_MAP, vpt_loss, VPTLoss, wmse_loss, WMSELoss
 
 __all__ = [
-    "prediction_rmse",
+    "LOSS_MAP",
+    "vpt_loss",
+    "VPTLoss",
+    "wmse_loss",
+    "WMSELoss",
 ]

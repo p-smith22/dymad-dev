@@ -1,4 +1,3 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -6,7 +5,7 @@ import torch
 from dymad.io import load_model
 from dymad.models import DGLDM, DGKBF, DGKM, DGKMSK
 from dymad.training import NODETrainer, LinearTrainer
-from dymad.utils import adj_to_edge, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import adj_to_edge, plot_summary, plot_trajectory, TrajectorySampler
 
 B = 128
 N = 501
@@ -53,7 +52,7 @@ cases = [
 ]
 
 # IDX = [1, 2]
-IDX = [1]
+IDX = [0, 1, 2, 3, 4]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0
@@ -75,14 +74,11 @@ if iftrn:
         Model = cases[_i]['model']
         Trainer = cases[_i]['trainer']
         config_path = cases[_i]['config']
-
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, Model)
         trainer.train()
 
 if ifplt:
-    npz_files = [f'results/ltg_{mdl}_summary.npz' for mdl in labels]
+    npz_files = [f'ltg_{mdl}' for mdl in labels]
     npzs = plot_summary(npz_files, labels=labels, ifclose=False)
 
 if ifprd:
@@ -97,7 +93,7 @@ if ifprd:
     res = [x_data]
     for i in IDX:
         MDL, mdl = cases[i]['model'], cases[i]['name']
-        _, prd_func = load_model(MDL, f'ltg_{mdl}.pt', f'ltg_{mdl}.yaml')
+        _, prd_func = load_model(MDL, f'ltg_{mdl}.pt')
 
         with torch.no_grad():
             pred = prd_func(x_data, t_data, u=u_data, ei=edge_index)

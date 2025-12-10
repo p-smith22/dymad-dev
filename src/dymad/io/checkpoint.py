@@ -1,3 +1,4 @@
+import copy
 import logging
 import numpy as np
 import os
@@ -6,106 +7,23 @@ from typing import Callable, Dict, List, Optional, Union, Tuple, Type
 
 from dymad.io.data import DynData
 from dymad.io.trajectory_manager import TrajectoryManager
-from dymad.transform import Autoencoder, Compose, make_transform
+from dymad.transform import Autoencoder, make_transform
 from dymad.utils.misc import load_config
 
 logger = logging.getLogger(__name__)
-
-def load_checkpoint(model, optimizer, schedulers, ref_checkpoint_path, load_from_checkpoint=False, inference_mode=False):
-    """
-    Load a checkpoint from the specified path.
-
-    Args:
-        model (torch.nn.Module): The model to load the state into.
-        optimizer (torch.optim.Optimizer): The optimizer to load the state into.
-        schedulers (list[torch.optim.lr_scheduler._LRScheduler]): The schedulers to load the state into.
-        ref_checkpoint_path (str): Reference path to the checkpoint file - Same as the current case.
-        load_from_checkpoint (bool or str): If True, load from ref_checkpoint_path; if str, use it as the path; otherwise, skip loading.
-        inference_mode (bool, optional): If True, skip loading optimizer and schedulers.
-
-    Returns:
-        tuple: A tuple containing:
-
-        - int: The epoch number from which to continue training.
-        - float: The best loss recorded in the checkpoint.
-        - list: History of losses.
-        - list: History of RMSE of trajectories - can be different from loss.
-        - dict: Metadata about the data.
-    """
-    mode = "Inference" if inference_mode else "Training"
-    logger.info(f"{mode} mode is enabled.")
-
-    checkpoint_path = None
-    if isinstance(load_from_checkpoint, str):
-        checkpoint_path = load_from_checkpoint
-    elif load_from_checkpoint:
-        checkpoint_path = ref_checkpoint_path
-
-    if checkpoint_path is None:
-        logger.info(f"Got load_from_checkpoint={load_from_checkpoint}, resulting in checkpoint_path=None. Starting from scratch.")
-        return 0, float("inf"), [], [], None
-
-    if not os.path.exists(checkpoint_path):
-        logger.info(f"No checkpoint found at {checkpoint_path}. Starting from scratch.")
-        return 0, float("inf"), [], [], None
-
-    logger.info(f"Loading checkpoint from {checkpoint_path}")
-    checkpoint = torch.load(checkpoint_path, weights_only=False)
-    model.load_state_dict(checkpoint["model_state_dict"])
-
-    if not inference_mode:
-        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        assert len(schedulers) == len(checkpoint["scheduler_state_dict"]), \
-            f"Expected {len(schedulers)} schedulers, but got {len(checkpoint['scheduler_state_dict'])} in checkpoint."
-        for i in range(len(schedulers)):
-            schedulers[i].load_state_dict(checkpoint["scheduler_state_dict"][i])
-
-        # In this case, we do a new training, so we reset the best loss
-        return checkpoint["epoch"], float("inf"), checkpoint["hist"], checkpoint["rmse"], checkpoint["metadata"]
-
-    return checkpoint["epoch"], checkpoint["best_loss"], checkpoint["hist"], checkpoint["rmse"], checkpoint["metadata"]
-
-def save_checkpoint(model, optimizer, schedulers, epoch, best_loss, hist, rmse, metadata, checkpoint_path):
-    """
-    Save the model, optimizer, and scheduler states to a checkpoint file.
-
-    Args:
-        model (torch.nn.Module): The model to save.
-        optimizer (torch.optim.Optimizer): The optimizer to save.
-        schedulers (list[torch.optim.lr_scheduler._LRScheduler]): The schedulers to save.
-        epoch (int): The current epoch number.
-        best_loss (float): The best loss recorded so far.
-        hist (list): The history of losses.
-        rmse (list): The history of RMSE of trajectories - can be different from loss.
-        metadata (dict): Metadata about the data.
-        checkpoint_path (str): Path to save the checkpoint file.
-    """
-    # logger.info(f"Saving checkpoint to {checkpoint_path}")
-    torch.save({
-        "epoch": epoch,
-        "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
-        "scheduler_state_dict": [scheduler.state_dict() for scheduler in schedulers],
-        "best_loss": best_loss,
-        "hist": hist,
-        "rmse": rmse,
-        "metadata": metadata,
-    }, checkpoint_path)
 
 def _atleast_3d(x):
     if x.ndim == 2:
         return np.expand_dims(x, axis=0)
     return x
 
-def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
+def load_model(model_class, checkpoint_path):
     """
     Load a model from a checkpoint file.
 
     Args:
         model_class (torch.nn.Module): The class of the model to load.
         checkpoint_path (str): Path to the checkpoint file.
-        config_path (str, optional): Path to the configuration file, used as backup.  Deprecated.
-        config_mod (dict, optional): Dictionary to merge into the config.  Deprecated.
 
     Returns:
         tuple: A tuple containing the model and a prediction function.
@@ -113,37 +31,40 @@ def load_model(model_class, checkpoint_path, config_path=None, config_mod=None):
         - nn.Module: The loaded model.
         - callable: A function to predict trajectories in data space.
     """
-    chkpt = torch.load(checkpoint_path, weights_only=False)
-    md = chkpt['metadata']
-    dtype = torch.double if md['config']['data'].get('double_precision', False) else torch.float
+    # If checkpoint_path does not exist, try adding directory prefix based on filename
+    chkpt_path = str(checkpoint_path)
+    if not os.path.exists(chkpt_path):
+        chkpt_path = os.path.join(chkpt_path.split('.')[0], chkpt_path)
+        if not os.path.exists(chkpt_path):
+            raise FileNotFoundError(f"Checkpoint file not found at {chkpt_path}.")
+    chkpt = torch.load(chkpt_path, weights_only=False)
+    cfg = chkpt['config']
+    md = chkpt['train_md']
+    dtype = torch.double if cfg['data'].get('double_precision', False) else torch.float
     torch.set_default_dtype(dtype)   # GNNs use the default dtype, so we need to set it here
 
     # Model
-    if config_path is not None:
-        config = load_config(config_path, config_mod)
-        model_config = md['config'].get('model', config['model'])
-    else:
-        model_config = md['config'].get('model', None)
+    model_config = cfg.get('model', None)
     model = model_class(model_config, md, dtype=dtype)
     model.load_state_dict(chkpt['model_state_dict'])
 
     # Data transformations
-    _data_transform_x = make_transform(md['config'].get('transform_x', None))
+    _data_transform_x = make_transform(cfg.get('transform_x', None))
     _data_transform_x.load_state_dict(md["transform_x_state"])
 
     _has_u = md.get('transform_u_state', None) is not None
     if _has_u:
-        _data_transform_u = make_transform(md['config'].get('transform_u', None))
+        _data_transform_u = make_transform(cfg.get('transform_u', None))
         _data_transform_u.load_state_dict(md["transform_u_state"])
 
-    _has_ew = md['config'].get('transform_ew', None) is not None
+    _has_ew = cfg.get('transform_ew', None) is not None
     if _has_ew:
-        _data_transform_ew = make_transform(md['config'].get('transform_ew', None))
+        _data_transform_ew = make_transform(cfg.get('transform_ew', None))
         _data_transform_ew.load_state_dict(md["transform_ew_state"])
 
-    _has_ea = md['config'].get('transform_ea', None) is not None
+    _has_ea = cfg.get('transform_ea', None) is not None
     if _has_ea:
-        _data_transform_ea = make_transform(md['config'].get('transform_ea', None))
+        _data_transform_ea = make_transform(cfg.get('transform_ea', None))
         _data_transform_ea.load_state_dict(md["transform_ea_state"])
 
     # Data processing
@@ -275,8 +196,11 @@ class DataInterface:
     def _init_metadata(self, checkpoint_path, config_path, config_mod) -> Tuple[Dict, bool]:
         """Initialize metadata from config or checkpoint."""
         if checkpoint_path is not None:
-            assert os.path.exists(checkpoint_path), "Checkpoint path does not exist."
-            return torch.load(checkpoint_path, weights_only=False)['metadata'], True
+            path = checkpoint_path
+            if not os.path.exists(path):
+                path = os.path.join(path.split('.')[0], path)
+            assert os.path.exists(path), "Checkpoint path does not exist."
+            return torch.load(path, weights_only=False), True
         _config = load_config(config_path, config_mod)
         return {'config': _config}, False
 
@@ -285,20 +209,33 @@ class DataInterface:
 
         Striped from TrainerBase.
         """
-        tm = TrajectoryManager(metadata, device=self.device)
-        _dataloaders, _, _ = tm.process_all()
+        if 'train_md' in metadata:
+            # Previously processed
+            cfg = copy.deepcopy(metadata['train_md'])
+            cfg['config']['dataloader']['shuffle'] = False   # Turn off shuffling to ensure fixed order of samples
+            train = TrajectoryManager(cfg, data_key='train', device=self.device)
+            self.train_loader, dataset, _ = train.process_all()
 
-        # Turn off shuffling to ensure fixed order of samples
-        self.train_loader = torch.utils.data.DataLoader(
-            _dataloaders[0].dataset, batch_size=_dataloaders[0].batch_size, shuffle=False, collate_fn=DynData.collate)
-        self.validation_loader = torch.utils.data.DataLoader(
-            _dataloaders[1].dataset, batch_size=_dataloaders[1].batch_size, shuffle=False, collate_fn=DynData.collate)
-        self.test_loader = torch.utils.data.DataLoader(
-            _dataloaders[2].dataset, batch_size=_dataloaders[2].batch_size, shuffle=False, collate_fn=DynData.collate)
+            cfg = copy.deepcopy(metadata['valid_md'])
+            cfg['config']['dataloader']['shuffle'] = False   # Turn off shuffling to ensure fixed order of samples
+            valid = TrajectoryManager(cfg, data_key='valid', device=self.device)
+            self.valid_loader = valid.process_all()[0]
+
+            self.t = dataset[0].t[0].clone().detach()
+            tm = train
+        else:
+            # Simple config
+            # Here we just let train and valid be the same
+            tm = TrajectoryManager(metadata, data_key='train', device=self.device)
+            _dataloader, _dataset, _ = tm.process_all()
+            # Turn off shuffling to ensure fixed order of samples
+            self.train_loader = torch.utils.data.DataLoader(
+                _dataset, batch_size=_dataloader.batch_size, shuffle=False, collate_fn=DynData.collate)
+            self.valid_loader = self.train_loader
+
+            self.t = _dataset[0].t[0].clone().detach()
 
         self.dtype = tm.dtype
-        self.t = torch.tensor(tm.t[0])
-
         self._trans_x = tm._data_transform_x
         self._trans_u = tm._data_transform_u
 

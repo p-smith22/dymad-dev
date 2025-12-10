@@ -1,4 +1,3 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.integrate as spi
@@ -7,7 +6,7 @@ import torch
 from dymad.io import load_model
 from dymad.models import DKM, DKMSK, KM
 from dymad.training import LinearTrainer, NODETrainer
-from dymad.utils import setup_logging, TrajectorySampler
+from dymad.utils import plot_multi_trajs, TrajectorySampler
 
 B = 50
 N = 81
@@ -83,8 +82,6 @@ trn_ln = {
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ls_update": {
         "method": "raw",
         "interval": 500,
@@ -96,8 +93,6 @@ trn_ct = {
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [4],
     "chop_mode": "initial",
     "chop_step": 0.5,
@@ -113,8 +108,6 @@ trn_dt = {
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ls_update": {
         "method": "raw",
         "interval": 100,
@@ -159,8 +152,6 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"ker_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
@@ -179,18 +170,8 @@ if ifprd:
             pred = prd_func(x_data, t_data)
         res.append(pred)
 
-    for _i in range(1, len(res)):
-        print(labels[_i-1], np.linalg.norm(res[_i]-res[0])/np.linalg.norm(res[0]))
-
-    stys = ['b-', 'r--', 'g:', 'm-.', 'c--', 'y:', 'k-.']
-    f, ax = plt.subplots(nrows=2, sharex=True)
-    for _i in range(J):
-        for _j in range(len(res)):
-            ax[0].plot(t_data, res[_j][_i][:, 0], stys[_j])
-            ax[1].plot(t_data, res[_j][_i][:, 1], stys[_j])
-
-    # plot_trajectory(
-    #     np.array(res), t_data, "SA",
-    #     labels=['Truth'] + labels, ifclose=False)
+    plot_multi_trajs(
+        np.array(res), t_data, "KER",
+        labels=['Truth'] + labels, ifclose=False)
 
 plt.show()

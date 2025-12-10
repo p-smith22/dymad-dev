@@ -12,6 +12,7 @@ Sweep mode included for NODE training.
 import copy
 import os
 import pytest
+import shutil
 import torch
 
 from dymad.io import load_model
@@ -67,8 +68,6 @@ trn_wf = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "weak_form_params": {
         "N": 13,
         "dN": 2,
@@ -82,8 +81,6 @@ trn_nd = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [10, 20],
     "sweep_epoch_step": 5,
     "ode_method": "dopri5"}
@@ -95,8 +92,6 @@ trn_dt = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [3, 5],
     "sweep_epoch_step": 5,
     "chop_mode": "initial"}
@@ -108,8 +103,6 @@ trn_ln = {
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ls_update": {
         "method": "full"
     }}
@@ -141,7 +134,7 @@ def train_case(idx, data, path):
 def predict_case(idx, sample, path):
     x_data, t_data, u_data, edge_index = sample
     _, MDL, _, opt = cfgs[idx]
-    _, prd_func = load_model(MDL, path/'ltg_model.pt', path/'ltg_model.yaml', config_mod=opt)
+    _, prd_func = load_model(MDL, path/'ltg_model/ltg_model.pt')
     with torch.no_grad():
         prd_func(x_data, t_data, u=u_data, ei=torch.tensor(edge_index))
 
@@ -149,5 +142,5 @@ def predict_case(idx, sample, path):
 def test_ltg(ltg_data, ltg_gau, env_setup, idx):
     train_case(idx, ltg_data, env_setup)
     predict_case(idx, ltg_gau, env_setup)
-    if os.path.exists(env_setup/'ltg_model.pt'):
-        os.remove(env_setup/'ltg_model.pt')
+    if os.path.exists(env_setup/'ltg_model'):
+        shutil.rmtree(env_setup/'ltg_model')

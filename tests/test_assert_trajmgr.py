@@ -1,6 +1,7 @@
 import copy
 import numpy as np
 from pathlib import Path
+import pytest
 import torch
 
 from dymad.io import DynData, TrajectoryManager
@@ -64,13 +65,19 @@ def test_dyndata(trj_data):
     )
     check_data([ufld], [dref], label='DynData unfold')
 
-def test_trajmgr(trj_data):
+@pytest.mark.parametrize("case", [0, 1])
+def test_trajmgr(trj_data, case):
     metadata = {
         "config" : {
             "data": {
                 "path": trj_data,
                 "n_samples": 8,
                 "n_steps": 21,
+                "double_precision": False},
+            "data_valid": {
+                "path": trj_data,
+                "n_samples": 4,
+                "n_steps": 15,
                 "double_precision": False},
             "transform_x": [
                 {
@@ -90,9 +97,46 @@ def test_trajmgr(trj_data):
 
     # --------------------
     # First pass
-    tm = TrajectoryManager(metadata, device="cpu")
-    tm.process_all()
+    # --------------------
+    if case == 0:
+        # Using (as if) two datasets
+        # Allow valid to be different length
+        t_valid = 15
+        metadata['config']['data_valid']['n_steps'] = t_valid
+        # train set is loaded, preprocessed, and transformed
+        trn = TrajectoryManager(metadata, data_key="train", device="cpu")
+        trn.process_all()
+        # valid set is loaded, preprocessed, but not transformed
+        vld = TrajectoryManager(metadata, data_key="valid", device="cpu")
+        vld.prepare_data()
+        vld.set_data_index()
+        # valid set gets transforms from train set
+        vld.set_transforms(trajmgr=trn)
+        vld.process_data()
+    elif case == 1:
+        # Using just one dataset, but split into train/valid
+        trn_idx = [0, 2, 4, 5, 6]
+        vld_idx = [1, 3, 7]
+        # This time both train and valid must have same length
+        t_valid = 21
+        metadata['config']['data_valid']['n_steps'] = t_valid
+        # train set is loaded, preprocessed, and transformed
+        trn = TrajectoryManager(metadata, data_key="train", device="cpu")
+        trn.prepare_data()
+        trn.set_data_index(trn_idx)
+        trn.process_data()
+        # train set is loaded, preprocessed, but not transformed
+        # Note that here we instantiate another TrajectoryManager
+        vld = TrajectoryManager(metadata, data_key="train", device="cpu")
+        vld.prepare_data()
+        vld.set_data_index(vld_idx)
+        # valid set gets transforms from train set
+        vld.set_transforms(trajmgr=trn)
+        vld.process_data()
+    else:
+        raise ValueError(f"Unknown case {case}")
 
+    # Make up reference data
     data = np.load(trj_data, allow_pickle=True)
     ts = data['t']
     xs = data['x']
@@ -104,22 +148,22 @@ def test_trajmgr(trj_data):
     trnu = make_transform(metadata['config']['transform_u'])
     trnp = make_transform(metadata['config']['transform_p'])
 
-    ttst = [ts[_i] for _i in tm.test_set_index]
+    ttst = [ts[_i][:t_valid] for _i in vld.data_index]
 
-    xtrn = [xs[_i] for _i in tm.train_set_index]
-    xtst = [xs[_i] for _i in tm.test_set_index]
+    xtrn = [xs[_i] for _i in trn.data_index]
+    xtst = [xs[_i][:t_valid] for _i in vld.data_index]
     trnx.fit(xtrn)
     Xtst = trnx.transform(xtst)
 
-    Ytst = [ys for _ in tm.test_set_index]
+    Ytst = [ys[:t_valid] for _ in vld.data_index]
 
-    utrn = [us[_i] for _i in tm.train_set_index]
-    utst = [us[_i] for _i in tm.test_set_index]
+    utrn = [us[_i] for _i in trn.data_index]
+    utst = [us[_i][:t_valid] for _i in vld.data_index]
     trnu.fit(utrn)
     Utst = trnu.transform(utst)
 
-    ptrn = [ps[_i] for _i in tm.train_set_index]
-    ptst = [ps[_i] for _i in tm.test_set_index]
+    ptrn = [ps[_i] for _i in trn.data_index]
+    ptst = [ps[_i] for _i in vld.data_index]
     trnp.fit(ptrn)
     Ptst = trnp.transform(ptst)
 
@@ -127,7 +171,7 @@ def test_trajmgr(trj_data):
         DynData(t=tt[2:], x=xt, y=yt[2:], u=ut[2:], p=pt)
         for tt, xt, yt, ut, pt in zip(ttst, Xtst, Ytst, Utst, Ptst)
         ]
-    check_data(Dtst, tm.test_set, label='Transform')
+    check_data(Dtst, vld.dataset, label='Transform')
 
     Xrec = trnx.inverse_transform([_d.x[0] for _d in Dtst])
     Yrec = [_d.y[0] for _d in Dtst]
@@ -138,8 +182,8 @@ def test_trajmgr(trj_data):
         for tt, xr, yr, ur, pr in zip(ttst, Xrec, Yrec, Urec, Prec)
     ]
 
-    yref = [ys[2:] for _i in tm.test_set_index]
-    uref = [us[_i][2:] for _i in tm.test_set_index]
+    yref = [ys[2:t_valid] for _ in vld.data_index]
+    uref = [us[_i][2:t_valid] for _i in vld.data_index]
     Dref = [
         DynData(t=tr, x=xr, y=yr, u=ur, p=pr)
         for tr, xr, yr, ur, pr in zip(ttst, xtst, yref, uref, ptst)
@@ -148,11 +192,14 @@ def test_trajmgr(trj_data):
 
     # --------------------
     # Second pass - reinitialize and reload
-    old_metadata = copy.deepcopy(tm.metadata)
+    # --------------------
+    trn_metadata = copy.deepcopy(trn.metadata)
+    vld_metadata = copy.deepcopy(vld.metadata)
 
-    new_tm = TrajectoryManager(old_metadata, device="cpu")
-    new_tm.process_all()
+    new_trn = TrajectoryManager(trn_metadata, device="cpu")
+    new_vld = TrajectoryManager(vld_metadata, device="cpu")
+    new_trn.process_all()
+    new_vld.process_all()
 
-    check_data(new_tm.train_set, tm.train_set, label="New Train")
-    check_data(new_tm.valid_set, tm.valid_set, label="New Valid")
-    check_data(new_tm.test_set,  tm.test_set,  label="New Test")
+    check_data(new_trn.dataset, trn.dataset, label="New Train")
+    check_data(new_vld.dataset, vld.dataset, label="New Valid")

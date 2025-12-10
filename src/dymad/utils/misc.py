@@ -39,6 +39,45 @@ def setup_logging(config_path: str = '', mode: str = 'info', prefix='.') -> None
     # so no need to close them manually here.
     return
 
+def config_logger(logger: logging.Logger, mode: str = 'info', prefix='.') -> None:
+    """
+    Configure a logger with specified mode and prefix.  The function is intended for
+    a logger instantiated in a class.
+
+    Args:
+        logger (logging.Logger): Logger instance to configure.
+        mode (str): Logging mode, either 'debug' or 'info'. Default is 'info'.
+        prefix (str): Prefix for the log file. Default is '.' (current directory).
+    """
+    _l = logging.DEBUG if mode == 'debug' else logging.INFO
+    logger.setLevel(_l)
+
+    if logger.handlers:
+        # Avoid duplicate handlers if called twice
+        return
+
+    fmt = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        "%Y-%m-%d %H:%M:%S",
+    )
+    if prefix == '':
+        # If no config path is provided, log to stdout
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(_l)
+        handler.setFormatter(fmt)
+        logger.addHandler(handler)
+        logging.getLogger().handlers = []
+        return
+
+    # Otherwise we set up the logging to file
+    _t = str(datetime.now())
+    _t = _t.split('.')[0].replace(' ', '-').replace(':', '-')
+    handler = logging.FileHandler(f'{prefix}_{_t}.log')
+    handler.setLevel(_l)
+    handler.setFormatter(fmt)
+    logger.addHandler(handler)
+    logging.getLogger().handlers = []
+
 def load_config(config_path: str, config_mod: dict = None) -> dict:
     """
     Load a YAML configuration file and optionally merge with a dictionary.

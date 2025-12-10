@@ -10,6 +10,7 @@ Organization of the test cases:
   - `krr`: Kernel ridge regression
   - `krr_tan`: Kernel ridge regression for the manifold case, also includes DMF besides the KRR classes.
   - `linalg`: Linear algebra
+  - `loss`: Loss functions
   - `manifold`: Manifold-related calculations
   - `resolvent`: Resolvent analysis of linear systems
   - `spectrum`: Kernels used in spectral calculation
@@ -20,6 +21,7 @@ Organization of the test cases:
   - `trans_ndr`: Data transformations by the NDR classes
   - `transform`: Data transformations
   - `weak`: Weak form parameters
+  - `wrapper`: Wrapper for external code
 - `test_workflow_*`: Tests that check the flow of execution, esp. the training process.  Does not check numerical accuracy.
   - `ker_auto`: Kernel-based dynamics, autonomous
   - `ker_ctrl`: Kernel-based dynamics, with inputs

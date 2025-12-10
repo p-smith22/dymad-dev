@@ -214,6 +214,9 @@ def predict_continuous_exp(
 
     Autonomous case using matrix exponential.  In continuous-time, we compute exp(A*dt).
 
+    The step size is assumed to be constant, so when there are batched time series,
+    we just take the first one to compute dt.
+
     Currently only for KBF-type models with linear dynamics.
     """
     _x0, _, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
@@ -232,7 +235,10 @@ def predict_continuous_exp(
     z0 = model.encoder(_ws.get_step(0).set_x(_x0))
 
     logger.debug(f"predict_continuous_exp: Starting ODE integration with shape {z0.shape}")
-    dt = ts - ts[0]  # (n_steps,)
+    if ts.dim() == 2:
+        dt = ts[0] - ts[0,0]
+    else:
+        dt = ts - ts[0]  # (n_steps,)
     if len(W) == 1:
         z_traj = expm_full_rank(W[0].T, dt, z0)
     elif len(W) == 2:
@@ -257,7 +263,7 @@ def predict_continuous_fenc(
 
     Currently only for kernel machine with tangent kernel.
     """
-    _x0, _, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
+    _x0, _ts, _ws, n_steps, is_batch = _prepare_data(x0, ts, ws, x0.device)
 
     logger.debug(f"predict_continuous_fenc: {'Batch' if is_batch else 'Single'} mode")
 
@@ -268,7 +274,7 @@ def predict_continuous_fenc(
     z_traj = [z0]
     for k in range(n_steps - 1):
         wtmp = _ws.get_step(k)
-        z_next = model.fenc_step(z_traj[-1], wtmp, ts[k+1]-ts[k])
+        z_next = model.fenc_step(z_traj[-1], wtmp, _ts[...,k+1]-_ts[...,k])
         z_traj.append(z_next)
 
     z_traj = torch.stack(z_traj, dim=0)  # (n_steps, batch_size, z_dim)

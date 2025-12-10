@@ -1,4 +1,3 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -6,7 +5,7 @@ import torch
 from dymad.io import load_model
 from dymad.models import DLDMG
 from dymad.training import NODETrainer
-from dymad.utils import plot_summary, plot_trajectory, setup_logging
+from dymad.utils import plot_summary, plot_trajectory
 
 mdl_kb = {
     "name" : 'kura_model',
@@ -36,7 +35,7 @@ trn_nd = {
 config_path = 'config.yaml'
 data_path = './data/data_n2_s3_k4_s10.pkl'
 cfgs = [
-    ('dldmg', DLDMG, NODETrainer,        {"data": {"path": data_path}, "model": mdl_kb, "training" : trn_nd}),
+    ('dldmg', DLDMG, NODETrainer, {"data": {"path": data_path}, "model": mdl_kb, "training" : trn_nd}),
     ]
 
 IDX = [0]
@@ -49,14 +48,11 @@ ifprd = 1
 if iftrn:
     for _i in IDX:
         mdl, MDL, Trainer, opt = cfgs[_i]
-
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
 if ifplt:
-    npz_files = ['results/kura_model_summary.npz']
+    npz_files = ['kura_model']
     npzs = plot_summary(npz_files, labels = labels, ifclose=False)
 
 if ifprd:
@@ -72,7 +68,7 @@ if ifprd:
     for _i in IDX:
         with torch.no_grad():
             mdl, MDL, Trainer, opt = cfgs[_i]
-            _, prd_func = load_model(MDL, 'kura_model.pt', config_path, config_mod=opt)
+            _, prd_func = load_model(MDL, 'kura_model.pt')
             pred = prd_func(x_data, t_data, ei=ei_data, ew=ew_data)
             res.append(pred)
 

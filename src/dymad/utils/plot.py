@@ -1,11 +1,14 @@
 import imageio
 import logging
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import matplotlib.colors as colors
+from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import os
 
 PALETTE = ["#000000", "#9b59b6", "#3498db", "#95a5a6", "#e74c3c", "#34495e"]
-LINESTY = ["-", "--", "-.", ":"]
+LINESTY = ["-", "--", "-.", ":", ".-"]
 
 # Disable logging for matplotlib to avoid clutter in DEBUG mode
 plt_logger = logging.getLogger('matplotlib')
@@ -212,54 +215,9 @@ def plot_one_trajectory(
 
     return fig, ax
 
-def plot_hist(hist, epoch, model_name, ifclose=True, prefix='.'):
-    """
-    Plot training history with loss curves for train/validation/test sets.
-
-    Args:
-        hist (list): History of losses, where hist[0] is epoch numbers and
-                     hist[1:] contains losses for train, validation, and test sets.
-        epoch (int): Number of epochs to plot.
-        model_name (str): Name of the model for the plot title and filename.
-        ifclose (bool): Whether to close the plot after saving.
-        prefix (str): Directory prefix for saving the plot.
-    """
-    tmp = np.array(hist).T
-    _e, _h = tmp[0][:epoch], tmp[1:,:epoch]
-
-    # Create figure
-    plt.figure(figsize=(8, 6))
-
-    # Plot loss curves with modern styling
-    plt.semilogy(_e, _h[0], '--', color='#3498db', linewidth=2,
-                 label='Training', alpha=0.8)
-    plt.semilogy(_e, _h[1], '-', color='#e74c3c', linewidth=2,
-                 label='Validation', alpha=0.9)
-    plt.semilogy(_e, _h[2], '-', color='#2ecc71', linewidth=2,
-                 label='Test', alpha=0.9)
-
-    # Styling
-    plt.xlim([_e[0], _e[-1]+1])
-    plt.xlabel('Epoch', fontsize=12)
-    plt.ylabel('Loss (log scale)', fontsize=12)
-    plt.title(f'{model_name} - Training History', fontsize=14, fontweight='bold')
-    plt.grid(True, alpha=0.3)
-    plt.legend(loc='best', fontsize=11, framealpha=0.9)
-
-    # Improve tick formatting
-    plt.tick_params(axis='both', which='major', labelsize=10)
-
-    # Save with clean formatting
-    plt.tight_layout()
-    plt.savefig(f'{prefix}/{model_name}_history.png', dpi=150, bbox_inches='tight',
-                facecolor='white', edgecolor='none')
-
-    if ifclose:
-        plt.close()
-
 def plot_summary(npz_files, labels=None, ifscl=True, ifclose=True, prefix='.'):
     """
-    Plot training loss and trajectory RMSE for multiple summary files on the same figure.
+    Plot training losses and prediction criterion for multiple summary files on the same figure.
 
     Args:
         npz_files (list): List of NPZ file paths containing summary data.
@@ -268,11 +226,15 @@ def plot_summary(npz_files, labels=None, ifscl=True, ifclose=True, prefix='.'):
         ifclose (bool): Whether to close the plot after saving.
         prefix (str): Directory prefix for saving the plot.
     """
-    npzs = [np.load(_f) for _f in npz_files]
+    _files = [f"{npz}/{npz}_summary.npz" for npz in npz_files]
+    npzs = [np.load(_f, allow_pickle=True) for _f in _files]
     ax = None
     for idx, npz in enumerate(npzs):
-        label = labels[idx] if labels is not None else f'Run {idx+1}'
-        fig, ax = plot_one_summary(npz, label=label, index=idx, ifscl=ifscl, axes=ax)
+        _, ax = plot_one_summary(npz, label=str(idx), index=idx, ifscl=ifscl, axes=ax)
+
+    lbls = labels if labels is not None else [f'Run {i+1}' for i in range(len(npzs))]
+    titl = ", ".join([f"{i}: {l}" for i, l in enumerate(lbls)])
+    ax[0].set_title(ax[0].get_title() + "\n" + titl)
 
     plt.tight_layout()
     if prefix != '.':
@@ -286,7 +248,7 @@ def plot_summary(npz_files, labels=None, ifscl=True, ifclose=True, prefix='.'):
 
 def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
     """
-    Plot training loss and trajectory RMSE from a summary file.
+    Plot training losses and prediction criterion from a summary file.
 
     Args:
         npz (dict): Dictionary from the NPZ file.
@@ -297,32 +259,158 @@ def plot_one_summary(npz, label='', index=0, ifscl=True, axes=None):
     """
     clr = PALETTE[index % len(PALETTE)]
 
-    e_loss, h_loss = npz['epoch_loss'], npz['losses']
-    e_rmse, h_rmse = npz['epoch_rmse'], npz['rmses']
-
     if axes is None:
-        fig, ax = plt.subplots(nrows=2, sharex=True, figsize=(8, 6))
+        fig, ax = plt.subplots(nrows=2, sharex=True, figsize=(10, 6))
     else:
         fig = axes[0].figure
         ax = axes
-    scl = h_loss[0, 0] if ifscl else 1.0
-    ax[0].semilogy(e_loss, h_loss[0]/scl, '-', color=clr, label=label)
+    scl = npz['hist'][0]['train_total'][0] if ifscl else 1.0
+    for hist in npz['hist']:
+        key = ['total', 'dynamics']
+        for _k in hist.keys():
+            if 'train' in _k:
+                if _k[6:] not in key:
+                    key.append(_k[6:])
+        epo = hist['epoch']
+        for _i, _k in enumerate(key):
+            _sty = LINESTY[_i % len(LINESTY)]
+            ax[0].semilogy(epo, np.abs(hist[f'train_{_k}'])/scl, _sty, color=clr, label=f'{label} T {_k[:3]}', linewidth=1.5)
+            ax[0].semilogy(epo, np.abs(hist[f'valid_{_k}'])/scl, _sty, color=clr, label=f'{label} V {_k[:3]}', linewidth=.75)
     if ifscl:
-        ax[0].set_title('Training Loss (relative drop)')
+        ax[0].set_title('Training Loss (scaled)')
         ax[0].set_ylabel('Relative Loss')
     else:
-        ax[0].set_title('Training Loss *magnitude not to compare*')
+        ax[0].set_title('Training Loss (raw)')
         ax[0].set_ylabel('Loss')
-    ax[0].legend()
+    ax[0].legend(loc='center left', ncol=2, bbox_to_anchor=(1, 0.5))
 
-    ax[1].semilogy(e_rmse, h_rmse[0], '-',  color=clr, label=f'{label}, Train')
-    ax[1].semilogy(e_rmse, h_rmse[2], '--', color=clr, label=f'{label}, Test')
-    ax[1].set_title('Trajectory RMSE')
+    e_crit, h_crit, n_crit = npz['crit_epoch'], npz['crits'], npz['crit_name']
+    if len(e_crit) > 0:
+        ax[1].semilogy(e_crit, np.abs(h_crit[0]), '-',  color=clr, label=f'{label} Train')
+        ax[1].semilogy(e_crit, np.abs(h_crit[1]), '--', color=clr, label=f'{label} Valid')
+        ax[1].legend()
+    ax[1].set_title('Prediction Criterion')
     ax[1].set_xlabel('Epoch')
-    ax[1].set_ylabel('RMSE')
-    ax[1].legend()
+    ax[1].set_ylabel(f'Criterion {n_crit}')
 
     return fig, ax
+
+def plot_hist(hist, crit, crit_name, model_name, ifclose=True, prefix='.'):
+    tmp = np.array(crit).T
+    npz = {
+        'hist': hist,
+        'crit_epoch': tmp[0] if len(tmp) > 0 else [],
+        'crits': tmp[1:] if len(tmp) > 1 else [],
+        'crit_name': crit_name
+        }
+    _ = plot_one_summary(npz, label='', index=0, ifscl=False, axes=None)
+
+    plt.tight_layout()
+    plt.savefig(f'{prefix}/{model_name}_history.png', dpi=150, bbox_inches='tight',
+                facecolor='white', edgecolor='none')
+
+    if ifclose:
+        plt.close()
+
+def plot_cv_results(cv_file, keys=None, ifclose=True, prefix='.', value_scale='log'):
+    """
+    Plot cross-validation results.
+
+    Args:
+        cv_results (list): List of CVResult objects.
+        metric_name (str): Name of the metric to plot.
+        ifclose (bool): Whether to close the plot after saving.
+        prefix (str): Directory prefix for saving the plot.
+    """
+    if keys is None:
+        params, metrics, metric_name, best_idx = _collect_cv_results(cv_file, [])
+        params = np.arange(len(metrics))
+        mode = '1d'
+        key_labels = ['Hyperparameter Index']
+    elif len(keys) < 4:
+        params, metrics, metric_name, best_idx = _collect_cv_results(cv_file, keys)
+        if len(keys) == 1:
+            params = params.flatten()
+            mode = '1d'
+        elif len(keys) == 2:
+            mode = '2d'
+        elif len(keys) == 3:
+            mode = '3d'
+        key_labels = [_k.split('.')[-1] for _k in keys]
+    else:
+        raise ValueError("Can only plot up to 3 hyperparameters at once.  Try keys=None.")
+    best_label = f"Best: {metric_name} = {metrics[best_idx,0]:.3e} ± {metrics[best_idx,1]:.3e}"
+
+    means = metrics[:, 0]
+    stds  = metrics[:, 1]
+    if mode == '1d':
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.plot(params, means, 'ko', markerfacecolor='none', label='Mean', markersize=8)
+        ax.errorbar(params, means, yerr=stds, fmt='o', color='black', capsize=5, label='Std Dev')
+        ax.plot(params[best_idx], means[best_idx], 'rs', label=best_label, markersize=8)
+        ax.set_yscale(value_scale)
+        ax.set_xticks(params)
+        ax.set_xlabel(key_labels[0])
+        ax.set_ylabel(metric_name)
+        ax.legend()
+
+    elif mode == '2d':
+        fig, ax = plt.subplots(figsize=(8, 6))
+        sc = ax.scatter(params[:, 0], params[:, 1], c=means, s=100, cmap='viridis')
+        ax.scatter(
+            params[best_idx, 0], params[best_idx, 1],
+            facecolors='none', edgecolors='red', s=150, marker='s', linewidths=2, label=best_label)
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.1)
+        cbar = fig.colorbar(sc, cax=cax)
+        if value_scale == 'log':
+            sc.set_norm(colors.LogNorm(vmin=means.min(), vmax=means.max()))
+        cbar.set_label(f'Mean {metric_name}')
+        ax.set_xticks(np.unique(params[:, 0]))
+        ax.set_yticks(np.unique(params[:, 1]))
+        ax.set_xlabel(key_labels[0])
+        ax.set_ylabel(key_labels[1])
+        ax.legend()
+
+    elif mode == '3d':
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection='3d')
+        p = ax.scatter(params[:, 0], params[:, 1], params[:, 2], c=means, s=100, cmap='viridis')
+        ax.scatter(
+            params[best_idx, 0], params[best_idx, 1], params[best_idx, 2],
+            c='red', s=150, marker='s', label=best_label)
+        cbar = fig.colorbar(p)
+        cbar.set_label(f'Mean {metric_name}')
+        ax.set_xticks(np.unique(params[:, 0]))
+        ax.set_yticks(np.unique(params[:, 1]))
+        ax.set_zticks(np.unique(params[:, 2]))
+        ax.set_xlabel(key_labels[0])
+        ax.set_ylabel(key_labels[1])
+        ax.set_zlabel(key_labels[2])
+        ax.legend()
+    ax.set_title(f'Cross-Validation Results - Metric: {metric_name}')
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    if prefix != '.':
+        os.makedirs(prefix, exist_ok=True)
+    plt.savefig(f'{prefix}/cv_results.png', dpi=150, bbox_inches='tight',
+                facecolor='white', edgecolor='none')
+    if ifclose:
+        plt.close()
+
+def _collect_cv_results(cv_file, keys):
+    tmp = np.load(f"{cv_file}/{cv_file}_cv.npz", allow_pickle=True)
+    cv_res = tmp['all_results']
+    metric_name = tmp['metric_name']
+    best_idx = tmp['best_idx']
+
+    params, metrics = [], []
+    for res in cv_res:
+        params.append([res.params[k] for k in keys])
+        metrics.append([res.mean_metric, res.std_metric])
+
+    return np.array(params), np.array(metrics), metric_name, best_idx
 
 def _get_contour_func(ax, mode):
     if mode == 'contour':

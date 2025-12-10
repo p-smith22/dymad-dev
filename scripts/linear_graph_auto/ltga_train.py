@@ -1,4 +1,3 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -6,7 +5,7 @@ import torch
 from dymad.io import load_model
 from dymad.models import GLDM, GKBF
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
-from dymad.utils import adj_to_edge, plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.utils import adj_to_edge, plot_summary, plot_trajectory, TrajectorySampler
 
 B = 128
 N = 501
@@ -60,8 +59,6 @@ trn_wf = {
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "weak_form_params": {
         "N": 13,
         "dN": 2,
@@ -73,8 +70,6 @@ trn_nd = {
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "sweep_lengths": [2, 5, 10, 50, 100],
     "sweep_epoch_step": 100,
     "ode_method": "dopri5",
@@ -87,8 +82,6 @@ trn_ln = {
     "load_checkpoint": False,
     "learning_rate": 1e-2,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
     "ls_update": {
         "method": "truncated",
         "params": 2}
@@ -104,7 +97,7 @@ cfgs = [
     ]
 
 # IDX = [0, 1]
-IDX = [4]
+IDX = [0, 1, 2, 3, 4]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
@@ -125,13 +118,11 @@ if iftrn:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"ltga_{mdl}"
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
 if ifplt:
-    npz_files = [f'results/ltga_{l}_summary.npz' for l in labels]
+    npz_files = [f'ltga_{l}' for l in labels]
     npzs = plot_summary(npz_files, labels=labels, ifclose=False)
 
     for lbl, npz in zip(labels, npzs):
@@ -148,7 +139,7 @@ if ifprd:
     for i in IDX:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"ltga_{mdl}"
-        _, prd_func = load_model(MDL, f'ltga_{mdl}.pt', f'ltga_model.yaml', config_mod=opt)
+        _, prd_func = load_model(MDL, f'ltga_{mdl}.pt')
         with torch.no_grad():
             pred = prd_func(x_data, t_data, ei=edge_index)
         res.append(pred)
