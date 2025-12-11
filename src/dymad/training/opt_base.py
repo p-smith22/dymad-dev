@@ -67,6 +67,9 @@ class OptBase:
         self.device = device
         self.dtype = dtype
 
+        if 'save_interval' not in self.config_phase:
+            self.config_phase['save_interval'] = 10
+
         self.convergence_tolerance_reached = False
 
         # Setup paths

@@ -365,8 +365,12 @@ class SingleSplitDriver(DriverBase):
         if 'data_valid' in self.base_config:
             # A separate validation dataset is specified
             # No need to split
+            self.train_set_index = torch.arange(self.train_sets[0].metadata['n_samples'])
+            self.valid_set_index = torch.arange(self.valid_sets[0].metadata['n_samples'])
+            self.train_sets[0].set_data_index(self.train_set_index)
+            self.valid_sets[0].set_data_index(self.valid_set_index)
             return
-        
+
         # Otherwise, split the training dataset into train/valid
         split_cfg = self.base_config.get("split", {})
         train_frac = split_cfg.get("train_frac", 0.75)

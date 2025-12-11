@@ -52,9 +52,11 @@ def vpt_loss(predictions, targets, gamma=0.1):
     """Exact version of VPT loss (not differentiable)"""
     with torch.no_grad():
         E_k = _vpt_loss(predictions, targets)
-        vpt = torch.sum((E_k < gamma).float(), dim=-1)
-        avg_vpt = torch.mean(vpt)
-    return avg_vpt
+        E_k = torch.cat([E_k, torch.full((E_k.shape[0], 1), float('inf'))], dim=-1)
+        msk = E_k < gamma
+        vpt = torch.argmin(msk.float(), dim=-1)
+        avg_vpt = torch.mean(vpt.float())
+    return vpt, avg_vpt
 
 class VPTLoss(nn.Module):
     r"""Valid Prediction Time Loss
@@ -84,12 +86,29 @@ class VPTLoss(nn.Module):
 
     def forward(self, predictions, targets):
         E_k = _vpt_loss(predictions, targets)
+        E_k = torch.cat([E_k, torch.full((E_k.shape[0], 1), float('inf'))], dim=-1)
+        B, T = E_k.shape
 
-        # Softmax-based VPT estimation
-        w = torch.exp(self.scl * (E_k - self.gamma))
-        vpt = torch.sum(w, dim=-1)
-        avg_vpt = torch.mean(vpt)
-        loss = 1.0 / (avg_vpt + 1e-8)  # Avoid division by zero
+        # Soft probability that step k is still valid
+        s = torch.sigmoid(self.scl * 100 * (self.gamma - E_k))  # (B, T), near 1 if valid
+
+        # Survival up to step k: product_{j<k} s_j
+        # Build shifted s with leading 1 so cumprod aligns:
+        s_shifted = torch.cat(
+            [torch.ones(B, 1, device=E_k.device, dtype=E_k.dtype), s[:, :-1]],
+            dim=-1,
+        )                                           # (B, T)
+        survival = torch.cumprod(s_shifted, dim=-1) # (B, T)
+
+        # Hazard: first failure at k ≈ (1 - s_k) * survival_{k}
+        q = (1.0 - s) * survival                    # (B, T)
+
+        # Expected first failure index
+        time_idx = torch.arange(T, device=E_k.device, dtype=E_k.dtype)  # (T,)
+        expected_vpt = (q * time_idx).sum(dim=-1)    # (B,)
+        avg_vpt = expected_vpt.mean()                # scalar
+
+        loss = 1.0 / (avg_vpt + 1e-8)
 
         return loss
 

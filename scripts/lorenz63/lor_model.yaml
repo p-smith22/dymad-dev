@@ -1,0 +1,25 @@
+data:
+  path: './data/l63_train.npz'
+  n_samples: 1
+  n_steps: 1024
+  double_precision: true
+
+data_valid:
+  path: './data/l63_valid.npz'
+  n_samples: 3
+  n_steps: 1024
+  double_precision: true
+
+transform_x:
+  type: "scaler"
+  mode: "std"
+
+split:
+  train_frac: 1.0
+
+dataloader:
+  batch_size: 1
+
+criterion:
+  dynamics:
+    type: "vpt"

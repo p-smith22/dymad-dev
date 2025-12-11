@@ -399,6 +399,8 @@ def plot_cv_results(cv_file, keys=None, ifclose=True, prefix='.', value_scale='l
     if ifclose:
         plt.close()
 
+    return fig, ax
+
 def _collect_cv_results(cv_file, keys):
     tmp = np.load(f"{cv_file}/{cv_file}_cv.npz", allow_pickle=True)
     cv_res = tmp['all_results']

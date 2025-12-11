@@ -1,0 +1,154 @@
+import copy
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import numpy as np
+import torch
+
+from dymad.io import load_model
+from dymad.losses import vpt_loss
+from dymad.models import DKMSK
+from dymad.training import LinearTrainer
+from dymad.utils import plot_cv_results, plot_trajectory, plot_multi_trajs, TrajectorySampler
+
+M = 1024
+t_grid = np.linspace(0, 100, 10000)
+t_pred = np.linspace(0, 70, 7000)
+
+sigma = 10.0
+rho = 28.0
+beta = 8.0 / 3.0
+def f(t, x):
+    dxdt = np.zeros_like(x)
+    dxdt[0] = sigma * (x[1] - x[0])
+    dxdt[1] = x[0] * (rho - x[2]) - x[1]
+    dxdt[2] = x[0] * x[1] - beta * x[2]
+    return dxdt
+
+# Training options
+RIDGE = 1e-6
+DIM = 3
+
+## Multi-output shared scalar kernels
+opt_rbf = {
+    "type": "sc_rbf",
+    "input_dim": DIM,
+    "lengthscale_init": None
+}
+opt_dm = {
+    "type": "sc_dm",
+    "input_dim": DIM,
+    "eps_init": None,
+}
+mdl_rbf = {
+    "name" : 'ker_model',
+    "encoder_layers" : 0,
+    "decoder_layers" : 0,
+    "kernel_dimension" : DIM,
+    "type": "share",
+    "kernel": opt_rbf,
+    "dtype": torch.float64,
+    "ridge_init": RIDGE
+}
+mdl_dm = copy.deepcopy(mdl_rbf)
+mdl_dm["kernel"] = opt_dm
+
+trn_ln = {
+    "n_epochs": 1,
+    "ls_update": {
+        "method": "raw",
+        "interval": 500,
+        "times": 1}
+        }
+
+cv_rbf = {
+    "param_grid": {
+        "model.kernel.lengthscale_init": [0.1, 0.2, 0.393, 0.8, 1.2],
+        "model.ridge_init": [1e-6, 1e-7, 1e-8, 1e-9, 1e-10]},
+    "metric": "total"
+}
+cv_dm = {
+    "param_grid": {
+        "model.kernel.eps_init": [0.02, 0.04, 0.0771, 0.16, 0.32],
+        "model.ridge_init": [1e-6, 1e-7, 1e-8, 1e-9, 1e-10]},
+    "metric": "total"
+}
+
+config_path = 'lor_model.yaml'
+
+cfgs = [
+    ('dks_rbf', DKMSK,  LinearTrainer,     {"model": mdl_rbf, "cv": cv_rbf, "training" : trn_ln}),
+    ('ddm_dm',  DKMSK,  LinearTrainer,     {"model": mdl_dm,  "cv": cv_dm,  "training" : trn_ln}),
+    ]
+
+# IDX = range(len(cfgs))
+IDX = [0, 1]
+labels = [cfgs[i][0] for i in IDX]
+
+ifdat = 0
+iftrn = 0
+ifplt = 0
+ifprd = 1
+
+if ifdat:
+    sampler = TrajectorySampler(f, config='lor_data.yaml')
+    ts, xs, ys = sampler.sample(t_grid, batch=1)
+
+    np.savez_compressed('./data/l63_train.npz', t=ts[0][:M], x=xs[0][:M])
+    np.savez_compressed('./data/l63_valid.npz', t=ts[0][:M],
+                        x=np.array([xs[0][M:2*M], xs[0][2*M:3*M], xs[0][3*M:4*M]]))
+
+    tt, xt, yt = sampler.sample(t_pred, batch=30)
+    np.savez_compressed('./data/l63_test.npz', t=tt, x=xt)
+
+    plot_trajectory(np.array(xs[0][:M]), ts[0][:M], None, labels=['Truth'], ifclose=False)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    B, T, D = xs.shape
+    for i in range(B):
+        ax.plot(xs[i, :M, 0], xs[i, :M, 1], xs[i, :M, 2])
+    ax.set_title("Lorenz63")
+
+if iftrn:
+    for i in IDX:
+        mdl, MDL, Trainer, opt = cfgs[i]
+        opt["model"]["name"] = f"lor_{mdl}"
+        trainer = Trainer(config_path, MDL, config_mod=opt)
+        trainer.train()
+
+if ifplt:
+    mdl = cfgs[0][0]
+    keys = ['model.kernel.lengthscale_init', 'model.ridge_init']
+    _, ax = plot_cv_results(f'lor_{mdl}', keys, ifclose=False)
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+
+if ifprd:
+    data = np.load('./data/l63_test.npz')
+    ts = torch.tensor(data['t'], dtype=torch.float64)
+    xs = torch.tensor(data['x'], dtype=torch.float64)
+    JDX = 30
+
+    res = [xs[:JDX]]
+    for _i in IDX:
+        mdl, MDL, _, _ = cfgs[_i]
+        _, prd_func = load_model(MDL, f'lor_{mdl}.pt')
+        with torch.no_grad():
+            pred = prd_func(xs[:JDX], ts[:JDX])
+        res.append(pred)
+
+    vpt_rb = vpt_loss(res[1], xs[:JDX], gamma=0.3)[0].numpy()
+    vpt_dm = vpt_loss(res[2], xs[:JDX], gamma=0.3)[0].numpy()
+
+    f = plt.figure()
+    plt.hist([vpt_rb, vpt_dm], bins=30, label=labels, alpha=0.7)
+    plt.xlabel("Valid Prediction Time (steps)")
+    plt.ylabel("Frequency")
+    plt.title("VPT Distribution on Lorenz63 Test Set")
+    plt.legend()
+
+    # plot_multi_trajs(
+    #     np.array(res), ts[0], "L63",
+    #     labels=['Truth']+labels, ifclose=False)
+
+plt.show()
