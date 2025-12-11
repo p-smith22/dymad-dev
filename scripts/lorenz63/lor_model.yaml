@@ -23,3 +23,5 @@ dataloader:
 criterion:
   dynamics:
     type: "vpt"
+    params:
+      gamma: 0.3

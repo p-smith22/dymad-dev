@@ -161,7 +161,20 @@ def iter_param_grid(param_grid: Dict[str, Iterable[Any]]):
     Yields dicts mapping dotted keys -> single value.
     """
     keys = list(param_grid.keys())
-    values_lists = [param_grid[k] for k in keys]
+    values_lists = []
+    for k in keys:
+        val = param_grid[k]
+        if isinstance(val, list):
+            values_lists.append(val)
+        elif isinstance(val, tuple):
+            if val[0] == 'linspace':
+                values_lists.append(np.linspace(*val[1]).tolist())
+            elif val[0] == 'logspace':
+                values_lists.append(np.logspace(*val[1]).tolist())
+            else:
+                raise ValueError(f"Unknown param grid specifier: {val}")
+        else:
+            raise ValueError(f"Param grid values must be lists or tuples, got {type(val)}")
     for values in product(*values_lists):
         yield dict(zip(keys, values))
 

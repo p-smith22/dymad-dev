@@ -227,6 +227,11 @@ class DriverBase:
         shutil.copy2(best_checkpoint + '_summary.npz', best_summary)
         self.cv_logger.info(f"Copied best model {best_checkpoint} to {best_model} and {best_summary}")
 
+        # Close the logger to flush buffers and release file handles
+        for handler in self.cv_logger.handlers[:]:
+            handler.close()
+            self.cv_logger.removeHandler(handler)
+
         return best_idx, best_result, all_results
 
     # --------------------
@@ -256,7 +261,8 @@ class DriverBase:
 
                 self.cv_logger.info(
                     f"Combo {res['combo_idx']}, fold {res['fold_idx']}: "
-                    f"{self.metric} = {res['metric_value']:.4e}")
+                    f"{self.metric} = {res['metric_value']:.4e} "
+                    f"Params {res['combo']}")
         all_results = aggregate_cv_results(results)
         return all_results
 
@@ -268,7 +274,8 @@ class DriverBase:
 
             self.cv_logger.info(
                 f"Combo {res['combo_idx']}, fold {res['fold_idx']}: "
-                f"{self.metric} = {res['metric_value']:.4e}")
+                f"{self.metric} = {res['metric_value']:.4e} "
+                f"Params {res['combo']}")
         all_results = aggregate_cv_results(results)
         return all_results
 

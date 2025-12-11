@@ -10,7 +10,8 @@ from dymad.models import DKMSK
 from dymad.training import LinearTrainer
 from dymad.utils import plot_cv_results, plot_trajectory, plot_multi_trajs, TrajectorySampler
 
-M = 1024
+M = 2048
+V = 1500
 t_grid = np.linspace(0, 100, 10000)
 t_pred = np.linspace(0, 70, 7000)
 
@@ -62,14 +63,14 @@ trn_ln = {
 
 cv_rbf = {
     "param_grid": {
-        "model.kernel.lengthscale_init": [0.1, 0.2, 0.393, 0.8, 1.2],
-        "model.ridge_init": [1e-6, 1e-7, 1e-8, 1e-9, 1e-10]},
+        "model.kernel.lengthscale_init": ('logspace', (7.0, 12.0, 25, True, 2)),
+        "model.ridge_init": [1e-10]},
     "metric": "total"
 }
 cv_dm = {
     "param_grid": {
-        "model.kernel.eps_init": [0.02, 0.04, 0.0771, 0.16, 0.32],
-        "model.ridge_init": [1e-6, 1e-7, 1e-8, 1e-9, 1e-10]},
+        "model.kernel.eps_init": ('logspace', (7.0, 12.0, 25, True, 2)),
+        "model.ridge_init": [1e-10]},
     "metric": "total"
 }
 
@@ -85,8 +86,8 @@ IDX = [0, 1]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
-iftrn = 0
-ifplt = 0
+iftrn = 1
+ifplt = 1
 ifprd = 1
 
 if ifdat:
@@ -94,8 +95,8 @@ if ifdat:
     ts, xs, ys = sampler.sample(t_grid, batch=1)
 
     np.savez_compressed('./data/l63_train.npz', t=ts[0][:M], x=xs[0][:M])
-    np.savez_compressed('./data/l63_valid.npz', t=ts[0][:M],
-                        x=np.array([xs[0][M:2*M], xs[0][2*M:3*M], xs[0][3*M:4*M]]))
+    np.savez_compressed('./data/l63_valid.npz', t=ts[0][:V],
+                        x=np.array([xs[0][V:2*V], xs[0][2*V:3*V], xs[0][3*V:4*V]]))
 
     tt, xt, yt = sampler.sample(t_pred, batch=30)
     np.savez_compressed('./data/l63_test.npz', t=tt, x=xt)
@@ -117,11 +118,18 @@ if iftrn:
         trainer.train()
 
 if ifplt:
-    mdl = cfgs[0][0]
-    keys = ['model.kernel.lengthscale_init', 'model.ridge_init']
-    _, ax = plot_cv_results(f'lor_{mdl}', keys, ifclose=False)
-    ax.set_xscale('log')
-    ax.set_yscale('log')
+    for _i in IDX:
+        mdl = cfgs[_i][0]
+        if _i == 0:
+            _key = 'model.kernel.lengthscale_init'
+        else:
+            _key = 'model.kernel.eps_init'
+        # keys = [_key, 'model.ridge_init']
+        # keys = [_key]
+        keys = [_key]
+        _, ax = plot_cv_results(f'lor_{mdl}', keys, ifclose=False)
+        # ax.set_xscale('log')
+        ax.set_yscale('log')
 
 if ifprd:
     data = np.load('./data/l63_test.npz')
@@ -147,8 +155,8 @@ if ifprd:
     plt.title("VPT Distribution on Lorenz63 Test Set")
     plt.legend()
 
-    # plot_multi_trajs(
-    #     np.array(res), ts[0], "L63",
-    #     labels=['Truth']+labels, ifclose=False)
+    plot_multi_trajs(
+        np.array([r[:5] for r in res]), ts[0], "L63",
+        labels=['Truth']+labels, ifclose=False)
 
 plt.show()
