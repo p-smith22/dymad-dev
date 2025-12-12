@@ -134,10 +134,8 @@ class DriverBase:
         log_config = self.base_config.get("log", {})
         ifstdout = log_config.get("stdout", False)
         self.cv_logger = logging.getLogger("dymad.cv")
-        config_logger(
-            self.cv_logger,
-            mode=log_config.get("level", "info"),
-            prefix='' if ifstdout else f"{self.results_prefix}/{self.base_name}_cv")
+        self.cv_logger_level = log_config.get("level", "info")
+        self.cv_logger_prefix = '' if ifstdout else f"{self.results_prefix}/{self.base_name}_cv"
 
         # Initialize data sets
         self._init_trajectory_managers()
@@ -172,13 +170,35 @@ class DriverBase:
     # The main training loop
     # --------------------
 
-    def train(self) -> Tuple[int, CVResult, List[CVResult]]:
+    def train(self, continue_training: bool = False) -> Tuple[int, CVResult, List[CVResult]]:
         """
         Core loop over hyperparameter and folds combinations.
 
         Returns:
           best_result, all_results
         """
+        config_logger(
+            self.cv_logger,
+            mode=self.cv_logger_level,
+            prefix=self.cv_logger_prefix)
+
+        # Reload previous results if continuing training
+        file_name = f"{self.results_prefix}/{self.base_name}_cv.npz"
+        prev_all_results, combo_offset = [], 0
+        if continue_training:
+            self.cv_logger.info(f"Continuing training from existing CV results {file_name}.")
+            if os.path.exists(file_name):
+                loaded = np.load(file_name, allow_pickle=True)
+                assert loaded["metric_name"] == self.metric, \
+                    f"Metric mismatch: existing {loaded['metric_name']} vs current {self.metric}"
+                prev_all_results = loaded['all_results'].tolist()
+                prev_best_result = prev_all_results[loaded['best_idx']]
+                combo_offset = len(prev_all_results)
+                self.cv_logger.info(f"Found {combo_offset} previous results.")
+                self.cv_logger.info(f"Previous best: {prev_best_result.params} with {self.metric} = {prev_best_result.mean_metric:.4e}")
+            else:
+                self.cv_logger.info(f"CV results {file_name} not found, starting from scratch.")
+
         # empty grid => treat as single combo with no overrides
         if self.param_grid is None:
             combos = [ {} ]
@@ -189,7 +209,7 @@ class DriverBase:
         for combo_idx, combo in enumerate(combos):
             for fold_idx, fold_cfg in self.iter_folds():
                 args = {
-                    'combo_idx': combo_idx,
+                    'combo_idx': combo_idx + combo_offset,
                     'fold_idx': fold_idx,
                     'fold_cfg': fold_cfg,
                     'combo': combo,
@@ -208,6 +228,7 @@ class DriverBase:
             all_results = self._parallel_run(trial_args_list)
         else:
             all_results = self._serial_run(trial_args_list)
+        all_results = prev_all_results + all_results
 
         # Select best, assuming lower is better
         best_idx = int(np.argmin([r.mean_metric for r in all_results]))
@@ -215,7 +236,6 @@ class DriverBase:
         self.cv_logger.info(f"Best combo: {best_result.params} with {self.metric} = {best_result.mean_metric:.4e}")
 
         # Save CV results
-        file_name = f"{self.results_prefix}/{self.base_name}_cv.npz"
         np.savez_compressed(file_name, all_results=all_results, metric_name=self.metric, best_idx=best_idx)
         self.cv_logger.info(f"Saved CV results to {file_name}")
 
@@ -226,6 +246,11 @@ class DriverBase:
         shutil.copy2(best_checkpoint + '.pt', best_model)
         shutil.copy2(best_checkpoint + '_summary.npz', best_summary)
         self.cv_logger.info(f"Copied best model {best_checkpoint} to {best_model} and {best_summary}")
+
+        # Close the logger to flush buffers and release file handles
+        for handler in self.cv_logger.handlers[:]:
+            handler.close()
+            self.cv_logger.removeHandler(handler)
 
         return best_idx, best_result, all_results
 
@@ -256,7 +281,8 @@ class DriverBase:
 
                 self.cv_logger.info(
                     f"Combo {res['combo_idx']}, fold {res['fold_idx']}: "
-                    f"{self.metric} = {res['metric_value']:.4e}")
+                    f"{self.metric} = {res['metric_value']:.4e} "
+                    f"Params {res['combo']}")
         all_results = aggregate_cv_results(results)
         return all_results
 
@@ -268,7 +294,8 @@ class DriverBase:
 
             self.cv_logger.info(
                 f"Combo {res['combo_idx']}, fold {res['fold_idx']}: "
-                f"{self.metric} = {res['metric_value']:.4e}")
+                f"{self.metric} = {res['metric_value']:.4e} "
+                f"Params {res['combo']}")
         all_results = aggregate_cv_results(results)
         return all_results
 
@@ -365,8 +392,12 @@ class SingleSplitDriver(DriverBase):
         if 'data_valid' in self.base_config:
             # A separate validation dataset is specified
             # No need to split
+            self.train_set_index = torch.arange(self.train_sets[0].metadata['n_samples'])
+            self.valid_set_index = torch.arange(self.valid_sets[0].metadata['n_samples'])
+            self.train_sets[0].set_data_index(self.train_set_index)
+            self.valid_sets[0].set_data_index(self.valid_set_index)
             return
-        
+
         # Otherwise, split the training dataset into train/valid
         split_cfg = self.base_config.get("split", {})
         train_frac = split_cfg.get("train_frac", 0.75)

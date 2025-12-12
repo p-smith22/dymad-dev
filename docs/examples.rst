@@ -15,6 +15,7 @@ Examples
    examples/linear_graph/part1
    examples/linear_graph/part2
    examples/kernel_s1/main
+   examples/kernel_l63/main
    examples/sa_lco/part1
    examples/sa_lco/part2
    examples/vortex/part1

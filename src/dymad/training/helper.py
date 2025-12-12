@@ -136,10 +136,11 @@ def aggregate_cv_results(results: List[Dict[str, Any]]):
 
     This function aggregates them into CVResult objects by collecting fold results for each combo_idx.
     """
-    max_combo_idx = max(res['combo_idx'] for res in results)
-    tmp = [[[], [], []] for _ in range(max_combo_idx + 1)]
+    tmp = [res['combo_idx'] for res in results]
+    max_combo_idx, min_combo_idx = max(tmp), min(tmp)
+    tmp = [[[], [], []] for _ in range(max_combo_idx - min_combo_idx + 1)]
     for res in results:
-        c_idx = res['combo_idx']
+        c_idx = res['combo_idx'] - min_combo_idx
         tmp[c_idx][0].append(res['combo'])
         tmp[c_idx][1].append(res['metric_value'])
         tmp[c_idx][2].append(res['model_prefix'])
@@ -161,7 +162,20 @@ def iter_param_grid(param_grid: Dict[str, Iterable[Any]]):
     Yields dicts mapping dotted keys -> single value.
     """
     keys = list(param_grid.keys())
-    values_lists = [param_grid[k] for k in keys]
+    values_lists = []
+    for k in keys:
+        val = param_grid[k]
+        if isinstance(val, list):
+            values_lists.append(val)
+        elif isinstance(val, tuple):
+            if val[0] == 'linspace':
+                values_lists.append(np.linspace(*val[1]).tolist())
+            elif val[0] == 'logspace':
+                values_lists.append(np.logspace(*val[1]).tolist())
+            else:
+                raise ValueError(f"Unknown param grid specifier: {val}")
+        else:
+            raise ValueError(f"Param grid values must be lists or tuples, got {type(val)}")
     for values in product(*values_lists):
         yield dict(zip(keys, values))
 
