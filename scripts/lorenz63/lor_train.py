@@ -87,9 +87,9 @@ cfgs = [
 IDX = [0, 1]
 labels = [cfgs[i][0] for i in IDX]
 
-ifdat = 0
-iftrn = 0
-ifplt = 0
+ifdat = 1
+iftrn = 1
+ifplt = 1
 ifprd = 1
 
 if ifdat:
@@ -150,7 +150,7 @@ if ifprd:
     vpt_rb, avr_rb = vpt_loss(res[1], res[0], gamma=0.3)
     vpt_dm, avr_dm = vpt_loss(res[2], res[0], gamma=0.3)
 
-    f = plt.figure()
+    fig = plt.figure()
     plt.violinplot([vpt_rb, vpt_dm], showmeans=True)
     plt.xticks([1, 2], labels)
     plt.ylabel("VPT (steps)")
