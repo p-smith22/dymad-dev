@@ -72,7 +72,7 @@ cv_rbf = {
 cv_dm = {
     "param_grid": {
         # "model.kernel.eps_init": ('logspace', (1.0, 7.0, 25, True, 2)),
-        "model.kernel.eps_init": ('linspace', (1.0, 8.0, 25)),
+        "model.kernel.eps_init": ('linspace', (1.0, 4.0, 10)),
         "model.ridge_init": [1e-13]},
     "metric": "vpt"
 }
@@ -84,7 +84,6 @@ cfgs = [
     ('ddm_dm',  DKMSK,  LinearTrainer,     {"model": mdl_dm,  "cv": cv_dm,  "training" : trn_ln}),
     ]
 
-# IDX = range(len(cfgs))
 IDX = [0, 1]
 labels = [cfgs[i][0] for i in IDX]
 
@@ -118,7 +117,7 @@ if iftrn:
         mdl, MDL, Trainer, opt = cfgs[i]
         opt["model"]["name"] = f"lor_{mdl}"
         trainer = Trainer(config_path, MDL, config_mod=opt)
-        trainer.train()
+        trainer.train(continue_training=True)
 
 if ifplt:
     for _i in IDX:
@@ -155,10 +154,9 @@ if ifprd:
     plt.violinplot([vpt_rb, vpt_dm], showmeans=True)
     plt.xticks([1, 2], labels)
     plt.ylabel("VPT (steps)")
-    plt.legend()
 
-    # plot_multi_trajs(
-    #     np.array([r[:2] for r in res]), ts[0], "L63",
-    #     labels=['Truth']+labels, ifclose=False)
+    plot_multi_trajs(
+        np.array([r[:2] for r in res]), ts[0], "L63",
+        labels=['Truth']+labels, ifclose=False)
 
 plt.show()

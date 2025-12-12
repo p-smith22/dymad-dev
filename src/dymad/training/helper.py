@@ -136,10 +136,11 @@ def aggregate_cv_results(results: List[Dict[str, Any]]):
 
     This function aggregates them into CVResult objects by collecting fold results for each combo_idx.
     """
-    max_combo_idx = max(res['combo_idx'] for res in results)
-    tmp = [[[], [], []] for _ in range(max_combo_idx + 1)]
+    tmp = [res['combo_idx'] for res in results]
+    max_combo_idx, min_combo_idx = max(tmp), min(tmp)
+    tmp = [[[], [], []] for _ in range(max_combo_idx - min_combo_idx + 1)]
     for res in results:
-        c_idx = res['combo_idx']
+        c_idx = res['combo_idx'] - min_combo_idx
         tmp[c_idx][0].append(res['combo'])
         tmp[c_idx][1].append(res['metric_value'])
         tmp[c_idx][2].append(res['model_prefix'])
