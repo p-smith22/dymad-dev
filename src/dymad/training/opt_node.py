@@ -38,10 +38,6 @@ class OptNODE(OptBase):
     ):
         super().__init__(config, config_phase, model_class, run_state, device, dtype)
 
-        # ODE solver settings
-        self.ode_method = self.config_phase.get("ode_method", "dopri5")
-        self.ode_args = self.config_phase.get("ode_args", {})
-
         # Trajectory chopping
         self.chop_mode = self.config_phase.get("chop_mode", "initial")
         assert self.chop_mode in ["initial", "unfold"], f"Invalid chop_mode: {self.chop_mode}"
@@ -68,7 +64,6 @@ class OptNODE(OptBase):
         )
         self.schedulers.append(sweep_scheduler)
 
-        logger.info(f"ODE method: {self.ode_method}, Options: {self.ode_args}")
         if self.chop_mode == 'initial':
             logger.info(f"Chop mode: {self.chop_mode}, initial steps only")
         else:

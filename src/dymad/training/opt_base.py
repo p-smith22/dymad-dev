@@ -72,6 +72,10 @@ class OptBase:
 
         self.convergence_tolerance_reached = False
 
+        # ODE solver settings, potentially needed for losses
+        self.ode_method = self.config_phase.get("ode_method", "dopri5")
+        self.ode_args = self.config_phase.get("ode_args", {})
+
         # Setup paths
         self.model_name = self.config["model"]["name"]
         self.checkpoint_path = self.config["path"]["checkpoint_prefix"] + f"/{self.model_name}_checkpoint.pt"
@@ -104,6 +108,7 @@ class OptBase:
             f"Epochs: {self.config_phase['n_epochs']}, "
             f"Save interval: {self.config_phase['save_interval']}"
         )
+        logger.info(f"ODE method: {self.ode_method}, Options: {self.ode_args}")
 
     def attach_run_state(self, state: RunState) -> None:
         """
@@ -323,11 +328,7 @@ class OptBase:
         """
         Compute loss terms for a batch.
 
-        Return either:
-          - a single Tensor (total loss), or
-          - a dict name -> Tensor; we aggregate using `criteria_weights`.
-            If the dict contains key 'total', we treat that as the final loss
-            and ignore weights.
+        Return a list of losses corresponding to `self.criteria_names[:-1]`.
         """
         raise NotImplementedError
 
@@ -419,9 +420,33 @@ class OptBase:
         if self.criteria_names[1] == "recon":
             recon_loss = self.criteria[1](B.x, x_hat.view(*B.x.shape))
             loss_list.append(recon_loss)
+            n_eval = 2
+        else:
+            n_eval = 1
 
-        for _i in range(2, len(self.criteria)-1):
-            loss_value = self.criteria[_i](predictions, B.x)
+        preds = predictions
+        if predictions is None:
+            if len(self.criteria) > n_eval:
+                # This means there are additional criteria,
+                # which we assume requires predictions, and need to compute this
+                init_states = B.x[:, 0, :]  # (batch_size, n_total_state_features)
+                # Use the actual time points from trajectory manager
+                ts = B.t
+                if ts.dim() == 3 and ts.size(0) == 1:
+                    # Expect this to be the graph case with broadcasted time
+                    # For now we only take the first batch entry, assuming all are identical
+                    ts = ts[..., 0]
+                ts = ts.to(self.device)
+                preds = self.model.predict(
+                    init_states,
+                    B,
+                    ts,
+                    method=self.ode_method,
+                    **self.ode_args,
+                )
+
+        for _i in range(n_eval, len(self.criteria)-1):
+            loss_value = self.criteria[_i](preds, B.x)
             loss_list.append(loss_value)
 
         return loss_list

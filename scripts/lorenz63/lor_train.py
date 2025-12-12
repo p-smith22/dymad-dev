@@ -11,9 +11,9 @@ from dymad.training import LinearTrainer
 from dymad.utils import plot_cv_results, plot_trajectory, plot_multi_trajs, TrajectorySampler
 
 M = 2048
-V = 1500
-t_grid = np.linspace(0, 100, 10000)
-t_pred = np.linspace(0, 70, 7000)
+V = 2000
+t_grid = np.linspace(0, 120, 12000)
+t_pred = np.linspace(0, 60, 6000)
 
 sigma = 10.0
 rho = 28.0
@@ -48,7 +48,8 @@ mdl_rbf = {
     "type": "share",
     "kernel": opt_rbf,
     "dtype": torch.float64,
-    "ridge_init": RIDGE
+    "ridge_init": RIDGE,
+    "jitter": 0.0
 }
 mdl_dm = copy.deepcopy(mdl_rbf)
 mdl_dm["kernel"] = opt_dm
@@ -63,15 +64,17 @@ trn_ln = {
 
 cv_rbf = {
     "param_grid": {
-        "model.kernel.lengthscale_init": ('logspace', (7.0, 12.0, 25, True, 2)),
-        "model.ridge_init": [1e-10]},
-    "metric": "total"
+        # "model.kernel.lengthscale_init": ('logspace', (1.0, 7.0, 25, True, 2)),
+        "model.kernel.lengthscale_init": ('linspace', (54.0, 75.0, 25)),
+        "model.ridge_init": [1e-13]},
+    "metric": "vpt"
 }
 cv_dm = {
     "param_grid": {
-        "model.kernel.eps_init": ('logspace', (7.0, 12.0, 25, True, 2)),
-        "model.ridge_init": [1e-10]},
-    "metric": "total"
+        # "model.kernel.eps_init": ('logspace', (1.0, 7.0, 25, True, 2)),
+        "model.kernel.eps_init": ('linspace', (1.0, 8.0, 25)),
+        "model.ridge_init": [1e-13]},
+    "metric": "vpt"
 }
 
 config_path = 'lor_model.yaml'
@@ -86,8 +89,8 @@ IDX = [0, 1]
 labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
-iftrn = 1
-ifplt = 1
+iftrn = 0
+ifplt = 0
 ifprd = 1
 
 if ifdat:
@@ -96,9 +99,9 @@ if ifdat:
 
     np.savez_compressed('./data/l63_train.npz', t=ts[0][:M], x=xs[0][:M])
     np.savez_compressed('./data/l63_valid.npz', t=ts[0][:V],
-                        x=np.array([xs[0][V:2*V], xs[0][2*V:3*V], xs[0][3*V:4*V]]))
+                        x=np.array([xs[0][M:M+V], xs[0][M+V:M+2*V]]))
 
-    tt, xt, yt = sampler.sample(t_pred, batch=30)
+    tt, xt, yt = sampler.sample(t_pred, batch=50)
     np.savez_compressed('./data/l63_test.npz', t=tt, x=xt)
 
     plot_trajectory(np.array(xs[0][:M]), ts[0][:M], None, labels=['Truth'], ifclose=False)
@@ -135,7 +138,7 @@ if ifprd:
     data = np.load('./data/l63_test.npz')
     ts = torch.tensor(data['t'], dtype=torch.float64)
     xs = torch.tensor(data['x'], dtype=torch.float64)
-    JDX = 30
+    JDX = 50
 
     res = [xs[:JDX]]
     for _i in IDX:
@@ -145,18 +148,17 @@ if ifprd:
             pred = prd_func(xs[:JDX], ts[:JDX])
         res.append(pred)
 
-    vpt_rb = vpt_loss(res[1], xs[:JDX], gamma=0.3)[0].numpy()
-    vpt_dm = vpt_loss(res[2], xs[:JDX], gamma=0.3)[0].numpy()
+    vpt_rb, avr_rb = vpt_loss(res[1], res[0], gamma=0.3)
+    vpt_dm, avr_dm = vpt_loss(res[2], res[0], gamma=0.3)
 
     f = plt.figure()
-    plt.hist([vpt_rb, vpt_dm], bins=30, label=labels, alpha=0.7)
-    plt.xlabel("Valid Prediction Time (steps)")
-    plt.ylabel("Frequency")
-    plt.title("VPT Distribution on Lorenz63 Test Set")
+    plt.violinplot([vpt_rb, vpt_dm], showmeans=True)
+    plt.xticks([1, 2], labels)
+    plt.ylabel("VPT (steps)")
     plt.legend()
 
-    plot_multi_trajs(
-        np.array([r[:5] for r in res]), ts[0], "L63",
-        labels=['Truth']+labels, ifclose=False)
+    # plot_multi_trajs(
+    #     np.array([r[:2] for r in res]), ts[0], "L63",
+    #     labels=['Truth']+labels, ifclose=False)
 
 plt.show()
