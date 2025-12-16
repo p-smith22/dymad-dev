@@ -2,7 +2,6 @@ from dymad.models.gdyn import DLDMG, LDMG
 from dymad.models.kbf import DGKBF, DKBF, KBF, GKBF
 from dymad.models.km import DGKM, DGKMSK, DKM, DKMSK, GKM, KM, KMM
 from dymad.models.ldm import DGLDM, DLDM, GLDM, LDM
-from dymad.models.lstm import LSTM
 from dymad.models.model_base import ModelBase
 from dymad.models.temp_corr import TemplateCorrAlg, TemplateCorrDif
 from dymad.models.temp_ucat import TemplateUCat, TemplateUCatGraphAE
@@ -28,7 +27,6 @@ __all__ = [
     "KMM",
     "LDM",
     "LDMG",
-    "LSTM",
     "ModelBase",
     "TemplateCorrAlg",
     "TemplateCorrDif",
