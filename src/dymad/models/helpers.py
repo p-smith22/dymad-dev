@@ -76,7 +76,7 @@ def build_processor(
     return dynamics_net
 
 
-def build_KBF(
+def build_kbf(
         koopman_dimension, n_total_control_features, const_term,
         dtype, device):
     if n_total_control_features > 0:

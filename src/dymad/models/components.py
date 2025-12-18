@@ -108,49 +108,53 @@ def zu_blin_with_const_graph(z: torch.Tensor, w: DynData) -> torch.Tensor:
 class DynAuto(Dynamics):
     GRAPH = False
 
-class DynBLinNoConst(Dynamics):
-    GRAPH = False
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.net(zu_blin_no_const(z, w))
-
-class DynBLinWithConst(Dynamics):
-    GRAPH = False
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.net(zu_blin_with_const(z, w))
-
-class DynSkipBLinNoConst(Dynamics):
-    GRAPH = False
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return z + self.net(zu_blin_no_const(z, w))
-
-class DynSkipBLinWithConst(Dynamics):
-    GRAPH = False
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return z + self.net(zu_blin_with_const(z, w))
-
-
 class DynGraph(Dynamics):
     GRAPH = True
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return self.net(w.g(z), w.ei, w.ew, w.ea)   # G is effectively applied in the net
 
-class DynBLinNoConstGraph(Dynamics):
-    GRAPH = True
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.net(zu_blin_no_const_graph(z, w))
 
-class DynBLinWithConstGraph(Dynamics):
-    GRAPH = True
+class DynBLin(Dynamics):
+    GRAPH = None
+    zu_blin = None
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.net(zu_blin_with_const_graph(z, w))
+        return self.net(self.zu_blin(z, w))
 
-class DynSkipBLinNoConstGraph(Dynamics):
+class DynBLinNoConst(DynBLin):
+    GRAPH = False
+    zu_blin = zu_blin_no_const
+
+class DynBLinWithConst(DynBLin):
+    GRAPH = False
+    zu_blin = zu_blin_with_const
+
+class DynBLinNoConstGraph(DynBLin):
     GRAPH = True
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return z + self.net(zu_blin_no_const_graph(z, w))
+    zu_blin = zu_blin_no_const_graph
 
-class DynSkipBLinWithConstGraph(Dynamics):
+class DynBLinWithConstGraph(DynBLin):
     GRAPH = True
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return z + self.net(zu_blin_with_const_graph(z, w))
+    zu_blin = zu_blin_with_const_graph
 
+
+class DynSkipBLin(Dynamics):
+    GRAPH = None
+    zu_blin = None
+    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        return z + self.net(self.zu_blin(z, w))
+
+class DynSkipBLinNoConst(DynSkipBLin):
+    GRAPH = False
+    zu_blin = zu_blin_no_const
+
+class DynSkipBLinWithConst(DynSkipBLin):
+    GRAPH = False
+    zu_blin = zu_blin_with_const
+
+class DynSkipBLinNoConstGraph(DynSkipBLin):
+    GRAPH = True
+    zu_blin = zu_blin_no_const_graph
+
+class DynSkipBLinWithConstGraph(DynSkipBLin):
+    GRAPH = True
+    zu_blin = zu_blin_with_const_graph
