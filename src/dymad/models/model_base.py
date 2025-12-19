@@ -67,12 +67,15 @@ class ComposedDynamics(nn.Module):
             encoder: Encoder,
             dynamics: Dynamics,
             decoder: Decoder,
-            predict: Callable):
+            predict: Callable | None = None,
+            model_config: dict | None = None):
         super().__init__()
         self.encoder  = encoder
         self.dynamics = dynamics
         self.decoder  = decoder
-        self.predict  = predict
+        if predict is not None:
+            self.predict = predict
+        # else use the default predict method
 
     def diagnostic_info(self) -> str:
         """
