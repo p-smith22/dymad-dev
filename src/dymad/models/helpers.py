@@ -77,13 +77,16 @@ def build_processor(
 
 
 def build_kbf(
-        koopman_dimension, n_total_control_features, const_term,
+        koopman_dimension, n_total_control_features, const_term, blin_term,
         dtype, device):
     if n_total_control_features > 0:
-        if const_term:
-            dyn_dim = koopman_dimension * (n_total_control_features + 1) + n_total_control_features
+        if blin_term:
+            if const_term:
+                dyn_dim = koopman_dimension * (n_total_control_features + 1) + n_total_control_features
+            else:
+                dyn_dim = koopman_dimension * (n_total_control_features + 1)
         else:
-            dyn_dim = koopman_dimension * (n_total_control_features + 1)
+            dyn_dim = koopman_dimension + n_total_control_features
     else:
         dyn_dim = koopman_dimension
     dynamics_net = FlexLinear(dyn_dim, koopman_dimension, bias=False, dtype=dtype, device=device)

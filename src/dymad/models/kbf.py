@@ -1,12 +1,8 @@
 
 import torch
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
-from dymad.models.components import \
-    EncAuto, EncAutoGraph, EncAutoNode, \
-    DecAuto, DecGraph, DecNode, \
-    DynAuto, DynBLinNoConst, DynBLinNoConstGraph, DynBLinWithConst, DynBLinWithConstGraph, \
-    DynGraph
+from dymad.models.components import ENC_MAP, DYN_MAP, DEC_MAP, FZU_MAP
 from dymad.models.helpers import build_autoencoder, build_kbf, build_predictor
 from dymad.models.model_base import ComposedDynamics
 from dymad.io import DynData
@@ -20,7 +16,7 @@ class ComposedDynamicsKBF(ComposedDynamics):
         dz is the output of the dynamics, z_dot for cont-time, z_next for disc-time.
         """
         z = self.encoder(w)
-        return self.dynamics.zu_blin(z, w), z
+        return self.dynamics.zu_cat(z, w), z
 
     def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute linear evaluation, dz, and states, z, for the model.
@@ -35,9 +31,11 @@ class ComposedDynamicsKBF(ComposedDynamics):
 
 
 def build_kbf(
-        encoder_cls, dynamics_cls_list, decoder_cls,
+        model_spec: List,
         model_config: Dict, data_meta: Dict,
-        cont: bool, dtype=None, device=None):
+        dtype=None, device=None):
+    cont, enc_type, fzu_type, dyn_type, dec_type = model_spec
+
     n_total_state_features = data_meta.get('n_total_state_features')
     n_total_control_features = data_meta.get('n_total_control_features')
     n_total_features = data_meta.get('n_total_features')
@@ -50,15 +48,16 @@ def build_kbf(
     if n_total_control_features > 0:
         if predictor_type == "exp":
             raise ValueError("Exponential predictor is not supported for model with control inputs.")
-        if const_term:
-            dynamics_cls = dynamics_cls_list[2]  # Encoder with control, bilinear with const
-        else:
-            dynamics_cls = dynamics_cls_list[1]  # Encoder with control, bilinear without const
+        if fzu_type == "blin":
+            if const_term:
+                fzu_type += '_with_const'  # Encoder with control, bilinear with const
+            else:
+                fzu_type += '_no_const'    # Encoder with control, bilinear without const
     else:
-        dynamics_cls = dynamics_cls_list[0]  # Encoder without control
-    graph_ae = encoder_cls.GRAPH
-    graph_dyn = dynamics_cls.GRAPH
-    assert encoder_cls.GRAPH == decoder_cls.GRAPH, "Encoder/Decoder graph compatibility mismatch."
+        fzu_type = "none"              # Encoder without control
+    graph_ae = ENC_MAP[enc_type].GRAPH
+    graph_dyn = DYN_MAP[dyn_type].GRAPH
+    assert ENC_MAP[enc_type].GRAPH == DEC_MAP[dec_type].GRAPH, "Encoder/Decoder graph compatibility mismatch."
 
     encoder_net, decoder_net, enc_out_dim, dec_inp_dim = build_autoencoder(
         model_config,
@@ -75,64 +74,26 @@ def build_kbf(
     predict = build_predictor(cont, input_order, predictor_type)
 
     model = ComposedDynamicsKBF(
-        encoder  = encoder_cls(encoder_net),
-        dynamics = dynamics_cls(dynamics_net),
-        decoder  = decoder_cls(decoder_net),
+        encoder  = ENC_MAP[enc_type](encoder_net),
+        dynamics = DYN_MAP[dyn_type](dynamics_net),
+        decoder  = DEC_MAP[dec_type](decoder_net),
         predict  = predict)
     model.CONT  = cont
     model.GRAPH = graph_ae or graph_dyn
+    model.dynamics.zu_cat = FZU_MAP[fzu_type]
 
     model.set_linear_weights = dynamics_net.set_weights
 
     return model
 
-def KBF(
-        model_config: Dict, data_meta: Dict,
-        dtype=None, device=None) -> ComposedDynamics:
-    """Koopman Bilinear Form (KBF) model.
 
-    Uses MLP encoder/decoder and KBF operators for dynamics.
-    """
-    return build_kbf(
-        EncAuto, [DynAuto, DynBLinNoConst, DynBLinWithConst], DecAuto,
-        model_config, data_meta,
-        cont = True,
-        dtype=dtype, device=device)
+#        CONT,  encoder,      zu_cat,       dynamics, decoder
+KBF   = [True,  "smpl_auto",  "blin",       "direct", "auto"]
+DKBF  = [False, "smpl_auto",  "blin",       "direct", "auto"]
+GKBF  = [True,  "graph_auto", "graph_blin", "direct", "graph_auto"]
+DGKBF = [False, "graph_auto", "graph_blin", "direct", "graph_auto"]
 
-def DKBF(
-        model_config: Dict, data_meta: Dict,
-        dtype=None, device=None) -> ComposedDynamics:
-    """Discrete-time version of KBF.
-    """
-    return build_kbf(
-        EncAuto, [DynAuto, DynBLinNoConst, DynBLinWithConst], DecAuto,
-        model_config, data_meta,
-        cont = False,
-        dtype=dtype, device=device)
-
-def GKBF(
-        model_config: Dict, data_meta: Dict,
-        dtype=None, device=None) -> ComposedDynamics:
-    """Graph Koopman Bilinear Form (GKBF) model.
-
-    Uses GNN encoder/decoder and KBF operators for dynamics.
-
-    Koopman dimension is defined per node.
-    """
-    return build_kbf(
-        EncAutoGraph, [DynGraph, DynBLinNoConstGraph, DynBLinWithConstGraph], DecGraph,
-        model_config, data_meta,
-        cont = True,
-        dtype=dtype, device=device)
-
-def DGKBF(
-        model_config: Dict, data_meta: Dict,
-        dtype=None, device=None) -> ComposedDynamics:
-    """Discrete-time version of GKBF.
-    """
-    return build_kbf(
-        EncAutoGraph, [DynGraph, DynBLinNoConstGraph, DynBLinWithConstGraph], DecGraph,
-        model_config, data_meta,
-        cont = False,
-        dtype=dtype, device=device)
-
+LTI   = [True,  "smpl_auto",  "cat",        "direct", "auto"]
+DLTI  = [False, "smpl_auto",  "cat",        "direct", "auto"]
+GLTI  = [True,  "graph_auto", "graph_cat",  "direct", "graph_auto"]
+DGLTI = [False, "graph_auto", "graph_cat",  "direct", "graph_auto"]

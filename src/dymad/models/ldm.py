@@ -1,17 +1,16 @@
-from typing import Dict
+from typing import Dict, List
 
-from dymad.models.components import \
-    EncAuto, EncAutoGraph, EncAutoNode, EncCtrl, EncCtrlGraph, EncCtrlNode, \
-    DecAuto, DecGraph, DecNode, \
-    DynAuto, DynGraph
+from dymad.models.components import ENC_MAP, DYN_MAP, DEC_MAP, FZU_MAP
 from dymad.models.helpers import build_autoencoder, build_predictor, build_processor
 from dymad.models.model_base import ComposedDynamics
 
 
 def build_ldm(
-        encoder_cls_list, dynamics_cls, decoder_cls,
+        model_spec: List,
         model_config: Dict, data_meta: Dict,
-        cont: bool, dtype=None, device=None):
+        dtype=None, device=None):
+    cont, enc_type, fzu_type, dyn_type, dec_type = model_spec
+
     n_total_state_features = data_meta.get('n_total_state_features')
     n_total_control_features = data_meta.get('n_total_control_features')
     n_total_features = data_meta.get('n_total_features')
@@ -23,12 +22,12 @@ def build_ldm(
     if n_total_control_features > 0:
         if predictor_type == "exp":
             raise ValueError("Exponential predictor is not supported for model with control inputs.")
-        encoder_cls = encoder_cls_list[1]  # Encoder with control
+        enc_type += '_ctrl'  # Encoder with control
     else:
-        encoder_cls = encoder_cls_list[0]  # Encoder without control
-    graph_ae = encoder_cls.GRAPH
-    graph_dyn = dynamics_cls.GRAPH
-    assert encoder_cls.GRAPH == decoder_cls.GRAPH, "Encoder/Decoder graph compatibility mismatch."
+        enc_type += '_auto'  # Encoder without control
+    graph_ae = ENC_MAP[enc_type].GRAPH
+    graph_dyn = DYN_MAP[dyn_type].GRAPH
+    assert ENC_MAP[enc_type].GRAPH == DEC_MAP[dec_type].GRAPH, "Encoder/Decoder graph compatibility mismatch."
 
     encoder_net, decoder_net, enc_out_dim, dec_inp_dim = build_autoencoder(
         model_config,
@@ -45,83 +44,21 @@ def build_ldm(
     predict = build_predictor(cont, input_order, predictor_type)
 
     model = ComposedDynamics(
-        encoder  = encoder_cls(encoder_net),
-        dynamics = dynamics_cls(dynamics_net),
-        decoder  = decoder_cls(decoder_net),
+        encoder  = ENC_MAP[enc_type](encoder_net),
+        dynamics = DYN_MAP[dyn_type](dynamics_net),
+        decoder  = DEC_MAP[dec_type](decoder_net),
         predict  = predict)
     model.CONT  = cont
     model.GRAPH = graph_ae or graph_dyn
+    model.dynamics.zu_cat = FZU_MAP[fzu_type]
 
     return model
 
-def LDM(
-        model_config: Dict, data_meta: Dict,
-        dtype=None, device=None) -> ComposedDynamics:
-    """Latent Dynamics Model (LDM)
+#        CONT, encoder, zu_cat, dynamics, decoder
+LDM   = [True,  "smpl",  "none", "direct", "auto"]
+DLDM  = [False, "smpl",  "none", "direct", "auto"]
+GLDM  = [True,  "graph", "none", "direct", "graph"]
+DGLDM = [False, "graph", "none", "direct", "graph"]
+LDMG  = [True,  "node",  "none", "graph_direct", "node"]
+DLDMG = [False, "node",  "none", "graph_direct", "node"]
 
-    The encoder, dynamics, and decoder networks are implemented as MLPs.
-    """
-    return build_ldm(
-        [EncAuto, EncCtrl], DynAuto, DecAuto,
-        model_config, data_meta,
-        cont = True,
-        dtype=dtype, device=device)
-
-def DLDM(
-        model_config: Dict, data_meta: Dict,
-        dtype=None, device=None) -> ComposedDynamics:
-    """Discrete-time version of LDM.
-    """
-    return build_ldm(
-        [EncAuto, EncCtrl], DynAuto, DecAuto,
-        model_config, data_meta,
-        cont = False,
-        dtype=dtype, device=device)
-
-def GLDM(
-        model_config: Dict, data_meta: Dict,
-        dtype=None, device=None) -> ComposedDynamics:
-    """Graph Latent Dynamics Model (GLDM).
-
-    Uses GNN for encoder/decoder and MLP for dynamics.
-    """
-    return build_ldm(
-        [EncAutoGraph, EncCtrlGraph], DynAuto, DecGraph,
-        model_config, data_meta,
-        cont = True,
-        dtype=dtype, device=device)
-
-def DGLDM(
-        model_config: Dict, data_meta: Dict,
-        dtype=None, device=None) -> ComposedDynamics:
-    """Discrete-time version of GLDM.
-    """
-    return build_ldm(
-        [EncAutoGraph, EncCtrlGraph], DynAuto, DecGraph,
-        model_config, data_meta,
-        cont = False,
-        dtype=dtype, device=device)
-
-def LDMG(
-        model_config: Dict, data_meta: Dict,
-        dtype=None, device=None) -> ComposedDynamics:
-    """Latent Dynamics Model on Graph (LDMG).
-
-    Uses MLP for node-wise encoder/decoder and GNN for dynamics.
-    """
-    return build_ldm(
-        [EncAutoNode, EncCtrlNode], DynGraph, DecNode,
-        model_config, data_meta,
-        cont = True,
-        dtype=dtype, device=device)
-
-def DLDMG(
-        model_config: Dict, data_meta: Dict,
-        dtype=None, device=None) -> ComposedDynamics:
-    """Discrete-time version of LDMG.
-    """
-    return build_ldm(
-        [EncAutoNode, EncCtrlNode], DynGraph, DecNode,
-        model_config, data_meta,
-        cont = False,
-        dtype=dtype, device=device)

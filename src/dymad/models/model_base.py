@@ -13,15 +13,18 @@ class Encoder(Protocol):
 
 class Dynamics(Protocol):
     GRAPH = None
+    zu_cat = None
     def __init__(self, net: nn.Module): super().__init__(); self.net = net
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.net(z)
+    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor: ...
+    def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]: ...
+    def linear_features(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]: ...
+    def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]: ...
+    def set_linear_weights(self, W: torch.Tensor) -> None: ...
 
 class Decoder(Protocol):
     GRAPH = None
     def __init__(self, net: nn.Module): super().__init__(); self.net = net
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.net(z)
+    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor: ...
 
 
 class ComposedDynamics(nn.Module):
