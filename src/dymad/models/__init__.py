@@ -2,7 +2,6 @@ from dymad.models.collections import \
     DGKBF, DKBF, KBF, GKBF, \
     DGKM, DGKMSK, DKM, DKMSK, GKM, KM, KMM, \
     DGLDM, DLDM, DLDMG, GLDM, LDM, LDMG
-from dymad.models.temp_corr import TemplateCorrAlg, TemplateCorrDif
 from dymad.models.prediction import predict_continuous, predict_continuous_exp, predict_continuous_fenc, \
     predict_continuous_np, predict_discrete, predict_discrete_exp
 
