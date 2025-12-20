@@ -11,15 +11,11 @@ class Encoder(Protocol):
     def __init__(self, net: nn.Module): super().__init__(); self.net = net
     def forward(self, w: DynData) -> torch.Tensor: ...
 
-class Dynamics(Protocol):
+class Processor(Protocol):
     GRAPH = None
     zu_cat = None
     def __init__(self, net: nn.Module): super().__init__(); self.net = net
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor: ...
-    def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]: ...
-    def linear_features(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]: ...
-    def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]: ...
-    def set_linear_weights(self, W: torch.Tensor) -> None: ...
 
 class Decoder(Protocol):
     GRAPH = None
@@ -65,14 +61,14 @@ class ComposedDynamics(nn.Module):
     def __init__(
             self,
             encoder: Encoder,
-            dynamics: Dynamics,
+            processor: Processor,
             decoder: Decoder,
             predict: Callable | None = None,
             model_config: dict | None = None):
         super().__init__()
-        self.encoder  = encoder
-        self.dynamics = dynamics
-        self.decoder  = decoder
+        self.encoder   = encoder
+        self.processor = processor
+        self.decoder   = decoder
         if predict is not None:
             self.predict = predict
         # else use the default predict method
@@ -86,8 +82,11 @@ class ComposedDynamics(nn.Module):
         """
         return f"Model parameters: {sum(p.numel() for p in self.parameters())}\n" + \
                f"Encoder: {self.encoder}\n" + \
-               f"Dynamics: {self.dynamics}\n" + \
+               f"Processor: {self.processor}\n" + \
                f"Decoder: {self.decoder}\n"
+
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        return self.processor(z, w)
 
     def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         z = self.encoder(w)

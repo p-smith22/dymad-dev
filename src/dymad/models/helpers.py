@@ -1,8 +1,9 @@
 import copy
 from typing import Dict, List
 
-from dymad.models.components import ENC_MAP, DYN_MAP, DEC_MAP, FZU_MAP
-from dymad.models.prediction import predict_continuous, predict_continuous_exp, predict_discrete, predict_discrete_exp
+from dymad.models.components import ENC_MAP, DEC_MAP, FZU_MAP, PROC_MAP
+from dymad.models.prediction import predict_continuous, predict_continuous_exp, predict_continuous_np, \
+    predict_discrete, predict_discrete_exp
 from dymad.modules import make_autoencoder
 
 def build_autoencoder(
@@ -50,15 +51,17 @@ def build_autoencoder(
 
 
 def build_predictor(CONT, input_order, predictor_type, n_total_control_features):
-    if predictor_type == "exp":
-        # Does not support inputs
-        assert n_total_control_features == 0, "Exponential predictor does not support control inputs."
     if CONT:
         if predictor_type == "exp":
             # Does not support inputs
+            assert n_total_control_features == 0, "Exponential predictor does not support control inputs."
             def predict(model, x0, w, ts, method, **kwargs):
                 return predict_continuous_exp(
                     model, x0, ts, w, method=method, **kwargs)
+        elif predictor_type == "np":
+            def predict(model, x0, w, ts, method, order=input_order, **kwargs):
+                return predict_continuous_np(
+                    model, x0, ts, w, method=method, order=order, **kwargs)
         else:
             def predict(model, x0, w, ts, method, order=input_order, **kwargs):
                 return predict_continuous(
@@ -95,7 +98,7 @@ def build_model(
         model_spec: List,
         model_config: Dict, data_meta: Dict,
         dtype=None, device=None):
-    cont, enc_type, fzu_type, dyn_type, dec_type, model_cls = model_spec
+    cont, enc_type, fzu_type, proc_type, dec_type, model_cls = model_spec
 
     n_total_state_features = data_meta.get('n_total_state_features')
     n_total_control_features = data_meta.get('n_total_control_features')
@@ -103,10 +106,10 @@ def build_model(
 
     latent_dimension = model_config.get('latent_dimension', 64)
     input_order = model_config.get('input_order', 'cubic')
-    predictor_type = model_config.get('predictor_type', 'ode')
+    prd_type = model_config.get('predictor_type', 'ode')
 
-    graph_ae = ENC_MAP[enc_type].GRAPH
-    graph_dyn = DYN_MAP[dyn_type].GRAPH
+    graph_ae   = ENC_MAP[enc_type].GRAPH
+    graph_proc = PROC_MAP[proc_type].GRAPH
     assert ENC_MAP[enc_type].GRAPH == DEC_MAP[dec_type].GRAPH, "Encoder/Decoder graph compatibility mismatch."
 
     encoder_net, decoder_net, enc_out_dim, dec_inp_dim = build_autoencoder(
@@ -117,22 +120,26 @@ def build_model(
 
     _cfg = copy.deepcopy(model_config)
     _cfg['n_total_control_features'] = n_total_control_features
+    _cfg['n_total_state_features'] = n_total_state_features
+    _cfg['n_total_features'] = n_total_features
     _cfg['enc_out_dim'] = enc_out_dim
     _cfg['latent_dimension'] = latent_dimension
     _cfg['dec_inp_dim'] = dec_inp_dim
-    dynamics_net, enc_type, fzu_func, dec_type = model_cls.build_core(
-        _cfg, enc_type, fzu_type, dec_type, dtype, device, ifgnn = graph_dyn)
+    _cfg['cont'] = cont
+    _cfg['types'] = (enc_type, fzu_type, dec_type, prd_type)
+    processor_net, (enc_type, fzu_func, dec_type, prd_type) = model_cls.build_core(
+        _cfg, dtype, device, ifgnn = graph_proc)
 
     predict = build_predictor(
-        cont, input_order, predictor_type, n_total_control_features)
+        cont, input_order, prd_type, n_total_control_features)
 
     model = model_cls(
-        encoder  = ENC_MAP[enc_type](encoder_net),
-        dynamics = DYN_MAP[dyn_type](dynamics_net),
-        decoder  = DEC_MAP[dec_type](decoder_net),
-        predict  = predict)
+        encoder   = ENC_MAP[enc_type](encoder_net),
+        processor = PROC_MAP[proc_type](processor_net),
+        decoder   = DEC_MAP[dec_type](decoder_net),
+        predict   = predict)
     model.CONT  = cont
-    model.GRAPH = graph_ae or graph_dyn
-    model.dynamics.zu_cat = fzu_func
+    model.GRAPH = graph_ae or graph_proc
+    model.processor.zu_cat = fzu_func
 
     return model

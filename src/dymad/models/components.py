@@ -1,11 +1,18 @@
 import torch
 
 from dymad.io import DynData
-from dymad.models.model_base import Decoder, Dynamics, Encoder
+from dymad.models.model_base import Decoder, Encoder, Processor
 
 # ------------------
 # Encoder modules
 # ------------------
+
+class EncIden(Encoder):
+    """Identity transform."""
+    GRAPH = False
+    AUTO = True
+    def forward(self, w: DynData) -> torch.Tensor:
+        return w.x
 
 class EncSmplAuto(Encoder):
     """Only encodes states."""
@@ -36,6 +43,13 @@ class EncCatCtrl(Encoder):
         return torch.cat(
             [w.x, self.net(torch.cat([w.x, w.u], dim=-1))],
             dim=-1)
+
+class EncGraphIden(Encoder):
+    """Identity transform."""
+    GRAPH = True
+    AUTO = True
+    def forward(self, w: DynData) -> torch.Tensor:
+        return w.xg
 
 class EncGraphAuto(Encoder):
     """Using GNN in EncAuto."""
@@ -68,12 +82,15 @@ class EncNodeCtrl(Encoder):
         return w.G(self.net(xu_cat))    # G is needed for unified data structure
 
 ENC_MAP = {
+    "iden"       : EncIden,
     "smpl_auto"  : EncSmplAuto,
     "smpl_ctrl"  : EncSmplCtrl,
     "cat_auto"   : EncCatAuto,
     "cat_ctrl"   : EncCatCtrl,
+    "graph_iden" : EncGraphIden,
     "graph_auto" : EncGraphAuto,
     "graph_ctrl" : EncGraphCtrl,
+    "node_iden"  : EncIden,       # Effectively same as regular iden
     "node_auto"  : EncNodeAuto,
     "node_ctrl"  : EncNodeCtrl
 }
@@ -82,6 +99,12 @@ ENC_MAP = {
 # ------------------
 # Decoder modules
 # ------------------
+
+class DecIden(Decoder):
+    """Identity transform."""
+    GRAPH = False
+    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        return z
 
 class DecAuto(Decoder):
     """Only decodes states."""
@@ -102,6 +125,7 @@ class DecNode(Decoder):
         return w.G(self.net(w.g(z)))    # G is needed for unified data structure
 
 DEC_MAP = {
+    "iden"  : DecIden,
     "auto"  : DecAuto,
     "graph" : DecGraph,
     "node"  : DecNode
@@ -109,7 +133,7 @@ DEC_MAP = {
 
 
 # ------------------
-# Dynamics modules - features
+# Processor modules - features
 # ------------------
 
 def zu_cat_none(z: torch.Tensor, w: DynData) -> torch.Tensor:
@@ -164,36 +188,36 @@ FZU_MAP = {
 
 
 # ------------------
-# Dynamics modules - dynamics
+# Processor modules - dynamics
 # ------------------
 
-class DynDirect(Dynamics):
-    """Dynamics without control inputs."""
+class ProcDirect(Processor):
+    """Processing without control inputs."""
     GRAPH = False
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return self.net(self.zu_cat(z, w))
 
-class DynSkip(Dynamics):
-    """Generic bilinear dynamics with skip connection."""
+class ProcSkip(Processor):
+    """Processing with skip connection."""
     GRAPH = False
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return z + self.net(self.zu_cat(z, w))
 
-class DynGraphDirect(Dynamics):
-    """Dynamics by GNN without control inputs."""
+class ProcGraphDirect(Processor):
+    """Processing by GNN."""
     GRAPH = True
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return self.net(w.g(self.zu_cat(z, w)), w.ei, w.ew, w.ea)   # G is effectively applied in the net
 
-class DynGraphSkip(Dynamics):
-    """Dynamics by GNN with skip connection without control inputs."""
+class ProcGraphSkip(Processor):
+    """Processing by GNN with skip connection."""
     GRAPH = True
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return z + self.net(w.g(self.zu_cat(z, w)), w.ei, w.ew, w.ea)   # G is effectively applied in the net
 
-DYN_MAP = {
-    "direct"       : DynDirect,
-    "skip"         : DynSkip,
-    "graph_direct" : DynGraphDirect,
-    "graph_skip"   : DynGraphSkip
+PROC_MAP = {
+    "direct"       : ProcDirect,
+    "skip"         : ProcSkip,
+    "graph_direct" : ProcGraphDirect,
+    "graph_skip"   : ProcGraphSkip
 }

@@ -4,7 +4,7 @@ from typing import Callable, Union, Tuple
 
 from dymad.io import DynData
 from dymad.models.helpers import fzu_selector
-from dymad.models.model_base import ComposedDynamics, Decoder, Dynamics, Encoder
+from dymad.models.model_base import ComposedDynamics, Decoder, Encoder, Processor
 from dymad.models.prediction import predict_continuous_fenc
 from dymad.modules import make_krr
 from dymad.numerics import Manifold
@@ -26,11 +26,11 @@ class CD_KMM(ComposedDynamics):
     def __init__(
             self,
             encoder: Encoder,
-            dynamics: Dynamics,
+            processor: Processor,
             decoder: Decoder,
             predict: Callable | None = None,
             model_config: dict | None = None):
-        super().__init__(encoder, dynamics, decoder, predict, model_config)
+        super().__init__(encoder, processor, decoder, predict, model_config)
 
         self._man_opts = model_config.get('manifold', {})
 
@@ -44,9 +44,10 @@ class CD_KMM(ComposedDynamics):
         self.register_buffer(f"_m_extT", torch.empty(0, dtype=torch.float64))
 
     @classmethod
-    def build_core(cls, model_config, enc_type, fzu_type, dec_type, dtype, device, ifgnn=False):
+    def build_core(cls, model_config, dtype, device, ifgnn=False):
         n_total_control_features = model_config.get('n_total_control_features')
         const_term = model_config.get('const_term', True)
+        enc_type, fzu_type, dec_type, prd_type = model_config.get('types')
 
         opts = {
             'type'       : model_config.get('type', 'share'),
@@ -56,11 +57,11 @@ class CD_KMM(ComposedDynamics):
             'dtype'      : dtype,
             'device'     : device
         }
-        dynamics_net = make_krr(**opts)
+        processor_net = make_krr(**opts)
 
         fzu_func = fzu_selector(fzu_type, n_total_control_features, const_term)
 
-        return dynamics_net, enc_type, fzu_func, dec_type
+        return processor_net, (enc_type, fzu_func, dec_type, prd_type)
 
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -75,10 +76,10 @@ class CD_KMM(ComposedDynamics):
             setattr(self, f"_m_{_k}", _v)
 
         # Fit KRR with the manifold constraint
-        self.dynamics.net.set_train_data(inp, out)
-        self.dynamics.net.set_manifold(self._manifold)
-        residual = self.dynamics.net.fit()
-        return self.dynamics.net._alphas, residual
+        self.processor.net.set_train_data(inp, out)
+        self.processor.net.set_manifold(self._manifold)
+        residual = self.processor.net.fit()
+        return self.processor.net._alphas, residual
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
@@ -88,7 +89,7 @@ class CD_KMM(ComposedDynamics):
         """
         First-order Euler step with Normal Correction.
         """
-        dz = self.dynamics(z, w) * dt
+        dz = self.processor(z, w) * dt
         dn = self._manifold._estimate_normal(z.detach().cpu().numpy(), dz.detach().cpu().numpy())
         return z + dz + torch.as_tensor(dn, dtype=self.dtype, device=z.device)
 
@@ -113,7 +114,7 @@ class CD_KMM(ComposedDynamics):
 
         t = {_k : getattr(self, f"_m_{_k}") for _k in M_KEYS}
         self._manifold = Manifold.from_tensors(t)
-        self.dynamics.net._manifold = self._manifold
-        self.dynamics.net.kernel._manifold = self._manifold
+        self.processor.net._manifold = self._manifold
+        self.processor.net.kernel._manifold = self._manifold
 
         return res
