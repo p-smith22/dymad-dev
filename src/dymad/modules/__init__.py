@@ -1,4 +1,4 @@
-from dymad.modules.collection import make_autoencoder, make_kernel, make_krr
+from dymad.modules.collections import make_autoencoder, make_kernel, make_krr
 from dymad.modules.kernel import scaled_cdist, \
     KernelAbstract, KernelOperatorValued, KernelScalarValued, KernelOperatorValuedScalars, \
     KernelScDM, KernelScExp, KernelScRBF, KernelOpSeparable, KernelOpTangent
