@@ -1,29 +1,37 @@
 from dymad.models.collections import \
+    DGLDM, DLDM, DLDMG, GLDM, LDM, LDMG, \
     DGKBF, DKBF, KBF, GKBF, \
-    DGKM, DGKMSK, DKM, DKMSK, GKM, KM, KMM, \
-    DGLDM, DLDM, DLDMG, GLDM, LDM, LDMG
-from dymad.models.prediction import predict_continuous, predict_continuous_exp, predict_continuous_fenc, \
+    DGLTI, DLTI, GLTI, LTI, \
+    DGKM, DGKMSK, DKM, DKMSK, GKM, KM, KMM
+from dymad.models.model_base import ComposedDynamics
+from dymad.models.prediction import \
+    predict_continuous, predict_continuous_exp, predict_continuous_fenc, \
     predict_continuous_np, predict_discrete, predict_discrete_exp
+from dymad.models.recipes_corr import TemplateCorrAlg, TemplateCorrDif
 
 __all__ = [
+    "ComposedDynamics",
     "DGKBF",
     "DGKM",
     "DGKMSK",
     "DGLDM",
+    "DGLTI",
     "DKBF",
     "DKM",
     "DKMSK",
     "DLDM",
     "DLDMG",
+    "DLTI",
     "GKBF",
     "GKM",
     "GLDM",
+    "GLTI",
     "KBF",
     "KM",
     "KMM",
     "LDM",
     "LDMG",
-    "ModelBase",
+    "LTI",
     "TemplateCorrAlg",
     "TemplateCorrDif",
     "predict_continuous",

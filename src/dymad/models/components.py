@@ -115,7 +115,7 @@ DEC_MAP = {
 
 
 # ------------------
-# Processor modules - features
+# Dynamics modules - features
 # ------------------
 
 def zu_cat_none(z: torch.Tensor, w: DynData) -> torch.Tensor:
@@ -170,7 +170,7 @@ FZU_MAP = {
 
 
 # ------------------
-# Processor modules - dynamics
+# Dynamics modules - processors
 # ------------------
 
 class ProcDirect(Processor):

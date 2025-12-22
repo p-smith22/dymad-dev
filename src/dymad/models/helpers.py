@@ -98,7 +98,7 @@ def build_model(
         model_spec: List,
         model_config: Dict, data_meta: Dict,
         dtype=None, device=None):
-    cont, enc_type, fzu_type, proc_type, dec_type, model_cls = model_spec
+    cont, graph, enc_type, fzu_type, proc_type, dec_type, model_cls = model_spec
 
     n_total_state_features = data_meta.get('n_total_state_features')
     n_total_control_features = data_meta.get('n_total_control_features')
@@ -111,6 +111,7 @@ def build_model(
     graph_ae   = ENC_MAP[enc_type].GRAPH
     graph_proc = PROC_MAP[proc_type].GRAPH
     assert ENC_MAP[enc_type].GRAPH == DEC_MAP[dec_type].GRAPH, "Encoder/Decoder graph compatibility mismatch."
+    assert graph == (graph_ae or graph_proc), f"Model spec graph compatibility mismatch, got {graph}/{graph_ae or graph_proc}."
 
     encoder_net, decoder_net, enc_out_dim, dec_inp_dim = build_autoencoder(
         model_config,
@@ -139,7 +140,7 @@ def build_model(
         decoder   = DEC_MAP[dec_type](decoder_net),
         predict   = predict)
     model.CONT  = cont
-    model.GRAPH = graph_ae or graph_proc
+    model.GRAPH = graph
     model.processor.zu_cat = fzu_func
 
     return model

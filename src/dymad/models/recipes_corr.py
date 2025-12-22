@@ -3,21 +3,21 @@ import torch
 from typing import Dict, Union, Tuple
 
 from dymad.io import DynData
-from dymad.models.model_base import ModelBase
+from dymad.models.model_base import ComposedDynamics
 from dymad.models.prediction import predict_continuous_np, predict_discrete_exp
-from dymad.modules import make_autoencoder, MLP
+from dymad.modules import MLP
 
-class TemplateCorrAlg(ModelBase):
+class TemplateCorrAlg(ComposedDynamics):
     """
     Template class for dynamics modeling with algebraic corrections.
     Consider a base dynamics model with parameters p
 
-    - x_dot/x_next = Base_Dynamics(x, u, p)
+    - x' = Base_Dynamics(x, u, p)
 
     The corrected dynamics model with residual force f is given by
 
     - f = Residual_Force(x, u)
-    - x_dot/x_next = Base_Dynamics_With_Correction(x, u, f, p)
+    - x' = Base_Dynamics_With_Correction(x, u, f, p)
 
     Here the user needs to provide Base_Dynamics_With_Correction that takes
     the residual force as an additional input.
@@ -140,23 +140,23 @@ class TemplateCorrAlg(ModelBase):
             return predict_continuous_np(self, x0, ts, w, method=method, order=self.input_order, **kwargs)
         return predict_discrete_exp(self, x0, ts, w, **kwargs)
 
-class TemplateCorrDif(ModelBase):
+class TemplateCorrDif(ComposedDynamics):
     """
     Template class for dynamics modeling with differential corrections.
     Consider a base dynamics model with parameters p
 
-    - x_dot/x_next = Base_Dynamics(x, u, p)
+    - x' = Base_Dynamics(x, u, p)
 
     Add a hidden dynamics state s for correction
 
-    - s_dot/s_next = Hidden_Dynamics(x, s, u)
+    - s' = Hidden_Dynamics(x, s, u)
     - f = Residual_Force(x, s, u)
 
     Then full dynamics is
 
     - z = [x, Encoder(x,u)]
-    - x_dot/x_next = Base_Dynamics_With_Correction(x, u, f, p)
-    - s_dot/s_next = Hidden_Dynamics(z=[x, s], u)
+    - x' = Base_Dynamics_With_Correction(x, u, f, p)
+    - s' = Hidden_Dynamics(z=[x, s], u)
     - f = Residual_Force(z=[x, s], u)
     - x_hat = Decoder(z=[x, s])
 
