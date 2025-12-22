@@ -11,7 +11,7 @@ class PredefinedModel:
     GRAPH: bool
     encoder: str
     feature: str
-    processor: str
+    dynamics: str
     decoder: str
     model_cls: object
 
@@ -23,21 +23,21 @@ class PredefinedModel:
             self.GRAPH,
             self.encoder,
             self.feature,
-            self.processor,
+            self.dynamics,
             self.decoder,
             self.model_cls
         ]
         return build_model(model_spec, model_config, data_meta, dtype, device)
 
-#                       CONT, GRAPH, encoder, feature, processor, decoder, model_cls
-LDM   = PredefinedModel(True,  False, "smpl",  "none", "direct",  "auto",  CD_LDM)
-DLDM  = PredefinedModel(False, False, "smpl",  "none", "direct",  "auto",  CD_LDM)
-GLDM  = PredefinedModel(True,  True,  "smpl",  "none", "direct",  "auto",  CD_LDM)
-DGLDM = PredefinedModel(False, True,  "smpl",  "none", "direct",  "auto",  CD_LDM)
-LDMG  = PredefinedModel(True,  True,  "smpl",  "none", "direct",  "auto",  CD_LDM)
-DLDMG = PredefinedModel(False, True,  "smpl",  "none", "direct",  "auto",  CD_LDM)
+#                       CONT,  GRAPH, encoder, feature, dynamics, decoder, model_cls
+LDM   = PredefinedModel(True,  False, "smpl",  "none",  "direct", "auto",  CD_LDM)
+DLDM  = PredefinedModel(False, False, "smpl",  "none",  "direct", "auto",  CD_LDM)
+GLDM  = PredefinedModel(True,  True,  "smpl",  "none",  "direct", "auto",  CD_LDM)
+DGLDM = PredefinedModel(False, True,  "smpl",  "none",  "direct", "auto",  CD_LDM)
+LDMG  = PredefinedModel(True,  True,  "smpl",  "none",  "direct", "auto",  CD_LDM)
+DLDMG = PredefinedModel(False, True,  "smpl",  "none",  "direct", "auto",  CD_LDM)
 
-#                       CONT,  GRAPH, encoder,      feature,     processor, decoder,      model_cls
+#                       CONT,  GRAPH, encoder,      feature,      dynamics, decoder,      model_cls
 KBF   = PredefinedModel(True,  False, "smpl_auto",  "blin",       "direct", "auto",       CD_LFM)
 DKBF  = PredefinedModel(False, False, "smpl_auto",  "blin",       "direct", "auto",       CD_LFM)
 GKBF  = PredefinedModel(True,  True,  "graph_auto", "graph_blin", "direct", "graph_auto", CD_LFM)
@@ -48,7 +48,7 @@ DLTI  = PredefinedModel(False, False, "smpl_auto",  "cat",        "direct", "aut
 GLTI  = PredefinedModel(True,  True,  "graph_auto", "graph_cat",  "direct", "graph_auto", CD_LFM)
 DGLTI = PredefinedModel(False, True,  "graph_auto", "graph_cat",  "direct", "graph_auto", CD_LFM)
 
-#                        CONT,  GRAPH, encoder,      feature,     processor, decoder,      model_cls
+#                        CONT,  GRAPH, encoder,      feature,      dynamics, decoder,      model_cls
 KM     = PredefinedModel(True,  False, "smpl_auto",  "blin",       "direct", "auto",       CD_KM)
 KMM    = PredefinedModel(True,  False, "smpl_auto",  "blin",       "direct", "auto",       CD_KMM)
 DKM    = PredefinedModel(False, False, "smpl_auto",  "blin",       "direct", "auto",       CD_KM)

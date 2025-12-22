@@ -15,9 +15,9 @@ class Encoder(nn.Module):
     def forward(self, w: DynData) -> torch.Tensor:
         raise NotImplementedError("This is the base class.")
 
-class Processor(nn.Module):
+class Dynamics(nn.Module):
     GRAPH = None
-    zu_cat = None
+    features = None
     def __init__(self, net: nn.Module):
         super().__init__()
         self.net = net
@@ -41,23 +41,27 @@ class ComposedDynamics(nn.Module):
 
     - x: Physical state/observation space; can be time-delayed
     - u: Control input; can be time-delayed
-    - z: Embedding (latent) space.
+    - z: Embedded space, where dynamics is learned.
+    - s: Features for dynamics, composing z and u as needed
+    - r: Output of processor, might be lower dimensional than z
+    - z': next step of z (discrete-time) or z_dot (continuous-time)
 
-    Discrete-time model:
-
-    - z_k = encoder(x_k, u_k)
-    - z_{k+1} = dynamics(z_k, u_k)
-    - x_{k+1} = decoder(z_{k+1})
-
-    Continuous-time model:
+    Full model:
 
     - z = encoder(x, u)
-    - \dot{z} = dynamics(z, u)
+    - z' = dynamics(z, u)
     - x = decoder(z)
+
+    Details in dynamics:
+
+    - s = features(z, u); e.g., concatenation of linear or bilinear terms
+    - r = processor(s, u); e.g., NN or linear transform
+    - z' = composition(s, r); Direct or Skip-Connection
 
     Linear training assumes:
 
-    - linear_targets = dynamics = W @ linear_features(z, u)
+    - processor is linear
+    - linear_targets = r = W @ features(z, u)
     - and fits W only
 
     Signature for predict:
@@ -71,17 +75,21 @@ class ComposedDynamics(nn.Module):
     def __init__(
             self,
             encoder: Encoder,
-            processor: Processor,
+            dynamics: Dynamics,
             decoder: Decoder,
             predict: Tuple[Callable, str] | None = None,
             model_config: Dict | None = None):
         super().__init__()
-        self.encoder   = encoder
-        self.processor = processor
-        self.decoder   = decoder
+        self.encoder  = encoder
+        self.dynamics = dynamics
+        self.decoder  = decoder
         if predict is not None:
             self._predict, self.input_order = predict
         # else use the default predict method
+
+    @classmethod
+    def build_core(cls, model_config, dtype, device, ifgnn=False):
+        raise NotImplementedError("This is the base class.")
 
     def diagnostic_info(self) -> str:
         """
@@ -94,9 +102,6 @@ class ComposedDynamics(nn.Module):
                f"Encoder: {self.encoder}\n" + \
                f"Processor: {self.processor}\n" + \
                f"Decoder: {self.decoder}\n"
-
-    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.processor(z, w)
 
     def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         z = self.encoder(w)

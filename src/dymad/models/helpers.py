@@ -1,7 +1,7 @@
 import copy
 from typing import Dict, List
 
-from dymad.models.components import ENC_MAP, DEC_MAP, FZU_MAP, PROC_MAP
+from dymad.models.components import ENC_MAP, DEC_MAP, FZU_MAP, DYN_MAP
 from dymad.models.prediction import predict_continuous, predict_continuous_exp, predict_continuous_np, \
     predict_discrete, predict_discrete_exp
 from dymad.modules import make_autoencoder
@@ -92,7 +92,7 @@ def build_model(
         model_spec: List,
         model_config: Dict, data_meta: Dict,
         dtype=None, device=None):
-    cont, graph, _enc_type, fzu_type, proc_type, dec_type, model_cls = model_spec
+    cont, graph, _enc_type, fzu_type, dyn_type, dec_type, model_cls = model_spec
 
     n_total_state_features = data_meta.get('n_total_state_features')
     n_total_control_features = data_meta.get('n_total_control_features')
@@ -104,9 +104,9 @@ def build_model(
 
     enc_type = _resolve_encoder_type(_enc_type, n_total_control_features)
     graph_ae   = ENC_MAP[enc_type].GRAPH
-    graph_proc = PROC_MAP[proc_type].GRAPH
+    graph_dyn = DYN_MAP[dyn_type].GRAPH
     assert ENC_MAP[enc_type].GRAPH == DEC_MAP[dec_type].GRAPH, "Encoder/Decoder graph compatibility mismatch."
-    assert graph == (graph_ae or graph_proc), f"Model spec graph compatibility mismatch, got {graph}/{graph_ae or graph_proc}."
+    assert graph == (graph_ae or graph_dyn), f"Model spec graph compatibility mismatch, got {graph}/{graph_ae or graph_dyn}."
 
     encoder_net, decoder_net, enc_out_dim, dec_inp_dim = build_autoencoder(
         model_config,
@@ -124,18 +124,18 @@ def build_model(
     _cfg['cont'] = cont
     _cfg['types'] = (enc_type, fzu_type, dec_type, prd_type)
     processor_net, (enc_type, fzu_func, dec_type, prd_type) = model_cls.build_core(
-        _cfg, dtype, device, ifgnn = graph_proc)
+        _cfg, dtype, device, ifgnn = graph_dyn)
 
     predict = build_predictor(
         cont, input_order, prd_type, n_total_control_features)
 
     model = model_cls(
         encoder   = ENC_MAP[enc_type](encoder_net),
-        processor = PROC_MAP[proc_type](processor_net),
+        processor = DYN_MAP[dyn_type](processor_net),
         decoder   = DEC_MAP[dec_type](decoder_net),
         predict   = predict)
     model.CONT  = cont
     model.GRAPH = graph
-    model.processor.zu_cat = fzu_func
+    model.processor.feature = fzu_func
 
     return model

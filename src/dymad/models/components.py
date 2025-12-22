@@ -1,7 +1,7 @@
 import torch
 
 from dymad.io import DynData
-from dymad.models.model_base import Decoder, Encoder, Processor
+from dymad.models.model_base import Decoder, Dynamics, Encoder
 
 # ------------------
 # Encoder modules
@@ -124,39 +124,33 @@ def zu_cat_none(z: torch.Tensor, w: DynData) -> torch.Tensor:
 
 def zu_cat_smpl(z: torch.Tensor, w: DynData) -> torch.Tensor:
     """Simple concatenation of z and u."""
-    cat = torch.cat([z, w.u], dim=-1)
-    return cat
+    return torch.cat([z, w.u], dim=-1)
 
 def zu_blin_no_const(z: torch.Tensor, w: DynData) -> torch.Tensor:
     """Compute bilinear features without constant term."""
     z_u = (z.unsqueeze(-1) * w.u.unsqueeze(-2)).reshape(*z.shape[:-1], -1)
-    cat = torch.cat([z, z_u], dim=-1)
-    return cat
+    return torch.cat([z, z_u], dim=-1)
 
 def zu_blin_with_const(z: torch.Tensor, w: DynData) -> torch.Tensor:
     """Compute bilinear features with constant term."""
     z_u = (z.unsqueeze(-1) * w.u.unsqueeze(-2)).reshape(*z.shape[:-1], -1)
-    cat = torch.cat([z, z_u, w.u], dim=-1)
-    return cat
+    return torch.cat([z, z_u, w.u], dim=-1)
 
 def zu_cat_smpl_graph(z: torch.Tensor, w: DynData) -> torch.Tensor:
     """Simple concatenation of z and u on graph."""
-    cat = torch.cat([z, w.ug], dim=-1)
-    return cat
+    return torch.cat([z, w.ug], dim=-1)
 
 def zu_blin_no_const_graph(z: torch.Tensor, w: DynData) -> torch.Tensor:
     """Compute bilinear features without constant term for graph data."""
     u_reshaped = w.ug
     z_u = (z.unsqueeze(-1) * u_reshaped.unsqueeze(-2)).reshape(*z.shape[:-1], -1)
-    cat = torch.cat([z, z_u], dim=-1)
-    return cat
+    return torch.cat([z, z_u], dim=-1)
 
 def zu_blin_with_const_graph(z: torch.Tensor, w: DynData) -> torch.Tensor:
     """Compute bilinear features with constant term for graph data."""
     u_reshaped = w.ug
     z_u = (z.unsqueeze(-1) * u_reshaped.unsqueeze(-2)).reshape(*z.shape[:-1], -1)
-    cat = torch.cat([z, z_u, u_reshaped], dim=-1)
-    return cat
+    return torch.cat([z, z_u, u_reshaped], dim=-1)
 
 FZU_MAP = {
     "none"                  : zu_cat_none,
@@ -170,36 +164,36 @@ FZU_MAP = {
 
 
 # ------------------
-# Dynamics modules - processors
+# Dynamics modules
 # ------------------
 
-class ProcDirect(Processor):
+class DynDirect(Dynamics):
     """Processing without control inputs."""
     GRAPH = False
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.net(self.zu_cat(z, w))
+        return self.net(self.features(z, w))
 
-class ProcSkip(Processor):
+class DynSkip(Dynamics):
     """Processing with skip connection."""
     GRAPH = False
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return z + self.net(self.zu_cat(z, w))
+        return z + self.net(self.features(z, w))
 
-class ProcGraphDirect(Processor):
+class DynGraphDirect(Dynamics):
     """Processing by GNN."""
     GRAPH = True
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.net(w.g(self.zu_cat(z, w)), w.ei, w.ew, w.ea)   # G is effectively applied in the net
+        return self.net(w.g(self.features(z, w)), w.ei, w.ew, w.ea)   # G is effectively applied in the net
 
-class ProcGraphSkip(Processor):
+class DynGraphSkip(Dynamics):
     """Processing by GNN with skip connection."""
     GRAPH = True
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return z + self.net(w.g(self.zu_cat(z, w)), w.ei, w.ew, w.ea)   # G is effectively applied in the net
+        return z + self.net(w.g(self.features(z, w)), w.ei, w.ew, w.ea)   # G is effectively applied in the net
 
-PROC_MAP = {
-    "direct"       : ProcDirect,
-    "skip"         : ProcSkip,
-    "graph_direct" : ProcGraphDirect,
-    "graph_skip"   : ProcGraphSkip
+DYN_MAP = {
+    "direct"       : DynDirect,
+    "skip"         : DynSkip,
+    "graph_direct" : DynGraphDirect,
+    "graph_skip"   : DynGraphSkip
 }
