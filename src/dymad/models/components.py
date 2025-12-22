@@ -28,22 +28,6 @@ class EncSmplCtrl(Encoder):
     def forward(self, w: DynData) -> torch.Tensor:
         return self.net(torch.cat([w.x, w.u], dim=-1))
 
-class EncCatAuto(Encoder):
-    """Concatenates states with encoded states."""
-    GRAPH = False
-    AUTO = True
-    def forward(self, w: DynData) -> torch.Tensor:
-        return torch.cat([w.x, self.net(w.x)], dim=-1)
-
-class EncCatCtrl(Encoder):
-    """Concatenates states with encoded states and controls."""
-    GRAPH = False
-    AUTO = False
-    def forward(self, w: DynData) -> torch.Tensor:
-        return torch.cat(
-            [w.x, self.net(torch.cat([w.x, w.u], dim=-1))],
-            dim=-1)
-
 class EncGraphIden(Encoder):
     """Identity transform."""
     GRAPH = True
@@ -85,8 +69,6 @@ ENC_MAP = {
     "iden"       : EncIden,
     "smpl_auto"  : EncSmplAuto,
     "smpl_ctrl"  : EncSmplCtrl,
-    "cat_auto"   : EncCatAuto,
-    "cat_ctrl"   : EncCatCtrl,
     "graph_iden" : EncGraphIden,
     "graph_auto" : EncGraphAuto,
     "graph_ctrl" : EncGraphCtrl,
