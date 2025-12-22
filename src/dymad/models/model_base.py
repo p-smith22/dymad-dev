@@ -1,26 +1,36 @@
+import numpy as np
 import torch
 import torch.nn as nn
-from typing import Callable, Protocol, Tuple
+from typing import Callable, Dict, Tuple, Union
 
 from dymad.io import DynData
 
 
-class Encoder(Protocol):
+class Encoder(nn.Module):
     GRAPH = None
     AUTO = None
-    def __init__(self, net: nn.Module): super().__init__(); self.net = net
-    def forward(self, w: DynData) -> torch.Tensor: ...
+    def __init__(self, net: nn.Module):
+        super().__init__()
+        self.net = net
+    def forward(self, w: DynData) -> torch.Tensor:
+        raise NotImplementedError("This is the base class.")
 
-class Processor(Protocol):
+class Processor(nn.Module):
     GRAPH = None
     zu_cat = None
-    def __init__(self, net: nn.Module): super().__init__(); self.net = net
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor: ...
+    def __init__(self, net: nn.Module):
+        super().__init__()
+        self.net = net
+    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        raise NotImplementedError("This is the base class.")
 
-class Decoder(Protocol):
+class Decoder(nn.Module):
     GRAPH = None
-    def __init__(self, net: nn.Module): super().__init__(); self.net = net
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor: ...
+    def __init__(self, net: nn.Module):
+        super().__init__()
+        self.net = net
+    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        raise NotImplementedError("This is the base class.")
 
 
 class ComposedDynamics(nn.Module):
@@ -63,14 +73,14 @@ class ComposedDynamics(nn.Module):
             encoder: Encoder,
             processor: Processor,
             decoder: Decoder,
-            predict: Callable | None = None,
-            model_config: dict | None = None):
+            predict: Tuple[Callable, str] | None = None,
+            model_config: Dict | None = None):
         super().__init__()
         self.encoder   = encoder
         self.processor = processor
         self.decoder   = decoder
         if predict is not None:
-            self.predict = predict
+            self._predict, self.input_order = predict
         # else use the default predict method
 
     def diagnostic_info(self) -> str:
@@ -105,3 +115,7 @@ class ComposedDynamics(nn.Module):
 
     def set_linear_weights(self, W: torch.Tensor) -> None:
         raise NotImplementedError("This is the base class.")
+
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],
+                method= 'dopri5', **kwargs) -> torch.Tensor:
+        return self._predict(self, x0, ts, w, method=method, order=self.input_order, **kwargs)

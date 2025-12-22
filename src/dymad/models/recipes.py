@@ -11,7 +11,6 @@ class CD_LDM(ComposedDynamics):
 
     @classmethod
     def build_core(cls, model_config, dtype, device, ifgnn=False):
-        n_total_control_features = model_config.get('n_total_control_features')
         enc_out_dim = model_config.get('enc_out_dim')
         latent_dimension = model_config.get('latent_dimension')
         dec_inp_dim = model_config.get('dec_inp_dim')
@@ -40,10 +39,6 @@ class CD_LDM(ComposedDynamics):
             **opts
         )
 
-        if n_total_control_features > 0:
-            enc_type += '_ctrl'  # Encoder with control
-        else:
-            enc_type += '_auto'  # Encoder without control
         fzu_func = FZU_MAP[fzu_type]
 
         return processor_net, (enc_type, fzu_func, dec_type, prd_type)

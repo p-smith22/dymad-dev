@@ -55,29 +55,16 @@ def build_predictor(CONT, input_order, predictor_type, n_total_control_features)
         if predictor_type == "exp":
             # Does not support inputs
             assert n_total_control_features == 0, "Exponential predictor does not support control inputs."
-            def predict(model, x0, w, ts, method, **kwargs):
-                return predict_continuous_exp(
-                    model, x0, ts, w, method=method, **kwargs)
+            return predict_continuous_exp, None
         elif predictor_type == "np":
-            def predict(model, x0, w, ts, method, order=input_order, **kwargs):
-                return predict_continuous_np(
-                    model, x0, ts, w, method=method, order=order, **kwargs)
+            return predict_continuous_np, input_order
         else:
-            def predict(model, x0, w, ts, method, order=input_order, **kwargs):
-                return predict_continuous(
-                    model, x0, ts, w, method=method, order=order, **kwargs)
+            return predict_continuous, input_order
     else:
         if predictor_type == "exp":
-            # Does not support inputs
-            def predict(model, x0, w, ts, method, **kwargs):
-                return predict_discrete_exp(
-                    model, x0, ts, w, method=method, **kwargs)
+            return predict_discrete_exp, input_order
         else:
-            def predict(model, x0, w, ts, method, order=input_order, **kwargs):
-                return predict_discrete(
-                    model, x0, ts, w, method=method, order=order, **kwargs)
-
-    return predict
+            return predict_discrete, input_order
 
 
 def fzu_selector(fzu_type, n_total_control_features, const_term):
@@ -94,11 +81,18 @@ def fzu_selector(fzu_type, n_total_control_features, const_term):
     return FZU_MAP[_type]
 
 
+def _resolve_encoder_type(enc_type: str, n_total_control_features: int) -> str:
+    if enc_type.endswith("_auto") or enc_type.endswith("_ctrl"):
+        return enc_type
+    suffix = "_ctrl" if n_total_control_features > 0 else "_auto"
+    return f"{enc_type}{suffix}"
+
+
 def build_model(
         model_spec: List,
         model_config: Dict, data_meta: Dict,
         dtype=None, device=None):
-    cont, graph, enc_type, fzu_type, proc_type, dec_type, model_cls = model_spec
+    cont, graph, _enc_type, fzu_type, proc_type, dec_type, model_cls = model_spec
 
     n_total_state_features = data_meta.get('n_total_state_features')
     n_total_control_features = data_meta.get('n_total_control_features')
@@ -108,6 +102,7 @@ def build_model(
     input_order = model_config.get('input_order', 'cubic')
     prd_type = model_config.get('predictor_type', 'ode')
 
+    enc_type = _resolve_encoder_type(_enc_type, n_total_control_features)
     graph_ae   = ENC_MAP[enc_type].GRAPH
     graph_proc = PROC_MAP[proc_type].GRAPH
     assert ENC_MAP[enc_type].GRAPH == DEC_MAP[dec_type].GRAPH, "Encoder/Decoder graph compatibility mismatch."
