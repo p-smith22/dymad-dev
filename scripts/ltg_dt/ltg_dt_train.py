@@ -55,7 +55,7 @@ cases = [
 # IDX = [1, 2]
 # IDX = [0, 1, 2, 3, 4]
 # IDX = [2, 3]
-IDX = [1]
+IDX = [5]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0
