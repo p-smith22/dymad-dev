@@ -107,6 +107,7 @@ class ComposedDynamics(nn.Module):
         """
         return f"Model parameters: {sum(p.numel() for p in self.parameters())}\n" + \
                f"Encoder: {self.encoder}\n" + \
+               f"Features: {self.dynamics.features.__name__}\n" + \
                f"Dynamics: {self.dynamics}\n" + \
                f"Decoder: {self.decoder}\n"
 

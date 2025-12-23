@@ -1,10 +1,10 @@
 import numpy as np
 import torch
-from typing import Callable, Dict, Union, Tuple
+from typing import Union, Tuple
 
 from dymad.io import DynData
 from dymad.models.helpers import fzu_selector, get_dims
-from dymad.models.model_base import ComposedDynamics, Decoder, Dynamics, Encoder
+from dymad.models.model_base import ComposedDynamics
 from dymad.models.prediction import predict_continuous_fenc
 from dymad.modules import FlexLinear, GNN, make_krr, MLP
 from dymad.numerics import Manifold

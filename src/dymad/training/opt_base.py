@@ -90,7 +90,6 @@ class OptBase:
         # logging summary
         logger.info("Opt Initialized:")
         logger.info(f"Model name: {self.model_name}")
-        logger.info(self.model)
         logger.info(self.model.diagnostic_info())
         logger.info("Optimization settings:")
         logger.info(self.optimizer)
