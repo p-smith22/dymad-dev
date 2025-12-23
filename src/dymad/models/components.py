@@ -1,4 +1,5 @@
 import torch
+from typing import Tuple
 
 from dymad.io import DynData
 from dymad.models.model_base import Decoder, Dynamics, Encoder
@@ -9,58 +10,42 @@ from dymad.models.model_base import Decoder, Dynamics, Encoder
 
 class EncIden(Encoder):
     """Identity transform."""
-    GRAPH = False
-    AUTO = True
     def forward(self, w: DynData) -> torch.Tensor:
         return w.x
 
 class EncSmplAuto(Encoder):
     """Only encodes states."""
-    GRAPH = False
-    AUTO = True
     def forward(self, w: DynData) -> torch.Tensor:
         return self.net(w.x)
 
 class EncSmplCtrl(Encoder):
     """Encodes states and controls."""
-    GRAPH = False
-    AUTO = False
     def forward(self, w: DynData) -> torch.Tensor:
         return self.net(torch.cat([w.x, w.u], dim=-1))
 
 class EncGraphIden(Encoder):
     """Identity transform."""
-    GRAPH = True
-    AUTO = True
     def forward(self, w: DynData) -> torch.Tensor:
         return w.xg
 
 class EncGraphAuto(Encoder):
     """Using GNN in EncAuto."""
-    GRAPH = True
-    AUTO = True
     def forward(self, w: DynData) -> torch.Tensor:
         return w.g(self.net(w.xg, w.ei, w.ew, w.ea))
 
 class EncGraphCtrl(Encoder):
     """Using GNN in EncCtrl."""
-    GRAPH = True
-    AUTO = False
     def forward(self, w: DynData) -> torch.Tensor:
         xu_cat = torch.cat([w.xg, w.ug], dim=-1)
         return w.g(self.net(xu_cat, w.ei, w.ew, w.ea))
 
 class EncNodeAuto(Encoder):
     """Using EncAuto for each node of graph."""
-    GRAPH = True
-    AUTO = True
     def forward(self, w: DynData) -> torch.Tensor:
         return w.G(self.net(w.xg))      # G is needed for unified data structure
 
 class EncNodeCtrl(Encoder):
     """Using EncCtrl for each node of graph."""
-    GRAPH = True
-    AUTO = False
     def forward(self, w: DynData) -> torch.Tensor:
         xu_cat = torch.cat([w.xg, w.ug], dim=-1)
         return w.G(self.net(xu_cat))    # G is needed for unified data structure
@@ -84,25 +69,21 @@ ENC_MAP = {
 
 class DecIden(Decoder):
     """Identity transform."""
-    GRAPH = False
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return z
 
 class DecAuto(Decoder):
     """Only decodes states."""
-    GRAPH = False
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return self.net(z)
 
 class DecGraph(Decoder):
     """Decode by GNN."""
-    GRAPH = True
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return self.net(z, w.ei, w.ew, w.ea)
 
 class DecNode(Decoder):
     """Using DecAuto for each node of graph."""
-    GRAPH = True
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return w.G(self.net(w.g(z)))    # G is needed for unified data structure
 
@@ -169,25 +150,21 @@ FZU_MAP = {
 
 class DynDirect(Dynamics):
     """Processing without control inputs."""
-    GRAPH = False
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return self.net(self.features(z, w))
 
 class DynSkip(Dynamics):
     """Processing with skip connection."""
-    GRAPH = False
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return z + self.net(self.features(z, w))
 
 class DynGraphDirect(Dynamics):
     """Processing by GNN."""
-    GRAPH = True
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return self.net(w.g(self.features(z, w)), w.ei, w.ew, w.ea)   # G is effectively applied in the net
 
 class DynGraphSkip(Dynamics):
     """Processing by GNN with skip connection."""
-    GRAPH = True
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return z + self.net(w.g(self.features(z, w)), w.ei, w.ew, w.ea)   # G is effectively applied in the net
 
@@ -196,4 +173,37 @@ DYN_MAP = {
     "skip"         : DynSkip,
     "graph_direct" : DynGraphDirect,
     "graph_skip"   : DynGraphSkip
+}
+
+
+# ------------------
+# Dynamics modules - linear features
+# ------------------
+
+def linear_eval_smpl(mdl, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Compute linear evaluation, dz, and states, z, for the model."""
+    z = mdl.encoder(w)
+    z_dot = mdl.dynamics(z, w)
+    return z_dot, z
+
+def linear_features_smpl(mdl, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Compute linear features, f, and outputs, dz, for the model."""
+    z = mdl.encoder(w)
+    return mdl.dynamics.features(z, w), z
+
+def linear_eval_graph(mdl, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Compute linear evaluation, dz, and states, z, for the model."""
+    z = mdl.encoder(w)
+    z_dot = mdl.dynamics(z, w)
+    return z_dot.permute(0, 2, 1, 3), z.permute(0, 2, 1, 3)
+
+def linear_features_graph(mdl, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Compute linear features, f, and outputs, dz, for the model."""
+    z = mdl.encoder(w)
+    f = mdl.dynamics.features(z, w)
+    return f.permute(0, 2, 1, 3), z.permute(0, 2, 1, 3)
+
+LIN_MAP = {
+    "smpl"  : (linear_eval_smpl, linear_features_smpl),
+    "graph" : (linear_eval_graph, linear_features_graph)
 }

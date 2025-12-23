@@ -50,12 +50,12 @@ cases = [
     {"name": "kbf_node", "model" : GKBF, "trainer": NODETrainer,     "config": 'ltg_kbf_node.yaml'},
     {"name": "kbf_ln",   "model" : GKBF, "trainer": LinearTrainer,   "config": 'ltg_kbf_ln.yaml'},
     {"name": "lti_wf",   "model" : GLTI, "trainer": WeakFormTrainer, "config": 'ltg_lti_wf.yaml'},
-    {"name": "lti_ln",   "model" : GLTI, "trainer": LinearTrainer, "config": 'ltg_lti_ln.yaml'},
+    {"name": "lti_ln",   "model" : GLTI, "trainer": LinearTrainer,   "config": 'ltg_lti_ln.yaml'},
     {"name": "km_ln",    "model" : GKM,  "trainer": LinearTrainer,   "config": 'ltg_km_ln.yaml'}
 ]
 # IDX = [0, 1]
 # IDX = [2, 3]
-IDX = [6]
+IDX = [4]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0

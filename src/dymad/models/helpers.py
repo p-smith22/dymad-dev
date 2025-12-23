@@ -2,7 +2,7 @@ import copy
 import logging
 from typing import Dict, List
 
-from dymad.models.components import ENC_MAP, DEC_MAP, FZU_MAP, DYN_MAP
+from dymad.models.components import ENC_MAP, DEC_MAP, FZU_MAP, DYN_MAP, LIN_MAP
 from dymad.models.prediction import predict_continuous, predict_continuous_exp, predict_continuous_np, \
     predict_discrete, predict_discrete_exp
 from dymad.modules import make_autoencoder
@@ -143,6 +143,12 @@ def build_model(
     model.CONT  = cont
     model.GRAPH = graph_ae or graph_dyn
     model.dynamics.features = FZU_MAP[fzu_type]
+    if model.GRAPH:
+        lin_eval, lin_feat = LIN_MAP["graph"]
+    else:
+        lin_eval, lin_feat = LIN_MAP["smpl"]
+    model._linear_eval     = lin_eval
+    model._linear_features = lin_feat
 
     logger.info(f"Built model: {model_cls.__name__}")
     logger.info(f"- Encoder: {enc_type}, Dynamics: {dyn_type}, Decoder: {dec_type}, Features: {fzu_type}")

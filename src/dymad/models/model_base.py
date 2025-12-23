@@ -7,8 +7,6 @@ from dymad.io import DynData
 
 
 class Encoder(nn.Module):
-    GRAPH = None
-    AUTO = None
     def __init__(self, net: nn.Module):
         super().__init__()
         self.net = net
@@ -16,16 +14,14 @@ class Encoder(nn.Module):
         raise NotImplementedError("This is the base class.")
 
 class Dynamics(nn.Module):
-    GRAPH = None
-    features = None
     def __init__(self, net: nn.Module):
         super().__init__()
         self.net = net
+        self.features = None  # To be defined in subclasses
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         raise NotImplementedError("This is the base class.")
 
 class Decoder(nn.Module):
-    GRAPH = None
     def __init__(self, net: nn.Module):
         super().__init__()
         self.net = net
@@ -94,6 +90,10 @@ class ComposedDynamics(nn.Module):
         self.dtype  = next(self.parameters()).dtype
         self.device = next(self.parameters()).device
 
+        # To be assgined
+        self._linear_eval = None
+        self._linear_features = None
+
     @classmethod
     def build_core(cls, model_config, dtype, device, ifgnn=False):
         raise NotImplementedError("This is the base class.")
@@ -124,9 +124,7 @@ class ComposedDynamics(nn.Module):
 
         z is the encoded state, which will be used to compute the expected output.
         """
-        z = self.encoder(w)
-        z_dot = self.dynamics(z, w)
-        return z_dot, z
+        return self._linear_eval(self, w)
 
     def linear_features(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute linear features, f, and outputs, dz, for the model.
@@ -135,8 +133,7 @@ class ComposedDynamics(nn.Module):
 
         dz is the output of the dynamics, z_dot for cont-time, z_next for disc-time.
         """
-        z = self.encoder(w)
-        return self.dynamics.features(z, w), z
+        return self._linear_features(self, w)
 
     def set_linear_weights(self,
         W: torch.Tensor | None = None, b: torch.Tensor | None = None,
