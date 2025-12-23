@@ -100,7 +100,7 @@ class ComposedDynamics(nn.Module):
         """
         return f"Model parameters: {sum(p.numel() for p in self.parameters())}\n" + \
                f"Encoder: {self.encoder}\n" + \
-               f"Processor: {self.processor}\n" + \
+               f"Dynamics: {self.dynamics}\n" + \
                f"Decoder: {self.decoder}\n"
 
     def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

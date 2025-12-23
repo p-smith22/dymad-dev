@@ -1,4 +1,5 @@
 import copy
+import logging
 from typing import Dict, List
 
 from dymad.models.components import ENC_MAP, DEC_MAP, FZU_MAP, DYN_MAP
@@ -6,19 +7,40 @@ from dymad.models.prediction import predict_continuous, predict_continuous_exp, 
     predict_discrete, predict_discrete_exp
 from dymad.modules import make_autoencoder
 
+logger = logging.getLogger(__name__)
+
+def get_dims(model_config, data_meta):
+    # Basic dimensions
+    dim_x  = data_meta.get('n_total_state_features')
+    dim_u  = data_meta.get('n_total_control_features')
+    dim_e  = dim_x + dim_u
+
+    dim_l  = model_config.get('latent_dimension', 64)
+    n_enc  = model_config.get('encoder_layers', 2)
+    n_dec  = model_config.get('decoder_layers', 2)
+    n_prc  = model_config.get('processor_layers', 2)
+
+    # Derived dimensions - default options
+    dim_z = dim_l if n_enc > 0 else dim_e
+    dim_r = dim_s = dim_z
+    dims = {
+        'x'  : dim_x,
+        'u'  : dim_u,
+        'e'  : dim_e,   # Input dim to encoder
+        'z'  : dim_z,
+        's'  : dim_s,
+        'r'  : dim_r,
+        'l'  : dim_l,
+        'enc': n_enc,
+        'dec': n_dec,
+        'prc': n_prc
+    }
+    return dims
+
 def build_autoencoder(
-        model_config,
-        latent_dimension, n_total_features, n_total_state_features,
+        model_config, dims,
         dtype, device,
         ifgnn = False):
-    # Get layer depths from config
-    enc_depth = model_config.get('encoder_layers', 2)
-    dec_depth = model_config.get('decoder_layers', 2)
-
-    # Determine dimensions
-    enc_out_dim = latent_dimension if enc_depth > 0 else n_total_features
-    dec_inp_dim = latent_dimension if dec_depth > 0 else n_total_features
-
     # Determine other options for MLP layers
     opts = {
         'activation'     : model_config.get('activation', 'prelu'),
@@ -38,33 +60,33 @@ def build_autoencoder(
     pref = "gnn_" if ifgnn else "mlp_"
     encoder_net, decoder_net = make_autoencoder(
         type       = pref+aec_type,
-        input_dim  = n_total_features,
-        latent_dim = latent_dimension,
-        hidden_dim = enc_out_dim,
-        enc_depth  = enc_depth,
-        dec_depth  = dec_depth,
-        output_dim = n_total_state_features,
+        input_dim  = dims['e'],
+        latent_dim = dims['l'],
+        hidden_dim = dims['z'],
+        enc_depth  = dims['enc'],
+        dec_depth  = dims['dec'],
+        output_dim = dims['x'],
         **opts
     )
 
-    return encoder_net, decoder_net, enc_out_dim, dec_inp_dim
+    return encoder_net, decoder_net
 
 
-def build_predictor(CONT, input_order, predictor_type, n_total_control_features):
+def build_predictor(CONT, predictor_type, n_total_control_features):
     if CONT:
         if predictor_type == "exp":
             # Does not support inputs
             assert n_total_control_features == 0, "Exponential predictor does not support control inputs."
-            return predict_continuous_exp, None
+            return predict_continuous_exp
         elif predictor_type == "np":
-            return predict_continuous_np, input_order
+            return predict_continuous_np
         else:
-            return predict_continuous, input_order
+            return predict_continuous
     else:
         if predictor_type == "exp":
-            return predict_discrete_exp, input_order
+            return predict_discrete_exp
         else:
-            return predict_discrete, input_order
+            return predict_discrete
 
 
 def fzu_selector(fzu_type, n_total_control_features, const_term):
@@ -78,64 +100,50 @@ def fzu_selector(fzu_type, n_total_control_features, const_term):
     else:
         _type = "none"                  # Encoder without control
     assert _type in FZU_MAP, f"Unknown zu_cat type {_type}."
-    return FZU_MAP[_type]
-
-
-def _resolve_encoder_type(enc_type: str, n_total_control_features: int) -> str:
-    if enc_type.endswith("_auto") or enc_type.endswith("_ctrl"):
-        return enc_type
-    suffix = "_ctrl" if n_total_control_features > 0 else "_auto"
-    return f"{enc_type}{suffix}"
+    return _type
 
 
 def build_model(
         model_spec: List,
         model_config: Dict, data_meta: Dict,
         dtype=None, device=None):
-    cont, graph, _enc_type, fzu_type, dyn_type, dec_type, model_cls = model_spec
+    cont, enc_type, fzu_type, dyn_type, dec_type, model_cls = model_spec
 
-    n_total_state_features = data_meta.get('n_total_state_features')
-    n_total_control_features = data_meta.get('n_total_control_features')
-    n_total_features = data_meta.get('n_total_features')
+    # Validate graph compatibility
+    graph_ae  = enc_type.startswith("graph") or enc_type.startswith("node")
+    graph_dyn = dyn_type.startswith("graph")
+    tmp = dec_type.startswith("graph") or dec_type.startswith("node")
+    assert graph_ae == tmp, "Encoder/Decoder graph compatibility mismatch."
 
-    latent_dimension = model_config.get('latent_dimension', 64)
-    input_order = model_config.get('input_order', 'cubic')
-    prd_type = model_config.get('predictor_type', 'ode')
+    # Class specific processing
+    dims, (enc_type, fzu_type, dec_type, prd_type), processor_net, input_order = \
+        model_cls.build_core(
+            (enc_type, fzu_type, dec_type),
+            model_config, data_meta,
+            dtype, device, ifgnn = graph_dyn)
 
-    enc_type = _resolve_encoder_type(_enc_type, n_total_control_features)
-    graph_ae   = ENC_MAP[enc_type].GRAPH
-    graph_dyn = DYN_MAP[dyn_type].GRAPH
-    assert ENC_MAP[enc_type].GRAPH == DEC_MAP[dec_type].GRAPH, "Encoder/Decoder graph compatibility mismatch."
-    assert graph == (graph_ae or graph_dyn), f"Model spec graph compatibility mismatch, got {graph}/{graph_ae or graph_dyn}."
-
-    encoder_net, decoder_net, enc_out_dim, dec_inp_dim = build_autoencoder(
-        model_config,
-        latent_dimension, n_total_features, n_total_state_features,
+    # Autoencoder
+    encoder_net, decoder_net = build_autoencoder(
+        model_config, dims,
         dtype, device,
         ifgnn = graph_ae)
 
-    _cfg = copy.deepcopy(model_config)
-    _cfg['n_total_control_features'] = n_total_control_features
-    _cfg['n_total_state_features'] = n_total_state_features
-    _cfg['n_total_features'] = n_total_features
-    _cfg['enc_out_dim'] = enc_out_dim
-    _cfg['latent_dimension'] = latent_dimension
-    _cfg['dec_inp_dim'] = dec_inp_dim
-    _cfg['cont'] = cont
-    _cfg['types'] = (enc_type, fzu_type, dec_type, prd_type)
-    processor_net, (enc_type, fzu_func, dec_type, prd_type) = model_cls.build_core(
-        _cfg, dtype, device, ifgnn = graph_dyn)
+    # Prediction
+    predict = build_predictor(cont, prd_type, dims['u'])
 
-    predict = build_predictor(
-        cont, input_order, prd_type, n_total_control_features)
-
+    # The full model
     model = model_cls(
-        encoder   = ENC_MAP[enc_type](encoder_net),
-        processor = DYN_MAP[dyn_type](processor_net),
-        decoder   = DEC_MAP[dec_type](decoder_net),
-        predict   = predict)
+        encoder  = ENC_MAP[enc_type](encoder_net),
+        dynamics = DYN_MAP[dyn_type](processor_net),
+        decoder  = DEC_MAP[dec_type](decoder_net),
+        predict  = (predict, input_order))
     model.CONT  = cont
-    model.GRAPH = graph
-    model.processor.feature = fzu_func
+    model.GRAPH = graph_ae or graph_dyn
+    model.dynamics.features = FZU_MAP[fzu_type]
+
+    logger.info(f"Built model: {model_cls.__name__}")
+    logger.info(f"- Encoder: {enc_type}, Dynamics: {dyn_type}, Decoder: {dec_type}, Features: {fzu_type}")
+    logger.info(f"- Using predictor: {predict.__name__}, input order: {input_order}")
+    logger.info(f"- If graph model: {model.GRAPH}, continuous-time: {model.CONT}")
 
     return model

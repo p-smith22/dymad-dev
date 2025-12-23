@@ -4,7 +4,7 @@ from typing import Callable, Union, Tuple
 
 from dymad.io import DynData
 from dymad.models.helpers import fzu_selector
-from dymad.models.model_base import ComposedDynamics, Decoder, Encoder, Processor
+from dymad.models.model_base import ComposedDynamics, Decoder, Dynamics, Encoder
 from dymad.models.prediction import predict_continuous_fenc
 from dymad.modules import make_krr
 from dymad.numerics import Manifold
@@ -26,7 +26,7 @@ class CD_KMM(ComposedDynamics):
     def __init__(
             self,
             encoder: Encoder,
-            processor: Processor,
+            processor: Dynamics,
             decoder: Decoder,
             predict: Callable | None = None,
             model_config: dict | None = None):

@@ -1,8 +1,7 @@
 import torch
 from typing import Tuple
 
-from dymad.models.components import FZU_MAP
-from dymad.models.helpers import fzu_selector
+from dymad.models.helpers import fzu_selector, get_dims
 from dymad.models.model_base import ComposedDynamics
 from dymad.modules import FlexLinear, GNN, make_krr, MLP
 from dymad.io import DynData
@@ -10,13 +9,20 @@ from dymad.io import DynData
 class CD_LDM(ComposedDynamics):
 
     @classmethod
-    def build_core(cls, model_config, dtype, device, ifgnn=False):
-        enc_out_dim = model_config.get('enc_out_dim')
-        latent_dimension = model_config.get('latent_dimension')
-        dec_inp_dim = model_config.get('dec_inp_dim')
-        enc_type, fzu_type, dec_type, prd_type = model_config.get('types')
+    def build_core(cls, types, model_config, data_meta, dtype, device, ifgnn=False):
+        enc_type, fzu_type, dec_type = types
 
-        proc_depth = model_config.get('processor_layers', 2)
+        # Dimensions
+        dims = get_dims(model_config, data_meta)
+
+        # Autoencoder
+        suffix = "_ctrl" if dims['u'] > 0 else "_auto"
+        enc_type += suffix
+
+        # Features in the dynamics
+        # As is
+
+        # Processor in the dynamics
         opts = {
             'activation'     : model_config.get('activation', 'prelu'),
             'weight_init'    : model_config.get('weight_init', 'xavier_uniform'),
@@ -32,43 +38,61 @@ class CD_LDM(ComposedDynamics):
 
         MDL = GNN if ifgnn else MLP
         processor_net = MDL(
-            input_dim  = enc_out_dim,
-            latent_dim = latent_dimension,
-            output_dim = dec_inp_dim,
-            n_layers   = proc_depth,
+            input_dim  = dims['s'],
+            latent_dim = dims['l'],
+            output_dim = dims['r'],
+            n_layers   = dims['prc'],
             **opts
         )
 
-        fzu_func = FZU_MAP[fzu_type]
+        # Prediction options
+        input_order = model_config.get('input_order', 'cubic')
+        prd_type = model_config.get('predictor_type', 'ode')
 
-        return processor_net, (enc_type, fzu_func, dec_type, prd_type)
+        return dims, (enc_type, fzu_type, dec_type, prd_type), processor_net, input_order
 
 
 class CD_LFM(ComposedDynamics):
 
     @classmethod
-    def build_core(cls, model_config, dtype, device, ifgnn=False):
-        koopman_dimension = model_config.get('koopman_dimension')
-        n_total_control_features = model_config.get('n_total_control_features')
-        const_term = model_config.get('const_term', True)
-        blin_term = model_config.get('blin_term', True)
-        enc_type, fzu_type, dec_type, prd_type = model_config.get('types')
+    def build_core(cls, types, model_config, data_meta, dtype, device, ifgnn=False):
+        enc_type, fzu_type, dec_type = types
 
-        if n_total_control_features > 0:
+        # Options
+        const_term = model_config.get('const_term', True)
+
+        # Dimensions
+        dims = get_dims(model_config, data_meta)
+        dims['e'] = dims['x']
+        dims['z'] = model_config.get('koopman_dimension')
+
+        blin_term = 'blin' in fzu_type
+        if dims['u'] > 0:
             if blin_term:
                 if const_term:
-                    dyn_dim = koopman_dimension * (n_total_control_features + 1) + n_total_control_features
+                    dyn_dim = dims['z'] * (dims['u'] + 1) + dims['u']
                 else:
-                    dyn_dim = koopman_dimension * (n_total_control_features + 1)
+                    dyn_dim = dims['z'] * (dims['u'] + 1)
             else:
-                dyn_dim = koopman_dimension + n_total_control_features
+                dyn_dim = dims['z'] + dims['u']
         else:
-            dyn_dim = koopman_dimension
-        processor_net = FlexLinear(dyn_dim, koopman_dimension, bias=False, dtype=dtype, device=device)
+            dyn_dim = dims['z']
+        dims['s'] = dyn_dim
 
-        fzu_func = fzu_selector(fzu_type, n_total_control_features, const_term)
+        # Autoencoder
+        assert 'auto' in enc_type, "LFM model needs state-only encoder."
 
-        return processor_net, (enc_type, fzu_func, dec_type, prd_type)
+        # Features in the dynamics
+        fzu_type = fzu_selector(fzu_type, dims['u'], const_term)
+
+        # Processor in the dynamics
+        processor_net = FlexLinear(dims['s'], dims['z'], bias=False, dtype=dtype, device=device)
+
+        # Prediction options
+        input_order = model_config.get('input_order', 'cubic')
+        prd_type = model_config.get('predictor_type', 'ode')
+
+        return dims, (enc_type, fzu_type, dec_type, prd_type), processor_net, input_order
 
     def linear_features(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute linear features, f, and outputs, dz, for the model.
@@ -78,7 +102,7 @@ class CD_LFM(ComposedDynamics):
         dz is the output of the dynamics, z_dot for cont-time, z_next for disc-time.
         """
         z = self.encoder(w)
-        return self.processor.zu_cat(z, w), z
+        return self.dynamics.features(z, w), z
 
     def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute linear evaluation, dz, and states, z, for the model.
@@ -88,22 +112,33 @@ class CD_LFM(ComposedDynamics):
         z is the encoded state, which will be used to compute the expected output.
         """
         z = self.encoder(w)
-        z_dot = self.processor(z, w)
+        z_dot = self.dynamics(z, w)
         return z_dot, z
 
     def set_linear_weights(self, W: torch.Tensor) -> None:
         """Set the weights of the linear dynamics module."""
-        self.processor.net.set_linear_weights(W)
+        self.dynamics.net.set_linear_weights(W)
 
 
 class CD_KM(ComposedDynamics):
 
     @classmethod
-    def build_core(cls, model_config, dtype, device, ifgnn=False):
-        n_total_control_features = model_config.get('n_total_control_features')
-        const_term = model_config.get('const_term', True)
-        enc_type, fzu_type, dec_type, prd_type = model_config.get('types')
+    def build_core(cls, types, model_config, data_meta, dtype, device, ifgnn=False):
+        enc_type, fzu_type, dec_type = types
 
+        # Options
+        const_term = model_config.get('const_term', True)
+
+        # Dimensions
+        dims = get_dims(model_config, data_meta)
+
+        # Autoencoder
+        assert 'auto' in enc_type, "KM model needs state-only encoder."
+
+        # Features in the dynamics
+        fzu_type = fzu_selector(fzu_type, dims['u'], const_term)
+
+        # Processor in the dynamics
         opts = {
             'type'       : model_config.get('type', 'share'),
             'kernel'     : model_config.get('kernel', None),
@@ -114,17 +149,19 @@ class CD_KM(ComposedDynamics):
         }
         processor_net = make_krr(**opts)
 
-        fzu_func = fzu_selector(fzu_type, n_total_control_features, const_term)
+        # Prediction options
+        input_order = model_config.get('input_order', 'cubic')
+        prd_type = model_config.get('predictor_type', 'ode')
 
-        return processor_net, (enc_type, fzu_func, dec_type, prd_type)
+        return dims, (enc_type, fzu_type, dec_type, prd_type), processor_net, input_order
 
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Fit the kernel dynamics using input-output pairs.
         """
-        self.processor.net.set_train_data(inp, out)
-        residual = self.processor.net.fit()
-        return self.processor.net._alphas, residual
+        self.dynamics.net.set_train_data(inp, out)
+        residual = self.dynamics.net.fit()
+        return self.dynamics.net._alphas, residual
 
     def load_state_dict(self, state_dict, strict: bool = True):
         """
@@ -147,6 +184,6 @@ class CD_KM(ComposedDynamics):
 
 class CD_KMSK(CD_KM):
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
-        self.processor.net.set_train_data(inp, out-inp[..., :self.kernel_dimension])
-        residual = self.processor.net.fit()
-        return self.processor.net._alphas, residual
+        self.dynamics.net.set_train_data(inp, out-inp[..., :self.kernel_dimension])
+        residual = self.dynamics.net.fit()
+        return self.dynamics.net._alphas, residual
