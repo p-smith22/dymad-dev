@@ -87,6 +87,10 @@ class ComposedDynamics(nn.Module):
         if predict is not None:
             self._predict, self.input_order = predict
         # else use the default predict method
+
+        self.n_total_state_features = dims['x']
+        self.latent_dimension = dims['z']
+
         self.dtype  = next(self.parameters()).dtype
         self.device = next(self.parameters()).device
 

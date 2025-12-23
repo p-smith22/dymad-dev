@@ -56,6 +56,9 @@ class CD_LDM(ComposedDynamics):
 
 
 class CD_LFM(ComposedDynamics):
+    def __init__(self, encoder, dynamics, decoder, predict=None, model_config=None, dims=None):
+        super().__init__(encoder, dynamics, decoder, predict, model_config, dims)
+        self.koopman_dimension = dims['z']
 
     @classmethod
     def build_core(cls, types, model_config, data_meta, dtype, device, ifgnn=False):
@@ -162,14 +165,7 @@ class CD_KM(ComposedDynamics):
 
 
 class CD_KMSK(CD_KM):
-    def __init__(
-            self,
-            encoder: Encoder,
-            dynamics: Dynamics,
-            decoder: Decoder,
-            predict: Tuple[Callable, str] | None = None,
-            model_config: Dict | None = None,
-            dims: Dict | None = None):
+    def __init__(self, encoder, dynamics, decoder, predict=None, model_config=None, dims=None):
         super().__init__(encoder, dynamics, decoder, predict, model_config, dims)
         self.kernel_dimension = dims['z']
 
@@ -192,17 +188,9 @@ class CD_KMM(CD_KM):
     GRAPH = False
     CONT  = True
 
-    def __init__(
-            self,
-            encoder: Encoder,
-            dynamics: Dynamics,
-            decoder: Decoder,
-            predict: Tuple[Callable, str] | None = None,
-            model_config: Dict | None = None,
-            dims: Dict | None = None):
+    def __init__(self, encoder, dynamics, decoder, predict=None, model_config=None, dims=None):
         super().__init__(encoder, dynamics, decoder, predict, model_config, dims)
 
-        self.n_total_state_features = dims['x']
         self._man_opts = model_config.get('manifold', {})
 
         # Register buffers for Manifold parameters
