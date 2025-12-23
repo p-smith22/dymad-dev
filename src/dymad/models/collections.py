@@ -32,30 +32,30 @@ class PredefinedModel:
         ]
         return build_model(model_spec, model_config, data_meta, dtype, device)
 
-#                       CONT,  encoder, feature, dynamics, decoder, model_cls
-LDM   = PredefinedModel(True,  "smpl",  "none",  "direct", "auto",  CD_LDM)
-DLDM  = PredefinedModel(False, "smpl",  "none",  "direct", "auto",  CD_LDM)
-GLDM  = PredefinedModel(True,  "smpl",  "none",  "direct", "auto",  CD_LDM)
-DGLDM = PredefinedModel(False, "smpl",  "none",  "direct", "auto",  CD_LDM)
-LDMG  = PredefinedModel(True,  "smpl",  "none",  "direct", "auto",  CD_LDM)
-DLDMG = PredefinedModel(False, "smpl",  "none",  "direct", "auto",  CD_LDM)
+#                       CONT,  encoder, feature, dynamics,       decoder, model_cls
+LDM   = PredefinedModel(True,  "smpl",  "none",  "direct",       "auto",  CD_LDM)
+DLDM  = PredefinedModel(False, "smpl",  "none",  "direct",       "auto",  CD_LDM)
+GLDM  = PredefinedModel(True,  "graph", "none",  "direct",       "graph", CD_LDM)
+DGLDM = PredefinedModel(False, "graph", "none",  "direct",       "graph", CD_LDM)
+LDMG  = PredefinedModel(True,  "node",  "none",  "graph_direct", "node",  CD_LDM)
+DLDMG = PredefinedModel(False, "node",  "none",  "graph_direct", "node",  CD_LDM)
 
-#                       CONT,  encoder,      feature,      dynamics, decoder,      model_cls
-KBF   = PredefinedModel(True,  "smpl_auto",  "blin",       "direct", "auto",       CD_LFM)
-DKBF  = PredefinedModel(False, "smpl_auto",  "blin",       "direct", "auto",       CD_LFM)
-GKBF  = PredefinedModel(True,  "graph_auto", "graph_blin", "direct", "graph_auto", CD_LFM)
-DGKBF = PredefinedModel(False, "graph_auto", "graph_blin", "direct", "graph_auto", CD_LFM)
+#                       CONT,  encoder,      feature,      dynamics, decoder, model_cls
+KBF   = PredefinedModel(True,  "smpl_auto",  "blin",       "direct", "auto",  CD_LFM)
+DKBF  = PredefinedModel(False, "smpl_auto",  "blin",       "direct", "auto",  CD_LFM)
+GKBF  = PredefinedModel(True,  "graph_auto", "graph_blin", "direct", "graph", CD_LFM)
+DGKBF = PredefinedModel(False, "graph_auto", "graph_blin", "direct", "graph", CD_LFM)
 
-LTI   = PredefinedModel(True,  "smpl_auto",  "cat",        "direct", "auto",       CD_LFM)
-DLTI  = PredefinedModel(False, "smpl_auto",  "cat",        "direct", "auto",       CD_LFM)
-GLTI  = PredefinedModel(True,  "graph_auto", "graph_cat",  "direct", "graph_auto", CD_LFM)
-DGLTI = PredefinedModel(False, "graph_auto", "graph_cat",  "direct", "graph_auto", CD_LFM)
+LTI   = PredefinedModel(True,  "smpl_auto",  "cat",        "direct", "auto",  CD_LFM)
+DLTI  = PredefinedModel(False, "smpl_auto",  "cat",        "direct", "auto",  CD_LFM)
+GLTI  = PredefinedModel(True,  "graph_auto", "graph_cat",  "direct", "graph", CD_LFM)
+DGLTI = PredefinedModel(False, "graph_auto", "graph_cat",  "direct", "graph", CD_LFM)
 
-#                        CONT,  encoder,      feature,      dynamics, decoder,      model_cls
-KM     = PredefinedModel(True,  "smpl_auto",  "blin",       "direct", "auto",       CD_KM)
-KMM    = PredefinedModel(True,  "smpl_auto",  "blin",       "direct", "auto",       CD_KMM)
-DKM    = PredefinedModel(False, "smpl_auto",  "blin",       "direct", "auto",       CD_KM)
-GKM    = PredefinedModel(True,  "graph_auto", "graph_blin", "direct", "graph_auto", CD_KM)
-DGKM   = PredefinedModel(False, "graph_auto", "graph_blin", "direct", "graph_auto", CD_KM)
-DKMSK  = PredefinedModel(False, "smpl_auto",  "blin",       "skip",   "auto",       CD_KMSK)
-DGKMSK = PredefinedModel(False, "graph_auto", "graph_blin", "skip",   "graph_auto", CD_KMSK)
+#                        CONT,  encoder,      feature,      dynamics, decoder, model_cls
+KM     = PredefinedModel(True,  "smpl_auto",  "blin",       "direct", "auto",  CD_KM)
+KMM    = PredefinedModel(True,  "smpl_auto",  "blin",       "direct", "auto",  CD_KMM)
+DKM    = PredefinedModel(False, "smpl_auto",  "blin",       "direct", "auto",  CD_KM)
+GKM    = PredefinedModel(True,  "graph_auto", "graph_blin", "direct", "graph", CD_KM)
+DGKM   = PredefinedModel(False, "graph_auto", "graph_blin", "direct", "graph", CD_KM)
+DKMSK  = PredefinedModel(False, "smpl_auto",  "blin",       "skip",   "auto",  CD_KMSK)
+DGKMSK = PredefinedModel(False, "graph_auto", "graph_blin", "skip",   "graph", CD_KMSK)

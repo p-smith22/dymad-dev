@@ -110,9 +110,9 @@ def build_model(
     cont, enc_type, fzu_type, dyn_type, dec_type, model_cls = model_spec
 
     # Validate graph compatibility
-    graph_ae  = enc_type.startswith("graph") or enc_type.startswith("node")
+    graph_ae  = enc_type.startswith("graph")
     graph_dyn = dyn_type.startswith("graph")
-    tmp = dec_type.startswith("graph") or dec_type.startswith("node")
+    tmp = dec_type.startswith("graph")
     assert graph_ae == tmp, "Encoder/Decoder graph compatibility mismatch."
 
     # Class specific processing

@@ -133,9 +133,11 @@ class ComposedDynamics(nn.Module):
         z = self.encoder(w)
         return self.dynamics.features(z, w), z
 
-    def set_linear_weights(self, W: torch.Tensor) -> None:
+    def set_linear_weights(self,
+        W: torch.Tensor | None = None, b: torch.Tensor | None = None,
+        U: torch.Tensor | None = None, V: torch.Tensor | None = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """Set the weights of the linear dynamics module."""
-        self.dynamics.net.set_linear_weights(W)
+        return self.dynamics.net.set_weights(W, b, U, V)
 
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError("This is the base class.")
