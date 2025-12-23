@@ -78,7 +78,8 @@ class ComposedDynamics(nn.Module):
             dynamics: Dynamics,
             decoder: Decoder,
             predict: Tuple[Callable, str] | None = None,
-            model_config: Dict | None = None):
+            model_config: Dict | None = None,
+            dims: Dict | None = None):
         super().__init__()
         self.encoder  = encoder
         self.dynamics = dynamics
@@ -86,6 +87,8 @@ class ComposedDynamics(nn.Module):
         if predict is not None:
             self._predict, self.input_order = predict
         # else use the default predict method
+        self.dtype  = next(self.parameters()).dtype
+        self.device = next(self.parameters()).device
 
     @classmethod
     def build_core(cls, model_config, dtype, device, ifgnn=False):
@@ -110,15 +113,31 @@ class ComposedDynamics(nn.Module):
         return z, z_dot, x_hat
 
     def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
-        raise NotImplementedError("This is the base class.")
+        """Compute linear evaluation, dz, and states, z, for the model.
+
+        dz = Af(z)
+
+        z is the encoded state, which will be used to compute the expected output.
+        """
+        z = self.encoder(w)
+        z_dot = self.dynamics(z, w)
+        return z_dot, z
 
     def linear_features(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
-        raise NotImplementedError("This is the base class.")
+        """Compute linear features, f, and outputs, dz, for the model.
 
-    def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
-        raise NotImplementedError("This is the base class.")
+        dz = Af(z)
+
+        dz is the output of the dynamics, z_dot for cont-time, z_next for disc-time.
+        """
+        z = self.encoder(w)
+        return self.dynamics.features(z, w), z
 
     def set_linear_weights(self, W: torch.Tensor) -> None:
+        """Set the weights of the linear dynamics module."""
+        self.dynamics.net.set_linear_weights(W)
+
+    def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError("This is the base class.")
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],

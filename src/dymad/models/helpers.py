@@ -136,7 +136,10 @@ def build_model(
         encoder  = ENC_MAP[enc_type](encoder_net),
         dynamics = DYN_MAP[dyn_type](processor_net),
         decoder  = DEC_MAP[dec_type](decoder_net),
-        predict  = (predict, input_order))
+        predict  = (predict, input_order),
+        model_config = copy.deepcopy(model_config),
+        dims     = copy.deepcopy(dims)
+    )
     model.CONT  = cont
     model.GRAPH = graph_ae or graph_dyn
     model.dynamics.features = FZU_MAP[fzu_type]

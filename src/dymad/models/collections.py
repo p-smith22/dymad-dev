@@ -2,8 +2,7 @@ from dataclasses import dataclass
 from typing import Dict
 
 from dymad.models.helpers import build_model
-from dymad.models.recipes import CD_KM, CD_KMSK, CD_LDM, CD_LFM
-from dymad.models.recipes_kmm import CD_KMM
+from dymad.models.recipes import CD_KM, CD_KMM, CD_KMSK, CD_LDM, CD_LFM
 
 @dataclass
 class PredefinedModel:
@@ -58,5 +57,5 @@ KMM    = PredefinedModel(True,  "smpl_auto",  "blin",       "direct", "auto",   
 DKM    = PredefinedModel(False, "smpl_auto",  "blin",       "direct", "auto",       CD_KM)
 GKM    = PredefinedModel(True,  "graph_auto", "graph_blin", "direct", "graph_auto", CD_KM)
 DGKM   = PredefinedModel(False, "graph_auto", "graph_blin", "direct", "graph_auto", CD_KM)
-DKMSK  = PredefinedModel(False, "smpl_auto",  "blin",       "direct", "auto",       CD_KMSK)
-DGKMSK = PredefinedModel(False, "graph_auto", "graph_blin", "direct", "graph_auto", CD_KMSK)
+DKMSK  = PredefinedModel(False, "smpl_auto",  "blin",       "skip",   "auto",       CD_KMSK)
+DGKMSK = PredefinedModel(False, "graph_auto", "graph_blin", "skip",   "graph_auto", CD_KMSK)

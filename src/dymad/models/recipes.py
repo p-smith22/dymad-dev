@@ -1,10 +1,13 @@
+import numpy as np
 import torch
-from typing import Tuple
+from typing import Callable, Dict, Union, Tuple
 
-from dymad.models.helpers import fzu_selector, get_dims
-from dymad.models.model_base import ComposedDynamics
-from dymad.modules import FlexLinear, GNN, make_krr, MLP
 from dymad.io import DynData
+from dymad.models.helpers import fzu_selector, get_dims
+from dymad.models.model_base import ComposedDynamics, Decoder, Dynamics, Encoder
+from dymad.models.prediction import predict_continuous_fenc
+from dymad.modules import FlexLinear, GNN, make_krr, MLP
+from dymad.numerics import Manifold
 
 class CD_LDM(ComposedDynamics):
 
@@ -94,31 +97,6 @@ class CD_LFM(ComposedDynamics):
 
         return dims, (enc_type, fzu_type, dec_type, prd_type), processor_net, input_order
 
-    def linear_features(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute linear features, f, and outputs, dz, for the model.
-
-        dz = Af(z)
-
-        dz is the output of the dynamics, z_dot for cont-time, z_next for disc-time.
-        """
-        z = self.encoder(w)
-        return self.dynamics.features(z, w), z
-
-    def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute linear evaluation, dz, and states, z, for the model.
-
-        dz = Af(z)
-
-        z is the encoded state, which will be used to compute the expected output.
-        """
-        z = self.encoder(w)
-        z_dot = self.dynamics(z, w)
-        return z_dot, z
-
-    def set_linear_weights(self, W: torch.Tensor) -> None:
-        """Set the weights of the linear dynamics module."""
-        self.dynamics.net.set_linear_weights(W)
-
 
 class CD_KM(ComposedDynamics):
 
@@ -131,6 +109,7 @@ class CD_KM(ComposedDynamics):
 
         # Dimensions
         dims = get_dims(model_config, data_meta)
+        dims['z'] = model_config.get('kernel_dimension')
 
         # Autoencoder
         assert 'auto' in enc_type, "KM model needs state-only encoder."
@@ -183,7 +162,110 @@ class CD_KM(ComposedDynamics):
 
 
 class CD_KMSK(CD_KM):
+    def __init__(
+            self,
+            encoder: Encoder,
+            dynamics: Dynamics,
+            decoder: Decoder,
+            predict: Tuple[Callable, str] | None = None,
+            model_config: Dict | None = None,
+            dims: Dict | None = None):
+        super().__init__(encoder, dynamics, decoder, predict, model_config, dims)
+        self.kernel_dimension = dims['z']
+
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         self.dynamics.net.set_train_data(inp, out-inp[..., :self.kernel_dimension])
         residual = self.dynamics.net.fit()
         return self.dynamics.net._alphas, residual
+
+
+M_KEYS = ['data', 'd', 'K', 'g', 'T', 'iforit', 'extT']
+class CD_KMM(CD_KM):
+    """
+    KM with Manifold constraints.
+
+    The model is based on Geometrically constrained KRR,
+    The prediction uses the normal correction scheme.
+
+    See more in Huang, He, Harlim & Li ICLR2025.
+    """
+    GRAPH = False
+    CONT  = True
+
+    def __init__(
+            self,
+            encoder: Encoder,
+            dynamics: Dynamics,
+            decoder: Decoder,
+            predict: Tuple[Callable, str] | None = None,
+            model_config: Dict | None = None,
+            dims: Dict | None = None):
+        super().__init__(encoder, dynamics, decoder, predict, model_config, dims)
+
+        self.n_total_state_features = dims['x']
+        self._man_opts = model_config.get('manifold', {})
+
+        # Register buffers for Manifold parameters
+        self.register_buffer(f"_m_data", torch.empty(0, dtype=torch.float64))
+        self.register_buffer(f"_m_d", torch.empty(0, dtype=torch.int64))
+        self.register_buffer(f"_m_K", torch.empty(0, dtype=torch.int64))
+        self.register_buffer(f"_m_g", torch.empty(0, dtype=torch.int64))
+        self.register_buffer(f"_m_T", torch.empty(0, dtype=torch.int64))
+        self.register_buffer(f"_m_iforit", torch.tensor(False, dtype=torch.bool))
+        self.register_buffer(f"_m_extT", torch.empty(0, dtype=torch.float64))
+
+    def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Fit the kernel dynamics using input-output pairs.
+        """
+        # Build manifold from input data
+        # This is a Numpy object, and we register buffers to reload it later
+        self._manifold = Manifold(inp[:,:self.n_total_state_features], **self._man_opts)
+        self._manifold.precompute()
+        ts = self._manifold.to_tensors()
+        for _k, _v in ts.items():
+            setattr(self, f"_m_{_k}", _v)
+
+        # Fit KRR with the manifold constraint
+        self.dynamics.net.set_train_data(inp, out)
+        self.dynamics.net.set_manifold(self._manifold)
+        residual = self.dynamics.net.fit()
+        return self.dynamics.net._alphas, residual
+
+    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
+        """Predict trajectory using discrete-time iterations."""
+        return predict_continuous_fenc(self, x0, ts, w, **kwargs)
+
+    def fenc_step(self, z: torch.Tensor, w: DynData, dt: float) -> torch.Tensor:
+        """
+        First-order Euler step with Normal Correction.
+        """
+        dz = self.dynamics(z, w) * dt
+        dn = self._manifold._estimate_normal(z.detach().cpu().numpy(), dz.detach().cpu().numpy())
+        return z + dz + torch.as_tensor(dn, dtype=self.dtype, device=z.device)
+
+    def load_state_dict(self, state_dict, strict: bool = True):
+        """
+        KMM relies on the Numpy-based object Manifold, and
+        the defining parameters of the latter are registered as buffers in KMM.
+        When self is initialized these buffers are placeholders.
+        Here we first update the shapes of those buffers to match the checkpoint,
+        then call the standard load_state_dict to load values and do checks.
+        In the end we reconstruct the Manifold object from the loaded buffers,
+        and set this object in appropriate locations.
+        """
+        with torch.no_grad():
+            for name, p in self.named_buffers(recurse=True):
+                if name in state_dict:
+                    saved = state_dict[name]
+                    if p.shape != saved.shape:
+                        p.set_(torch.empty_like(saved))
+
+        res = super().load_state_dict(state_dict, strict=strict)
+
+        t = {_k : getattr(self, f"_m_{_k}") for _k in M_KEYS}
+        self._manifold = Manifold.from_tensors(t)
+        self.dynamics.net._manifold = self._manifold
+        self.dynamics.net.kernel._manifold = self._manifold
+
+        return res
