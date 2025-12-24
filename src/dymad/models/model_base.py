@@ -7,7 +7,7 @@ from dymad.io import DynData
 
 
 class Encoder(nn.Module):
-    def __init__(self, net: nn.Module):
+    def __init__(self, net: nn.Module | None = None):
         super().__init__()
         self.net = net
     def forward(self, w: DynData) -> torch.Tensor:
@@ -22,7 +22,7 @@ class Dynamics(nn.Module):
         raise NotImplementedError("This is the base class.")
 
 class Decoder(nn.Module):
-    def __init__(self, net: nn.Module):
+    def __init__(self, net: nn.Module | None = None):
         super().__init__()
         self.net = net
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
@@ -70,13 +70,16 @@ class ComposedDynamics(nn.Module):
 
     def __init__(
             self,
-            encoder: Encoder,
-            dynamics: Dynamics,
-            decoder: Decoder,
+            encoder: Encoder | None = None,
+            dynamics: Dynamics | None = None,
+            decoder: Decoder | None = None,
             predict: Tuple[Callable, str] | None = None,
             model_config: Dict | None = None,
             dims: Dict | None = None):
         super().__init__()
+        if dynamics is None:
+            # Expected to be used as base class only
+            return
         self.encoder  = encoder
         self.dynamics = dynamics
         self.decoder  = decoder

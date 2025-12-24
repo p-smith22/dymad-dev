@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from typing import Dict, Tuple, Union
+from typing import Tuple, Union
 
 from dymad.io import load_model
 from dymad.models import TemplateCorrAlg

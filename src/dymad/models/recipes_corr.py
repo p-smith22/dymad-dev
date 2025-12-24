@@ -1,11 +1,28 @@
 import numpy as np
 import torch
-from typing import Dict, Union, Tuple
+import torch.nn as nn
+from typing import Callable, Dict, Union, Tuple
 
 from dymad.io import DynData
-from dymad.models.model_base import ComposedDynamics
+from dymad.models.components import DEC_MAP, ENC_MAP, FZU_MAP
+from dymad.models.helpers import get_dims
+from dymad.models.model_base import ComposedDynamics, Dynamics, Encoder
 from dymad.models.prediction import predict_continuous_np, predict_discrete_exp
 from dymad.modules import MLP
+
+class DynCorrAlg(Dynamics):
+    def __init__(self, net: nn.Module, func: Callable):
+        super().__init__(net)
+        self.func = func
+
+    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        if z.ndim == 3:
+            w_p = w.p.unsqueeze(-2)
+        else:
+            w_p = w.p
+        _l = self.net(self.features(z, w))
+        _f = self.func(z, w.u, _l, w_p)
+        return _f
 
 class TemplateCorrAlg(ComposedDynamics):
     """
@@ -27,23 +44,22 @@ class TemplateCorrAlg(ComposedDynamics):
 
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
         super().__init__()
-        self.n_total_state_features = data_meta.get('n_total_state_features')
-        self.n_total_control_features = data_meta.get('n_total_control_features')
-        self.n_total_features = data_meta.get('n_total_features')
-        self.latent_dimension = model_config.get('latent_dimension', 64)
-        self.residual_dimension = model_config.get('residual_dimension', self.n_total_state_features)
-        self.dtype = dtype
-        self.device = device
 
-        # Method for input handling
-        self.input_order = model_config.get('input_order', 'cubic')
+        # Dimensions
+        dims = get_dims(model_config, data_meta)
+        dims['z'] = dims['x']
+        dims['s'] = dims['e']
+        dims['r'] = dims['x']
+        dims['prc'] = model_config.get('residual_layers', 2)
 
-        # Input concatenation
-        if self.n_total_control_features == 0:
-            self.residual = self._residual_auto
-        else:
-            self.residual = self._residual_ctrl
+        # Autoencoder
+        self.encoder = ENC_MAP['iden']()
+        self.decoder = DEC_MAP['iden']()
 
+        # Features in the dynamics
+        fzu_type = 'cat' if dims['u'] > 0 else 'none'
+
+        # Processor in the dynamics
         opts = {
             'activation'     : model_config.get('activation', 'prelu'),
             'weight_init'    : model_config.get('weight_init', 'xavier_uniform'),
@@ -53,17 +69,26 @@ class TemplateCorrAlg(ComposedDynamics):
             'dtype'          : dtype,
             'device'         : device
         }
-        self.residual_net = MLP(
-            input_dim  = self.n_total_features,
-            latent_dim = self.latent_dimension,
-            output_dim = self.residual_dimension,
-            n_layers   = model_config.get('residual_layers', 2),
+        processor_net = MLP(
+            input_dim  = dims['s'],
+            latent_dim = dims['l'],
+            output_dim = dims['r'],
+            n_layers   = dims['prc'],
             **opts
         )
+        self.dynamics = DynCorrAlg(processor_net, self.base_dynamics)
+        self.dynamics.features = FZU_MAP[fzu_type]
 
-        self.extra_setup()
+        # Prediction options
+        self.input_order = model_config.get('input_order', 'cubic')
 
         assert self.CONT is not None, "CONT flag must be set in derived class."
+        if self.CONT:
+            self._predict = predict_continuous_np
+        else:
+            self._predict = predict_discrete_exp
+
+        self.extra_setup()
 
     def extra_setup(self):
         """
@@ -71,74 +96,45 @@ class TemplateCorrAlg(ComposedDynamics):
         """
         pass
 
-    def diagnostic_info(self) -> str:
-        model_info = super().diagnostic_info()
-        model_info += f"Residual: {self.residual_net}\n"
-        model_info += f"Input order: {self.input_order}"
-        return model_info
-
-    def _residual_ctrl(self, z: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-        """
-        Map features to residual force for systems with inputs.
-        """
-        return self.residual_net(torch.cat([z, u], dim=-1))
-
-    def _residual_auto(self, z: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-        """
-        Map features to residual force for autonomous systems.
-        """
-        return self.residual_net(z)
-
     def base_dynamics(self, x: torch.Tensor, u: torch.Tensor, f: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
         """
         The minimal that the user must implement.
 
-        `f` is the residual correction term computed by `self.residual`, and needs
+        `f` is the residual correction term computed by `self.dynamics.net`, and needs
         to be incorporated into the base dynamics.
         """
         raise NotImplementedError("Implement in derived class.")
 
-    def encoder(self, w: DynData) -> torch.Tensor:
-        """
-        Dummy interface.
-        """
-        return w.x
 
-    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """
-        Compute corrected dynamics.
-        """
+class DynCorrDif(Dynamics):
+    def __init__(self, net: nn.Module, hidden: nn.Module, func: Callable, dimx: int):
+        super().__init__(net)
+        self.hidden = hidden
+        self.func = func
+        self.n_total_state_features = dimx
+
+    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         if z.ndim == 3:
             w_p = w.p.unsqueeze(-2)
         else:
             w_p = w.p
-        _l = self.residual(z, w.u)
-        _f = self.base_dynamics(z, w.u, _l, w_p)
-        return _f
+        _x = z[..., :self.n_total_state_features]
+        _f = self.net(self.features(z, w))
+        _dx = self.func(_x, w.u, _f, w_p)
+        _ds = self.hidden(self.features(z, w))
+        return torch.cat([_dx, _ds], dim=-1)
 
-    def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """
-        Dummy interface.
-        """
-        return z
+class EncCorrDifCtrl(Encoder):
+    """Encodes states and controls."""
+    def forward(self, w: DynData) -> torch.Tensor:
+        return torch.cat(
+            [w.x, self.net(torch.cat([w.x, w.u], dim=-1))],
+            dim=-1)
 
-    def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Forward pass through the model.
-        """
-        z = w.x    # Encoder simplified
-        z_dot = self.dynamics(z, w)
-        x_hat = z  # Decoder simplified
-        return z, z_dot, x_hat
-
-    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],
-                method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        """
-        Predict trajectory using cont-time or disc-time integration.
-        """
-        if self.CONT:
-            return predict_continuous_np(self, x0, ts, w, method=method, order=self.input_order, **kwargs)
-        return predict_discrete_exp(self, x0, ts, w, **kwargs)
+class EncCorrDifAuto(Encoder):
+    """Encodes states."""
+    def forward(self, w: DynData) -> torch.Tensor:
+        return torch.cat([w.x, self.net(w.x)], dim=-1)
 
 class TemplateCorrDif(ComposedDynamics):
     """
@@ -175,29 +171,15 @@ class TemplateCorrDif(ComposedDynamics):
 
     def __init__(self, model_config: Dict, data_meta: Dict, dtype=None, device=None):
         super().__init__()
-        self.n_total_state_features = data_meta.get('n_total_state_features')
-        self.n_total_control_features = data_meta.get('n_total_control_features')
-        self.n_total_features = data_meta.get('n_total_features')
-        self.latent_dimension = model_config.get('latent_dimension', 64)
-        self.hidden_dimension = model_config.get('hidden_dimension', 1)
-        self.residual_dimension = model_config.get('residual_dimension', 1)
-        self.dtype = dtype
-        self.device = device
 
-        # Method for input handling
-        self.input_order = model_config.get('input_order', 'cubic')
+        # Dimensions
+        dims = get_dims(model_config, data_meta)
+        dims['z'] = dims['x'] + model_config.get('hidden_dimension', 1)
+        dims['s'] = dims['z']
+        dims['r'] = model_config.get('residual_dimension', 1)
+        dims['prc'] = model_config.get('residual_layers', 2)
 
-        # Input concatenation
-        if self.n_total_control_features == 0:
-            self.encoder  = self._encoder_auto
-            self.residual = self._residual_auto
-            self.hidden   = self._hidden_auto
-        else:
-            self.encoder  = self._encoder_ctrl
-            self.residual = self._residual_ctrl
-            self.hidden   = self._hidden_ctrl
-
-        # Build components
+        # NN options
         opts = {
             'activation'     : model_config.get('activation', 'prelu'),
             'weight_init'    : model_config.get('weight_init', 'xavier_uniform'),
@@ -208,95 +190,66 @@ class TemplateCorrDif(ComposedDynamics):
             'device'         : device
         }
 
-        self.encoder_net = MLP(
-            input_dim  = self.n_total_features,
-            latent_dim = self.latent_dimension,
-            output_dim = self.hidden_dimension,
-            n_layers   = model_config.get('encoder_layers', 2),
+        # Autoencoder
+        encoder_net = MLP(
+            input_dim  = dims['e'],
+            latent_dim = dims['l'],
+            output_dim = dims['z'] - dims['x'],
+            n_layers   = dims['enc'],
             **opts
         )
+        if dims['u'] > 0:
+            self.encoder = EncCorrDifCtrl(encoder_net)
+        else:
+            self.encoder = EncCorrDifAuto(encoder_net)
 
-        _dim = self.n_total_state_features + self.hidden_dimension + self.n_total_control_features
-        self.residual_net = MLP(
-            input_dim  = _dim,
-            latent_dim = self.latent_dimension,
-            output_dim = self.residual_dimension,
-            n_layers   = model_config.get('residual_layers', 2),
+        decoder_net = MLP(
+            input_dim  = dims['z'],
+            latent_dim = dims['l'],
+            output_dim = dims['x'],
+            n_layers   = dims['dec'],
             **opts
         )
+        self.decoder = DEC_MAP['auto'](decoder_net)
 
-        self.dynamics_net = MLP(
+        # Features in the dynamics
+        fzu_type = 'cat' if dims['u'] > 0 else 'none'
+
+        # Processor in the dynamics
+        _dim = dims['z'] + dims['u']
+        processor_net = MLP(
             input_dim  = _dim,
-            latent_dim = self.latent_dimension,
-            output_dim = self.hidden_dimension,
+            latent_dim = dims['l'],
+            output_dim = dims['r'],
+            n_layers   = dims['prc'],
+            **opts
+        )
+        hidden_net = MLP(
+            input_dim  = _dim,
+            latent_dim = dims['l'],
+            output_dim = dims['z'] - dims['x'],
             n_layers   = model_config.get('hidden_layers', 2),
             **opts
         )
+        self.dynamics = DynCorrDif(processor_net, hidden_net, self.base_dynamics, dims['x'])
+        self.dynamics.features = FZU_MAP[fzu_type]
 
-        self.decoder_net = MLP(
-            input_dim  = self.n_total_state_features + self.hidden_dimension,
-            latent_dim = self.latent_dimension,
-            output_dim = self.n_total_state_features,
-            n_layers   = model_config.get('decoder_layers', 2),
-            **opts
-        )
-
-        self.extra_setup()
+        # Prediction options
+        self.input_order = model_config.get('input_order', 'cubic')
 
         assert self.CONT is not None, "CONT flag must be set in derived class."
+        if self.CONT:
+            self._predict = predict_continuous_np
+        else:
+            self._predict = predict_discrete_exp
+
+        self.extra_setup()
 
     def extra_setup(self):
         """
         Additional setup in derived classes.  Called at end of __init__.
         """
         pass
-
-    def diagnostic_info(self) -> str:
-        model_info = super().diagnostic_info()
-        model_info += f"Encoder: {self.encoder_net.diagnostic_info()}\n"
-        model_info += f"Residual: {self.residual_net}\n"
-        model_info += f"Hidden: {self.dynamics_net}\n"
-        model_info += f"Decoder: {self.decoder_net.diagnostic_info()}\n"
-        model_info += f"Input order: {self.input_order}"
-        return model_info
-
-    def _encoder_ctrl(self, w: DynData) -> torch.Tensor:
-        """
-        Map features to latent space for systems with inputs.
-        """
-        return torch.cat(
-            [w.x, self.encoder_net(torch.cat([w.x, w.u], dim=-1))],
-            dim=-1)
-
-    def _encoder_auto(self, w: DynData) -> torch.Tensor:
-        """
-        Map features to latent space for autonomous systems.
-        """
-        return torch.cat([w.x, self.encoder_net(w.x)], dim=-1)
-
-    def _residual_ctrl(self, z: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-        """
-        Map states to residual force for systems with inputs.
-        """
-        return self.residual_net(torch.cat([z, u], dim=-1))
-
-    def _residual_auto(self, z: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-        """
-        Map states to residual force for autonomous systems.
-        """
-        return self.residual_net(z)
-
-    def _hidden_ctrl(self, z: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-        """
-        Dynamics of the hidden state for systems with inputs.
-        """
-        return self.dynamics_net(torch.cat([z, u], dim=-1))
-
-    def _hidden_auto(self, z: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-        """
-        Dynamics of the hidden state for autonomous systems.
-        """
-        return self.dynamics_net(z)
 
     def base_dynamics(self, x: torch.Tensor, u: torch.Tensor, f: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
         """
@@ -306,41 +259,3 @@ class TemplateCorrDif(ComposedDynamics):
         to be incorporated into the base dynamics.
         """
         raise NotImplementedError("Implement in derived class.")
-
-    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """
-        Compute corrected dynamics.
-        """
-        if z.ndim == 3:
-            w_p = w.p.unsqueeze(-2)
-        else:
-            w_p = w.p
-        _x = z[..., :self.n_total_state_features]
-        _f = self.residual(z, w.u)
-        _dx = self.base_dynamics(_x, w.u, _f, w_p)
-        _ds = self.hidden(z, w.u)
-        return torch.cat([_dx, _ds], dim=-1)
-
-    def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        """
-        Map from latent space back to state space.
-        """
-        return self.decoder_net(z)
-
-    def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Forward pass through the model.
-        """
-        z = self.encoder(w)
-        z_dot = self.dynamics(z, w)
-        x_hat = self.decoder(z, w)
-        return z, z_dot, x_hat
-
-    def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor],
-                method: str = 'dopri5', **kwargs) -> torch.Tensor:
-        """
-        Predict trajectory using cont-time or disc-time integration.
-        """
-        if self.CONT:
-            return predict_continuous_np(self, x0, ts, w, method=method, order=self.input_order, **kwargs)
-        return predict_discrete_exp(self, x0, ts, w, **kwargs)
