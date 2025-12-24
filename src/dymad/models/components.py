@@ -1,97 +1,85 @@
 import torch
+import torch.nn as nn
 from typing import Tuple
 
 from dymad.io import DynData
 from dymad.models.model_base import Decoder, Dynamics, Encoder
 
 # ------------------
-# Encoder modules
+# Encoder functions
 # ------------------
 
-class EncIden(Encoder):
-    """Identity transform."""
-    def forward(self, w: DynData) -> torch.Tensor:
-        return w.x
+def enc_iden(net: nn.Module, w: DynData) -> torch.Tensor:
+    """Identity encoder function."""
+    return w.x
 
-class EncSmplAuto(Encoder):
+def enc_smpl_auto(net: nn.Module, w: DynData) -> torch.Tensor:
     """Only encodes states."""
-    def forward(self, w: DynData) -> torch.Tensor:
-        return self.net(w.x)
+    return net(w.x)
 
-class EncSmplCtrl(Encoder):
+def enc_smpl_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
     """Encodes states and controls."""
-    def forward(self, w: DynData) -> torch.Tensor:
-        return self.net(torch.cat([w.x, w.u], dim=-1))
+    return net(torch.cat([w.x, w.u], dim=-1))
 
-class EncGraphIden(Encoder):
-    """Identity transform."""
-    def forward(self, w: DynData) -> torch.Tensor:
-        return w.xg
+def enc_graph_iden(net: nn.Module, w: DynData) -> torch.Tensor:
+    """Identity encoder function for graph data."""
+    return w.xg
 
-class EncGraphAuto(Encoder):
+def enc_graph_auto(net: nn.Module, w: DynData) -> torch.Tensor:
     """Using GNN in EncAuto."""
-    def forward(self, w: DynData) -> torch.Tensor:
-        return w.g(self.net(w.xg, w.ei, w.ew, w.ea))
+    return w.g(net(w.xg, w.ei, w.ew, w.ea))
 
-class EncGraphCtrl(Encoder):
+def enc_graph_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
     """Using GNN in EncCtrl."""
-    def forward(self, w: DynData) -> torch.Tensor:
-        xu_cat = torch.cat([w.xg, w.ug], dim=-1)
-        return w.g(self.net(xu_cat, w.ei, w.ew, w.ea))
+    xu_cat = torch.cat([w.xg, w.ug], dim=-1)
+    return w.g(net(xu_cat, w.ei, w.ew, w.ea))
 
-class EncNodeAuto(Encoder):
+def enc_node_auto(net: nn.Module, w: DynData) -> torch.Tensor:
     """Using EncAuto for each node of graph."""
-    def forward(self, w: DynData) -> torch.Tensor:
-        return w.G(self.net(w.xg))      # G is needed for unified data structure
+    return w.G(net(w.xg))      # G is needed for unified data structure
 
-class EncNodeCtrl(Encoder):
+def enc_node_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
     """Using EncCtrl for each node of graph."""
-    def forward(self, w: DynData) -> torch.Tensor:
-        xu_cat = torch.cat([w.xg, w.ug], dim=-1)
-        return w.G(self.net(xu_cat))    # G is needed for unified data structure
+    xu_cat = torch.cat([w.xg, w.ug], dim=-1)
+    return w.G(net(xu_cat))    # G is needed for unified data structure
 
 ENC_MAP = {
-    "iden"       : EncIden,
-    "smpl_auto"  : EncSmplAuto,
-    "smpl_ctrl"  : EncSmplCtrl,
-    "graph_iden" : EncGraphIden,
-    "graph_auto" : EncGraphAuto,
-    "graph_ctrl" : EncGraphCtrl,
-    "node_iden"  : EncIden,       # Effectively same as regular iden
-    "node_auto"  : EncNodeAuto,
-    "node_ctrl"  : EncNodeCtrl
+    "iden"       : enc_iden,
+    "smpl_auto"  : enc_smpl_auto,
+    "smpl_ctrl"  : enc_smpl_ctrl,
+    "graph_iden" : enc_graph_iden,
+    "graph_auto" : enc_graph_auto,
+    "graph_ctrl" : enc_graph_ctrl,
+    "node_iden"  : enc_iden,       # Effectively same as regular iden
+    "node_auto"  : enc_node_auto,
+    "node_ctrl"  : enc_node_ctrl
 }
 
 
 # ------------------
-# Decoder modules
+# Decoder functions
 # ------------------
+def dec_iden(net: nn.Module, z: torch.Tensor, w: DynData) -> torch.Tensor:
+    """Identity decoder function."""
+    return z
 
-class DecIden(Decoder):
-    """Identity transform."""
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return z
+def dec_auto(net: nn.Module, z: torch.Tensor, w: DynData) -> torch.Tensor:
+    """Autoencoder decoder function."""
+    return net(z)
 
-class DecAuto(Decoder):
-    """Only decodes states."""
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.net(z)
+def dec_graph(net: nn.Module, z: torch.Tensor, w: DynData) -> torch.Tensor:
+    """Graph decoder function."""
+    return net(z, w.ei, w.ew, w.ea)
 
-class DecGraph(Decoder):
-    """Decode by GNN."""
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.net(z, w.ei, w.ew, w.ea)
-
-class DecNode(Decoder):
-    """Using DecAuto for each node of graph."""
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return w.G(self.net(w.g(z)))    # G is needed for unified data structure
+def dec_node(net: nn.Module, z: torch.Tensor, w: DynData) -> torch.Tensor:
+    """Node-wise decoder function."""
+    return w.G(net(w.g(z)))    # G is needed for unified data structure
 
 DEC_MAP = {
-    "iden"  : DecIden,
-    "auto"  : DecAuto,
-    "graph" : DecGraph,
-    "node"  : DecNode
+    "iden"  : dec_iden,
+    "auto"  : dec_auto,
+    "graph" : dec_graph,
+    "node"  : dec_node
 }
 
 

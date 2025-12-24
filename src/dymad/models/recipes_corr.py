@@ -53,8 +53,10 @@ class TemplateCorrAlg(ComposedDynamics):
         dims['prc'] = model_config.get('residual_layers', 2)
 
         # Autoencoder
-        self.encoder = ENC_MAP['iden']()
-        self.decoder = DEC_MAP['iden']()
+        self.encoder_net = None
+        self.decoder_net = None
+        self._encoder = ENC_MAP['iden']
+        self._decoder = DEC_MAP['iden']
 
         # Features in the dynamics
         fzu_type = 'cat' if dims['u'] > 0 else 'none'
@@ -124,17 +126,15 @@ class DynCorrDif(Dynamics):
         _ds = self.hidden(self.features(z, w))
         return torch.cat([_dx, _ds], dim=-1)
 
-class EncCorrDifCtrl(Encoder):
+def enc_corr_dif_ctrl(self, w: DynData) -> torch.Tensor:
     """Encodes states and controls."""
-    def forward(self, w: DynData) -> torch.Tensor:
-        return torch.cat(
-            [w.x, self.net(torch.cat([w.x, w.u], dim=-1))],
-            dim=-1)
+    return torch.cat(
+        [w.x, self.net(torch.cat([w.x, w.u], dim=-1))],
+        dim=-1)
 
-class EncCorrDifAuto(Encoder):
+def enc_corr_dif_auto(self, w: DynData) -> torch.Tensor:
     """Encodes states."""
-    def forward(self, w: DynData) -> torch.Tensor:
-        return torch.cat([w.x, self.net(w.x)], dim=-1)
+    return torch.cat([w.x, self.net(w.x)], dim=-1)
 
 class TemplateCorrDif(ComposedDynamics):
     """
@@ -191,7 +191,7 @@ class TemplateCorrDif(ComposedDynamics):
         }
 
         # Autoencoder
-        encoder_net = MLP(
+        self.encoder_net = MLP(
             input_dim  = dims['e'],
             latent_dim = dims['l'],
             output_dim = dims['z'] - dims['x'],
@@ -199,18 +199,18 @@ class TemplateCorrDif(ComposedDynamics):
             **opts
         )
         if dims['u'] > 0:
-            self.encoder = EncCorrDifCtrl(encoder_net)
+            self._encoder = enc_corr_dif_ctrl
         else:
-            self.encoder = EncCorrDifAuto(encoder_net)
+            self._encoder = enc_corr_dif_auto
 
-        decoder_net = MLP(
+        self.decoder_net = MLP(
             input_dim  = dims['z'],
             latent_dim = dims['l'],
             output_dim = dims['x'],
             n_layers   = dims['dec'],
             **opts
         )
-        self.decoder = DEC_MAP['auto'](decoder_net)
+        self._decoder = DEC_MAP['auto']
 
         # Features in the dynamics
         fzu_type = 'cat' if dims['u'] > 0 else 'none'

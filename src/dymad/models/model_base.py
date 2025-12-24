@@ -6,12 +6,8 @@ from typing import Callable, Dict, Tuple, Union
 from dymad.io import DynData
 
 
-class Encoder(nn.Module):
-    def __init__(self, net: nn.Module | None = None):
-        super().__init__()
-        self.net = net
-    def forward(self, w: DynData) -> torch.Tensor:
-        raise NotImplementedError("This is the base class.")
+# encoder(net, w) -> x
+Encoder = Callable[[nn.Module, DynData], torch.Tensor]
 
 class Dynamics(nn.Module):
     def __init__(self, net: nn.Module):
@@ -21,12 +17,8 @@ class Dynamics(nn.Module):
     def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         raise NotImplementedError("This is the base class.")
 
-class Decoder(nn.Module):
-    def __init__(self, net: nn.Module | None = None):
-        super().__init__()
-        self.net = net
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        raise NotImplementedError("This is the base class.")
+# decoder(net, z, w) -> x
+Decoder = Callable[[nn.Module, torch.Tensor, DynData], torch.Tensor]
 
 
 class ComposedDynamics(nn.Module):
@@ -80,9 +72,10 @@ class ComposedDynamics(nn.Module):
         if dynamics is None:
             # Expected to be used as base class only
             return
-        self.encoder  = encoder
+
+        self._encoder = encoder
         self.dynamics = dynamics
-        self.decoder  = decoder
+        self._decoder = decoder
         if predict is not None:
             self._predict, self.input_order = predict
         # else use the default predict method
@@ -90,10 +83,12 @@ class ComposedDynamics(nn.Module):
         self.n_total_state_features = dims['x']
         self.latent_dimension = dims['z']
 
-        self.dtype  = next(self.parameters()).dtype
-        self.device = next(self.parameters()).device
+        self.dtype  = next(dynamics.parameters()).dtype
+        self.device = next(dynamics.parameters()).device
 
         # To be assgined
+        self.encoder_net = None
+        self.decoder_net = None
         self._linear_eval = None
         self._linear_features = None
 
@@ -109,16 +104,24 @@ class ComposedDynamics(nn.Module):
             str: String with model details
         """
         return f"Model parameters: {sum(p.numel() for p in self.parameters())}\n" + \
-               f"Encoder: {self.encoder}\n" + \
-               f"Features: {self.dynamics.features.__name__}\n" + \
-               f"Dynamics: {self.dynamics}\n" + \
-               f"Decoder: {self.decoder}\n"
+               f"Encoder: {self._encoder.__name__}\n" + \
+               f"         {self.encoder_net}\n" + \
+               f"Dynamics: {self.dynamics.features.__name__}\n" + \
+               f"          {self.dynamics}\n" + \
+               f"Decoder: {self._decoder.__name__}\n" + \
+               f"         {self.decoder_net}\n"
 
     def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         z = self.encoder(w)
         z_dot = self.dynamics(z, w)
         x_hat = self.decoder(z, w)
         return z, z_dot, x_hat
+
+    def encoder(self, w: DynData) -> torch.Tensor:
+        return self._encoder(self.encoder_net, w)
+
+    def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        return self._decoder(self.decoder_net, z, w)
 
     def linear_eval(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute linear evaluation, dz, and states, z, for the model.
