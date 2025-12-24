@@ -151,6 +151,8 @@ def build_model(
     model.decoder_net      = decoder_net
     model._linear_eval     = lin_eval
     model._linear_features = lin_feat
+    model.dtype            = dtype
+    model.device           = device
 
     logger.info(f"Built model: {model_cls.__name__}")
     logger.info(f"- Encoder: {enc_type}, Dynamics: {dyn_type}, Decoder: {dec_type}, Features: {fzu_type}")

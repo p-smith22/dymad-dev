@@ -224,11 +224,11 @@ def predict_continuous_exp(
         assert _ws.u is None, "predict_discrete_exp only supports autonomous case."
 
     # Get the system matrix
-    if model.dynamics.net.mode == "full":
-        W = (model.dynamics.net.weight, )
+    if model.processor_net.mode == "full":
+        W = (model.processor_net.weight, )
     else:
-        U = model.dynamics.net.U
-        V = model.dynamics.net.V
+        U = model.processor_net.U
+        V = model.processor_net.V
         W = (U, V)
 
     logger.debug(f"predict_continuous_exp: {'Batch' if is_batch else 'Single'} mode (autonomous)")

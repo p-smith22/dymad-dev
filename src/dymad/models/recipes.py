@@ -141,9 +141,9 @@ class CD_KM(ComposedDynamics):
         """
         Fit the kernel dynamics using input-output pairs.
         """
-        self.dynamics.net.set_train_data(inp, out)
-        residual = self.dynamics.net.fit()
-        return self.dynamics.net._alphas, residual
+        self.processor_net.set_train_data(inp, out)
+        residual = self.processor_net.fit()
+        return self.processor_net._alphas, residual
 
     def load_state_dict(self, state_dict, strict: bool = True):
         """
@@ -170,9 +170,9 @@ class CD_KMSK(CD_KM):
         self.kernel_dimension = dims['z']
 
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
-        self.dynamics.net.set_train_data(inp, out-inp[..., :self.kernel_dimension])
-        residual = self.dynamics.net.fit()
-        return self.dynamics.net._alphas, residual
+        self.processor_net.set_train_data(inp, out-inp[..., :self.kernel_dimension])
+        residual = self.processor_net.fit()
+        return self.processor_net._alphas, residual
 
 
 M_KEYS = ['data', 'd', 'K', 'g', 'T', 'iforit', 'extT']
@@ -215,10 +215,10 @@ class CD_KMM(CD_KM):
             setattr(self, f"_m_{_k}", _v)
 
         # Fit KRR with the manifold constraint
-        self.dynamics.net.set_train_data(inp, out)
-        self.dynamics.net.set_manifold(self._manifold)
-        residual = self.dynamics.net.fit()
-        return self.dynamics.net._alphas, residual
+        self.processor_net.set_train_data(inp, out)
+        self.processor_net.set_manifold(self._manifold)
+        residual = self.processor_net.fit()
+        return self.processor_net._alphas, residual
 
     def predict(self, x0: torch.Tensor, w: DynData, ts: Union[np.ndarray, torch.Tensor], **kwargs) -> torch.Tensor:
         """Predict trajectory using discrete-time iterations."""
@@ -253,7 +253,7 @@ class CD_KMM(CD_KM):
 
         t = {_k : getattr(self, f"_m_{_k}") for _k in M_KEYS}
         self._manifold = Manifold.from_tensors(t)
-        self.dynamics.net._manifold = self._manifold
-        self.dynamics.net.kernel._manifold = self._manifold
+        self.processor_net._manifold = self._manifold
+        self.processor_net.kernel._manifold = self._manifold
 
         return res

@@ -109,11 +109,11 @@ class SAInterface(DataInterface):
         """
         Get the linear weights of the dynamics model.
         """
-        if self.model.dynamics.net.mode == "full":
-            return (self.model.dynamics.net.weight.data.cpu().numpy(), )
+        if self.model.processor_net.mode == "full":
+            return (self.model.processor_net.weight.data.cpu().numpy(), )
         else:
-            U = self.model.dynamics.net.U.data.cpu().numpy()
-            V = self.model.dynamics.net.V.data.cpu().numpy()
+            U = self.model.processor_net.U.data.cpu().numpy()
+            V = self.model.processor_net.V.data.cpu().numpy()
             return (U, V)
 
 class SpectralAnalysis:
