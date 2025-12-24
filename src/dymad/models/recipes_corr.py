@@ -1,28 +1,13 @@
-import numpy as np
 import torch
-import torch.nn as nn
-from typing import Callable, Dict, Union, Tuple
+from typing import Dict
 
 from dymad.io import DynData
 from dymad.models.components import DEC_MAP, ENC_MAP, FZU_MAP
 from dymad.models.helpers import get_dims
-from dymad.models.model_base import ComposedDynamics, Dynamics, Encoder
+from dymad.models.model_base import ComposedDynamics
 from dymad.models.prediction import predict_continuous_np, predict_discrete_exp
 from dymad.modules import MLP
 
-class DynCorrAlg(Dynamics):
-    def __init__(self, net: nn.Module, func: Callable):
-        super().__init__(net)
-        self.func = func
-
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        if z.ndim == 3:
-            w_p = w.p.unsqueeze(-2)
-        else:
-            w_p = w.p
-        _l = self.net(self.features(z, w))
-        _f = self.func(z, w.u, _l, w_p)
-        return _f
 
 class TemplateCorrAlg(ComposedDynamics):
     """
@@ -71,15 +56,15 @@ class TemplateCorrAlg(ComposedDynamics):
             'dtype'          : dtype,
             'device'         : device
         }
-        processor_net = MLP(
+        self.processor_net = MLP(
             input_dim  = dims['s'],
             latent_dim = dims['l'],
             output_dim = dims['r'],
             n_layers   = dims['prc'],
             **opts
         )
-        self.dynamics = DynCorrAlg(processor_net, self.base_dynamics)
-        self.dynamics.features = FZU_MAP[fzu_type]
+        self.features = FZU_MAP[fzu_type]
+        self.composer = lambda x: x     # Placeholder, not used
 
         # Prediction options
         self.input_order = model_config.get('input_order', 'cubic')
@@ -107,24 +92,16 @@ class TemplateCorrAlg(ComposedDynamics):
         """
         raise NotImplementedError("Implement in derived class.")
 
-
-class DynCorrDif(Dynamics):
-    def __init__(self, net: nn.Module, hidden: nn.Module, func: Callable, dimx: int):
-        super().__init__(net)
-        self.hidden = hidden
-        self.func = func
-        self.n_total_state_features = dimx
-
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        """Processing without control inputs."""
         if z.ndim == 3:
             w_p = w.p.unsqueeze(-2)
         else:
             w_p = w.p
-        _x = z[..., :self.n_total_state_features]
-        _f = self.net(self.features(z, w))
-        _dx = self.func(_x, w.u, _f, w_p)
-        _ds = self.hidden(self.features(z, w))
-        return torch.cat([_dx, _ds], dim=-1)
+        _l = self.processor_net(self.features(z, w))
+        _f = self.base_dynamics(z, w.u, _l, w_p)
+        return _f
+
 
 def enc_corr_dif_ctrl(self, w: DynData) -> torch.Tensor:
     """Encodes states and controls."""
@@ -178,6 +155,7 @@ class TemplateCorrDif(ComposedDynamics):
         dims['s'] = dims['z']
         dims['r'] = model_config.get('residual_dimension', 1)
         dims['prc'] = model_config.get('residual_layers', 2)
+        self.n_total_state_features = dims['x']
 
         # NN options
         opts = {
@@ -217,22 +195,22 @@ class TemplateCorrDif(ComposedDynamics):
 
         # Processor in the dynamics
         _dim = dims['z'] + dims['u']
-        processor_net = MLP(
+        self.processor_net = MLP(
             input_dim  = _dim,
             latent_dim = dims['l'],
             output_dim = dims['r'],
             n_layers   = dims['prc'],
             **opts
         )
-        hidden_net = MLP(
+        self.hidden_net = MLP(
             input_dim  = _dim,
             latent_dim = dims['l'],
             output_dim = dims['z'] - dims['x'],
             n_layers   = model_config.get('hidden_layers', 2),
             **opts
         )
-        self.dynamics = DynCorrDif(processor_net, hidden_net, self.base_dynamics, dims['x'])
-        self.dynamics.features = FZU_MAP[fzu_type]
+        self.features = FZU_MAP[fzu_type]
+        self.composer = lambda x: x     # Placeholder, not used
 
         # Prediction options
         self.input_order = model_config.get('input_order', 'cubic')
@@ -244,6 +222,16 @@ class TemplateCorrDif(ComposedDynamics):
             self._predict = predict_discrete_exp
 
         self.extra_setup()
+
+    def diagnostic_info(self) -> str:
+        """
+        Return diagnostic information about the model.
+
+        Returns:
+            str: String with model details
+        """
+        return super().diagnostic_info() + \
+               f"Additional: {self.hidden_net}\n"
 
     def extra_setup(self):
         """
@@ -259,3 +247,14 @@ class TemplateCorrDif(ComposedDynamics):
         to be incorporated into the base dynamics.
         """
         raise NotImplementedError("Implement in derived class.")
+
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        if z.ndim == 3:
+            w_p = w.p.unsqueeze(-2)
+        else:
+            w_p = w.p
+        _x = z[..., :self.n_total_state_features]
+        _f = self.processor_net(self.features(z, w))
+        _dx = self.base_dynamics(_x, w.u, _f, w_p)
+        _ds = self.hidden_net(self.features(z, w))
+        return torch.cat([_dx, _ds], dim=-1)

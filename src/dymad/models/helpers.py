@@ -134,7 +134,7 @@ def build_model(
     # The full model
     model = model_cls(
         encoder  = ENC_MAP[enc_type],
-        dynamics = DYN_MAP[dyn_type](processor_net),
+        dynamics = (FZU_MAP[fzu_type], DYN_MAP[dyn_type]),
         decoder  = DEC_MAP[dec_type],
         predict  = (predict, input_order),
         model_config = copy.deepcopy(model_config),
@@ -142,12 +142,12 @@ def build_model(
     )
     model.CONT  = cont
     model.GRAPH = graph_ae or graph_dyn
-    model.dynamics.features = FZU_MAP[fzu_type]
     if model.GRAPH:
         lin_eval, lin_feat = LIN_MAP["graph"]
     else:
         lin_eval, lin_feat = LIN_MAP["smpl"]
     model.encoder_net      = encoder_net
+    model.processor_net    = processor_net
     model.decoder_net      = decoder_net
     model._linear_eval     = lin_eval
     model._linear_features = lin_feat

@@ -3,7 +3,6 @@ import torch.nn as nn
 from typing import Tuple
 
 from dymad.io import DynData
-from dymad.models.model_base import Decoder, Dynamics, Encoder
 
 # ------------------
 # Encoder functions
@@ -133,36 +132,31 @@ FZU_MAP = {
 
 
 # ------------------
-# Dynamics modules
+# Dynamics modules - composers
 # ------------------
 
-class DynDirect(Dynamics):
+def dyn_direct(net: nn.Module, s: torch.Tensor, z: torch.Tensor, w: DynData) -> torch.Tensor:
     """Processing without control inputs."""
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.net(self.features(z, w))
+    return net(s)
 
-class DynSkip(Dynamics):
+def dyn_skip(net: nn.Module, s: torch.Tensor, z: torch.Tensor, w: DynData) -> torch.Tensor:
     """Processing with skip connection."""
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return z + self.net(self.features(z, w))
+    return z + net(s)
 
-class DynGraphDirect(Dynamics):
+def dyn_graph_direct(net: nn.Module, s: torch.Tensor, z: torch.Tensor, w: DynData) -> torch.Tensor:
     """Processing by GNN."""
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return self.net(w.g(self.features(z, w)), w.ei, w.ew, w.ea)   # G is effectively applied in the net
+    return net(w.g(s), w.ei, w.ew, w.ea)   # G is effectively applied in the net
 
-class DynGraphSkip(Dynamics):
+def dyn_graph_skip(net: nn.Module, s: torch.Tensor, z: torch.Tensor, w: DynData) -> torch.Tensor:
     """Processing by GNN with skip connection."""
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        return z + self.net(w.g(self.features(z, w)), w.ei, w.ew, w.ea)   # G is effectively applied in the net
+    return z + net(w.g(s), w.ei, w.ew, w.ea)   # G is effectively applied in the net
 
 DYN_MAP = {
-    "direct"       : DynDirect,
-    "skip"         : DynSkip,
-    "graph_direct" : DynGraphDirect,
-    "graph_skip"   : DynGraphSkip
+    "direct"       : dyn_direct,
+    "skip"         : dyn_skip,
+    "graph_direct" : dyn_graph_direct,
+    "graph_skip"   : dyn_graph_skip
 }
-
 
 # ------------------
 # Dynamics modules - linear features
@@ -177,7 +171,7 @@ def linear_eval_smpl(mdl, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
 def linear_features_smpl(mdl, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
     """Compute linear features, f, and outputs, dz, for the model."""
     z = mdl.encoder(w)
-    return mdl.dynamics.features(z, w), z
+    return mdl.features(z, w), z
 
 def linear_eval_graph(mdl, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
     """Compute linear evaluation, dz, and states, z, for the model."""
@@ -188,7 +182,7 @@ def linear_eval_graph(mdl, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
 def linear_features_graph(mdl, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
     """Compute linear features, f, and outputs, dz, for the model."""
     z = mdl.encoder(w)
-    f = mdl.dynamics.features(z, w)
+    f = mdl.features(z, w)
     return f.permute(0, 2, 1, 3), z.permute(0, 2, 1, 3)
 
 LIN_MAP = {

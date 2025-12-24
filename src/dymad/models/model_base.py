@@ -9,13 +9,8 @@ from dymad.io import DynData
 # encoder(net, w) -> x
 Encoder = Callable[[nn.Module, DynData], torch.Tensor]
 
-class Dynamics(nn.Module):
-    def __init__(self, net: nn.Module):
-        super().__init__()
-        self.net = net
-        self.features = None  # To be defined in subclasses
-    def forward(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
-        raise NotImplementedError("This is the base class.")
+# Composer(net, s, z, w) -> r
+Composer = Callable[[nn.Module, torch.Tensor, torch.Tensor, DynData], torch.Tensor]
 
 # decoder(net, z, w) -> x
 Decoder = Callable[[nn.Module, torch.Tensor, DynData], torch.Tensor]
@@ -63,31 +58,27 @@ class ComposedDynamics(nn.Module):
     def __init__(
             self,
             encoder: Encoder | None = None,
-            dynamics: Dynamics | None = None,
+            dynamics: Tuple[Callable, Composer] | None = None,
             decoder: Decoder | None = None,
             predict: Tuple[Callable, str] | None = None,
             model_config: Dict | None = None,
             dims: Dict | None = None):
         super().__init__()
-        if dynamics is None:
-            # Expected to be used as base class only
-            return
 
         self._encoder = encoder
-        self.dynamics = dynamics
         self._decoder = decoder
+        if dynamics is not None:
+            self.features, self.composer = dynamics
         if predict is not None:
             self._predict, self.input_order = predict
-        # else use the default predict method
 
-        self.n_total_state_features = dims['x']
-        self.latent_dimension = dims['z']
-
-        self.dtype  = next(dynamics.parameters()).dtype
-        self.device = next(dynamics.parameters()).device
+        if dims is not None:
+            self.n_total_state_features = dims['x']
+            self.latent_dimension = dims['z']
 
         # To be assgined
         self.encoder_net = None
+        self.processor_net = None
         self.decoder_net = None
         self._linear_eval = None
         self._linear_features = None
@@ -106,8 +97,9 @@ class ComposedDynamics(nn.Module):
         return f"Model parameters: {sum(p.numel() for p in self.parameters())}\n" + \
                f"Encoder: {self._encoder.__name__}\n" + \
                f"         {self.encoder_net}\n" + \
-               f"Dynamics: {self.dynamics.features.__name__}\n" + \
-               f"          {self.dynamics}\n" + \
+               f"Dynamics: {self.features.__name__}\n" + \
+               f"          {self.processor_net}\n" + \
+               f"          {self.composer.__name__}\n" + \
                f"Decoder: {self._decoder.__name__}\n" + \
                f"         {self.decoder_net}\n"
 
@@ -119,6 +111,9 @@ class ComposedDynamics(nn.Module):
 
     def encoder(self, w: DynData) -> torch.Tensor:
         return self._encoder(self.encoder_net, w)
+
+    def dynamics(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+        return self.composer(self.processor_net, self.features(z, w), z, w)
 
     def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         return self._decoder(self.decoder_net, z, w)
@@ -145,7 +140,7 @@ class ComposedDynamics(nn.Module):
         W: torch.Tensor | None = None, b: torch.Tensor | None = None,
         U: torch.Tensor | None = None, V: torch.Tensor | None = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """Set the weights of the linear dynamics module."""
-        return self.dynamics.net.set_weights(W, b, U, V)
+        return self.processor_net.set_weights(W, b, U, V)
 
     def linear_solve(self, inp: torch.Tensor, out: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError("This is the base class.")
