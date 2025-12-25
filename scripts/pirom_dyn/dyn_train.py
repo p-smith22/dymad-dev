@@ -31,7 +31,7 @@ class DPT(TemplateCorrDif):
         return _f
 
     def encoder(self, w) -> torch.Tensor:
-        return torch.cat([w.x, torch.zeros(w.x.shape[:-1], 1, device=w.x.device, dtype=w.x.dtype)], dim=-1)
+        return torch.cat([w.x, torch.zeros(*w.x.shape[:-1], 1, device=w.x.device, dtype=w.x.dtype)], dim=-1)
 
     def decoder(self, z, w) -> torch.Tensor:
         return z[..., :2]
@@ -50,7 +50,7 @@ class DPJ(TemplateCorrDif):
         return self._jax_layer(x, u, f, p)
 
     def encoder(self, w) -> torch.Tensor:
-        return torch.cat([w.x, torch.zeros(w.x.shape[:-1], 1, device=w.x.device, dtype=w.x.dtype)], dim=-1)
+        return torch.cat([w.x, torch.zeros(*w.x.shape[:-1], 1, device=w.x.device, dtype=w.x.dtype)], dim=-1)
 
     def decoder(self, z, w) -> torch.Tensor:
         return z[..., :2]

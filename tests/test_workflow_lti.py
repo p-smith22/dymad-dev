@@ -17,7 +17,7 @@ import shutil
 import torch
 
 from dymad.io import load_model
-from dymad.models import DKBF, DLDM, KBF, LDM
+from dymad.models import DKBF, DLDM, DLTI, KBF, LDM, LTI
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
 
 trx = [
@@ -119,13 +119,13 @@ cfgs = [
     ('ldm_wf',    LDM,  WeakFormTrainer, {"model": mdl_ld, "training" : trn_wf}),
     ('ldm_node',  LDM,  NODETrainer,     {"model": mdl_ld, "training" : trn_nd}),
     ('kbf_wf',    KBF,  WeakFormTrainer, {"model": mdl_kb, "training" : trn_wf}),
-    ('kbf_node',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_nd}),
+    ('kbf_node',  LTI,  NODETrainer,     {"model": mdl_kb, "training" : trn_nd}),
     ('kbf_wfls',  KBF,  WeakFormTrainer, {"model": mdl_kb, "training" : trn_wfls}),
     ('kbf_ndls',  KBF,  NODETrainer,     {"model": mdl_kb, "training" : trn_ndls}),
     ('kbf_ln',    KBF,  LinearTrainer,   {"model": mdl_kl, "training" : trn_ln}),
     ('dldm_nd',   DLDM, NODETrainer,     {"model": mdl_ld, "training" : trn_dt}),
     ('dkbf_nd',   DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_dt}),
-    ('dkbf_ndls', DKBF, NODETrainer,     {"model": mdl_kb, "training" : trn_ndls}),
+    ('dkbf_ndls', DLTI, NODETrainer,     {"model": mdl_kb, "training" : trn_ndls}),
     ('dkbf_ln',   DKBF, LinearTrainer,   {"model": mdl_kl, "training" : trn_ln}),
     ]
 

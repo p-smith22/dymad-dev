@@ -90,7 +90,6 @@ class OptBase:
         # logging summary
         logger.info("Opt Initialized:")
         logger.info(f"Model name: {self.model_name}")
-        logger.info(self.model)
         logger.info(self.model.diagnostic_info())
         logger.info("Optimization settings:")
         logger.info(self.optimizer)
@@ -426,7 +425,7 @@ class OptBase:
 
         preds = predictions
         if predictions is None:
-            if len(self.criteria) > n_eval:
+            if len(self.criteria)-1 > n_eval:
                 # This means there are additional criteria,
                 # which we assume requires predictions, and need to compute this
                 init_states = B.x[:, 0, :]  # (batch_size, n_total_state_features)
