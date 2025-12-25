@@ -10,6 +10,7 @@ from dymad.modules import FlexLinear, GNN, make_krr, MLP
 from dymad.numerics import Manifold
 
 class CD_LDM(ComposedDynamics):
+    """Latent Dynamics Model (LDM) class."""
 
     @classmethod
     def build_core(cls, types, model_config, data_meta, dtype, device, ifgnn=False):
@@ -56,6 +57,8 @@ class CD_LDM(ComposedDynamics):
 
 
 class CD_LFM(ComposedDynamics):
+    """Linear Feature Model (LFM) class."""
+
     def __init__(self, encoder, dynamics, decoder, predict=None, model_config=None, dims=None):
         super().__init__(encoder, dynamics, decoder, predict, model_config, dims)
         self.koopman_dimension = dims['z']
@@ -102,6 +105,7 @@ class CD_LFM(ComposedDynamics):
 
 
 class CD_KM(ComposedDynamics):
+    """Kernel Machine (KM) class."""
 
     @classmethod
     def build_core(cls, types, model_config, data_meta, dtype, device, ifgnn=False):
@@ -165,6 +169,8 @@ class CD_KM(ComposedDynamics):
 
 
 class CD_KMSK(CD_KM):
+    """Kernel Machine (KM) class with skip connection."""
+
     def __init__(self, encoder, dynamics, decoder, predict=None, model_config=None, dims=None):
         super().__init__(encoder, dynamics, decoder, predict, model_config, dims)
         self.kernel_dimension = dims['z']

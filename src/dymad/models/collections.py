@@ -6,6 +6,18 @@ from dymad.models.recipes import CD_KM, CD_KMM, CD_KMSK, CD_LDM, CD_LFM
 
 @dataclass
 class PredefinedModel:
+    """
+    Predefined model specification for easy building of common models.
+
+    Args:
+        CONT (bool): Whether the model is continuous-time
+        encoder (str): Encoder type
+        feature (str): Feature type
+        dynamics (str): Dynamics type
+        decoder (str): Decoder type
+        model_cls (object): Model class, expected to be subclass of ComposedDynamics
+          with a `build_core` class method.
+    """
     CONT: bool
     encoder: str
     feature: str
@@ -14,14 +26,28 @@ class PredefinedModel:
     model_cls: object
 
     def __post_init__(self):
+        # Determine if graph compatible
+        # Three possibilities: autoencoder (graph/node), dynamics (graph)
         self.GRAPH = \
             'graph' in self.encoder or 'node' in self.encoder or \
             'graph' in self.decoder or 'node' in self.decoder or \
             'graph' in self.dynamics
 
-    def __call__(self,
-        model_config: Dict, data_meta: Dict,
-        dtype=None, device=None):
+    def __call__(
+            self,
+            model_config: Dict, data_meta: Dict,
+            dtype=None, device=None):
+        """
+        Build the model based on the predefined specification.
+        Essentially a wrapper of :func:`~dymad.models.helpers.build_model`.
+
+        This interface is designed such that the predefined model
+        can be directly called to build the model as if initialization.
+
+        For example, when `LDM` is instantiated from `PredefinedModel`,
+        calling `LDM(model_config, data_meta, dtype, device)` would behave like
+        instantiating a class by `__init__`, but actually invokes this `__call__` method.
+        """
         model_spec = [
             self.CONT,
             self.encoder,

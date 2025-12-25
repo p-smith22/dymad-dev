@@ -10,10 +10,15 @@ from dymad.modules import make_autoencoder
 logger = logging.getLogger(__name__)
 
 def get_dims(model_config, data_meta):
+    """
+    Determine dimensions used in the model based on configuration and metadata.
+
+    This is a generic guess and can be overridden by specific model classes.
+    """
     # Basic dimensions
     dim_x  = data_meta.get('n_total_state_features')
     dim_u  = data_meta.get('n_total_control_features')
-    dim_e  = dim_x + dim_u
+    dim_e  = dim_x + dim_u   # Input dim to encoder
 
     dim_l  = model_config.get('latent_dimension', 64)
     n_enc  = model_config.get('encoder_layers', 2)
@@ -21,12 +26,12 @@ def get_dims(model_config, data_meta):
     n_prc  = model_config.get('processor_layers', 2)
 
     # Derived dimensions - default options
-    dim_z = dim_l if n_enc > 0 else dim_e
-    dim_r = dim_s = dim_z
+    dim_z = dim_l if n_enc > 0 else dim_e   # Latent dimension
+    dim_r = dim_s = dim_z                   # Feature and processor output dimension
     dims = {
         'x'  : dim_x,
         'u'  : dim_u,
-        'e'  : dim_e,   # Input dim to encoder
+        'e'  : dim_e,
         'z'  : dim_z,
         's'  : dim_s,
         'r'  : dim_r,
@@ -107,6 +112,22 @@ def build_model(
         model_spec: List,
         model_config: Dict, data_meta: Dict,
         dtype=None, device=None):
+    """
+    Build a model based on the provided specification.
+    
+    The function expects `model_cls` to have a
+    :func:`~dymad.models.model_base.ComposedDynamics.build_core` class method,
+    which generates class-specific components.  Then it builds necessary networks,
+    instantiate the model class, and hooks all components together.
+
+    Args:
+        model_spec (List): List specifying the model components in order:
+            [CONT (bool), encoder (str), feature (str), dynamics (str), decoder (str), model_cls (object)]
+        model_config (Dict): Model configuration dictionary
+        data_meta (Dict): Data metadata dictionary
+        dtype: Data type for model parameters
+        device: Device for model parameters
+    """
     cont, enc_type, fzu_type, dyn_type, dec_type, model_cls = model_spec
 
     # Validate graph compatibility
@@ -116,17 +137,19 @@ def build_model(
     assert graph_ae == tmp, "Encoder/Decoder graph compatibility mismatch."
 
     # Class specific processing
+    # `build_core` is a class method that returns:
+    # 1) dims: class-specific dimension dictionary
+    # 2) (enc_type, fzu_type, dec_type, prd_type): finalized type strings
+    # 3) processor_net: network for the dynamics processor
+    # 4) input_order: input order string for the predictor
     dims, (enc_type, fzu_type, dec_type, prd_type), processor_net, input_order = \
         model_cls.build_core(
             (enc_type, fzu_type, dec_type),
-            model_config, data_meta,
-            dtype, device, ifgnn = graph_dyn)
+            model_config, data_meta, dtype, device, ifgnn = graph_dyn)
 
     # Autoencoder
     encoder_net, decoder_net = build_autoencoder(
-        model_config, dims,
-        dtype, device,
-        ifgnn = graph_ae)
+        model_config, dims, dtype, device, ifgnn = graph_ae)
 
     # Prediction
     predict = build_predictor(cont, prd_type, dims['u'])
