@@ -60,28 +60,49 @@ class PredefinedModel:
 
 #                       CONT,  encoder, feature, dynamics,       decoder, model_cls
 LDM   = PredefinedModel(True,  "smpl",  "none",  "direct",       "auto",  CD_LDM)
+"""Latent dynamics model (LDM), continuous-time."""
 DLDM  = PredefinedModel(False, "smpl",  "none",  "direct",       "auto",  CD_LDM)
+"""LDM, discrete-time."""
 GLDM  = PredefinedModel(True,  "graph", "none",  "direct",       "graph", CD_LDM)
+"""LDM with graph autoencoder, continuous-time."""
 DGLDM = PredefinedModel(False, "graph", "none",  "direct",       "graph", CD_LDM)
+"""LDM with graph autoencoder, discrete-time."""
 LDMG  = PredefinedModel(True,  "node",  "none",  "graph_direct", "node",  CD_LDM)
+"""LDM with graph dynamics, continuous-time."""
 DLDMG = PredefinedModel(False, "node",  "none",  "graph_direct", "node",  CD_LDM)
+"""LDM with graph dynamics, discrete-time."""
 
 #                       CONT,  encoder,      feature,      dynamics, decoder, model_cls
 KBF   = PredefinedModel(True,  "smpl_auto",  "blin",       "direct", "auto",  CD_LFM)
+"""Koopman bilinear form (KBF), continuous-time."""
 DKBF  = PredefinedModel(False, "smpl_auto",  "blin",       "direct", "auto",  CD_LFM)
+"""KBF, discrete-time."""
 GKBF  = PredefinedModel(True,  "graph_auto", "graph_blin", "direct", "graph", CD_LFM)
+"""KBF with graph autoencoder, continuous-time."""
 DGKBF = PredefinedModel(False, "graph_auto", "graph_blin", "direct", "graph", CD_LFM)
+"""KBF with graph autoencoder, discrete-time."""
 
 LTI   = PredefinedModel(True,  "smpl_auto",  "cat",        "direct", "auto",  CD_LFM)
+"""Linear time-invariant (LTI), continuous-time."""
 DLTI  = PredefinedModel(False, "smpl_auto",  "cat",        "direct", "auto",  CD_LFM)
+"""LTI, discrete-time."""
 GLTI  = PredefinedModel(True,  "graph_auto", "graph_cat",  "direct", "graph", CD_LFM)
+"""LTI with graph autoencoder, continuous-time."""
 DGLTI = PredefinedModel(False, "graph_auto", "graph_cat",  "direct", "graph", CD_LFM)
+"""LTI with graph autoencoder, discrete-time."""
 
 #                        CONT,  encoder,      feature,      dynamics, decoder, model_cls
 KM     = PredefinedModel(True,  "smpl_auto",  "blin",       "direct", "auto",  CD_KM)
+"""Kernel machine (KM), continuous-time."""
 KMM    = PredefinedModel(True,  "smpl_auto",  "blin",       "direct", "auto",  CD_KMM)
+"""Kernel machine on manifold (KMM), continuous-time."""
 DKM    = PredefinedModel(False, "smpl_auto",  "blin",       "direct", "auto",  CD_KM)
+"""KM, discrete-time."""
 GKM    = PredefinedModel(True,  "graph_auto", "graph_blin", "direct", "graph", CD_KM)
+"""KM with graph autoencoder, continuous-time."""
 DGKM   = PredefinedModel(False, "graph_auto", "graph_blin", "direct", "graph", CD_KM)
+"""KM with graph autoencoder, discrete-time."""
 DKMSK  = PredefinedModel(False, "smpl_auto",  "blin",       "skip",   "auto",  CD_KMSK)
+"""Kernel machine with skip-connection (KMSK), continuous-time."""
 DGKMSK = PredefinedModel(False, "graph_auto", "graph_blin", "skip",   "graph", CD_KMSK)
+"""KMSK with graph autoencoder, discrete-time."""

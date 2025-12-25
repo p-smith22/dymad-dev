@@ -6,20 +6,20 @@ from typing import Any, Callable, Dict, Tuple, Union
 from dymad.io import DynData
 
 
-# encoder(net, w) -> x
 Encoder = Callable[[nn.Module, DynData], torch.Tensor]
+"""encoder(net, w) -> x"""
 
-# features(z, w) -> s
 Features = Callable[[torch.Tensor, DynData], torch.Tensor]
+"""features(z, w) -> s"""
 
-# composer(net, s, z, w) -> r
 Composer = Callable[[nn.Module, torch.Tensor, torch.Tensor, DynData], torch.Tensor]
+"""composer(net, s, z, w) -> r"""
 
-# decoder(net, z, w) -> x
 Decoder = Callable[[nn.Module, torch.Tensor, DynData], torch.Tensor]
+"""decoder(net, z, w) -> x"""
 
-# predict
 Predictor = Callable[[torch.Tensor, DynData, Union[np.ndarray, torch.Tensor], Any], Tuple[torch.Tensor, torch.Tensor]]
+"""predict(x0, w, ts, **kwargs) -> (x_pred, z_pred)"""
 
 
 class ComposedDynamics(nn.Module):
