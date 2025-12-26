@@ -105,7 +105,7 @@ class ComposedDynamics(nn.Module):
             self.n_total_state_features = dims['x']
             self.latent_dimension = dims['z']
 
-        # To be assgined
+        # To be assigned
         self.encoder_net   = None  # Network to be used by self._encoder
         self.processor_net = None  # Network to be used inside self.dynamics
         self.decoder_net   = None  # Network to be used by self._decoder
