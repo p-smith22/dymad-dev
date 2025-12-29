@@ -11,7 +11,7 @@ from dymad.modules.sequential import ShiftDecoder, SeqEncoder, SimpleRNN, Standa
 
 def make_autoencoder(
         type: str,
-        input_dim: int, latent_dim: int, hidden_dim: int, enc_depth: int, dec_depth: int,
+        input_dim: int, hidden_dim: int, latent_dim: int, enc_depth: int, dec_depth: int,
         output_dim: int = None, seq_len: int = None, **kwargs) -> Tuple[nn.Module, nn.Module]:
     """
     Factory function to create preset autoencoder models. Including:
@@ -28,8 +28,8 @@ def make_autoencoder(
         type (str): Type of autoencoder to create.
             One of {'mlp_smp', 'mlp_res', 'mlp_cat', 'gnn_smp', 'gnn_res', 'gnn_cat', 'rnn_smp', 'rnn_std', 'rnn_seq'}.
         input_dim (int): Dimension of the input features.
-        latent_dim (int): Width of the latent layers (not the encoded space).
-        hidden_dim (int): Dimension of the encoded space.
+        hidden_dim (int): Width of the hidden layers.
+        latent_dim (int): Dimension of the latent/encoded space.
         enc_depth (int): Number of layers in the encoder.
         dec_depth (int): Number of layers in the decoder.
         output_dim (int, optional): Dimension of the output features, defaults to `input_dim`.
@@ -42,14 +42,14 @@ def make_autoencoder(
 
     encoder_args = dict(
         input_dim=input_dim,
-        latent_dim=latent_dim,
-        output_dim=hidden_dim,
+        hidden_dim=hidden_dim,
+        output_dim=latent_dim,
         n_layers=enc_depth,
     )
     encoder_args.update(kwargs)
     decoder_args = dict(
-        input_dim=hidden_dim,
-        latent_dim=latent_dim,
+        input_dim=latent_dim,
+        hidden_dim=hidden_dim,
         output_dim=output_dim,
         n_layers=dec_depth,
     )

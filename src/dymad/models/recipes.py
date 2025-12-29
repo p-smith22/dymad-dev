@@ -43,7 +43,7 @@ class CD_LDM(ComposedDynamics):
         MDL = GNN if ifgnn else MLP
         processor_net = MDL(
             input_dim  = dims['s'],
-            latent_dim = dims['l'],
+            hidden_dim = dims['h'],
             output_dim = dims['r'],
             n_layers   = dims['prc'],
             **opts
@@ -94,7 +94,7 @@ class CD_LDS(ComposedDynamics):
         MDL = GNN if ifgnn else MLP
         processor_net = MDL(
             input_dim  = dims['s'],
-            latent_dim = dims['l'],
+            hidden_dim = dims['h'],
             output_dim = dims['r'],
             n_layers   = dims['prc'],
             **opts

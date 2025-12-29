@@ -11,7 +11,7 @@ class SequentialBase(nn.Module):
     def __init__(
         self,
         input_dim: int,
-        latent_dim: int,
+        hidden_dim: int,
         output_dim: int,
         seq_len: int,
         *,
@@ -25,10 +25,11 @@ class SequentialBase(nn.Module):
     ):
         super().__init__()
         self.seq_len = seq_len
+        assert input_dim % seq_len == 0, f"input_dim ({input_dim}) must be divisible by seq_len ({seq_len})."
 
         _act = _resolve_activation(activation, dtype, device)
 
-        self._build_rnn(input_dim, latent_dim, output_dim, n_layers, _act, dtype, device, **kwargs)
+        self._build_rnn(input_dim // seq_len, hidden_dim, output_dim, n_layers, _act, dtype, device, **kwargs)
 
         # Cache init kwargs for later use in self.apply
         self._weight_init = _resolve_init(weight_init, _INIT_MAP_W)
@@ -47,7 +48,7 @@ class SequentialBase(nn.Module):
             self._weight_init(m.weight, self._gain)
             self._bias_init(m.bias)
 
-    def _build_rnn(self, input_dim, latent_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
+    def _build_rnn(self, input_dim, hidden_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
         """Build the internal RNN module."""
         raise NotImplementedError("_build_rnn must be implemented in subclasses.")
 
@@ -87,12 +88,12 @@ class SequentialBase(nn.Module):
 class StandardRNN(SequentialBase):
     """Standard RNN from pytorch."""
 
-    def _build_rnn(self, input_dim, latent_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
+    def _build_rnn(self, input_dim, hidden_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
         assert _act().__class__.__name__.lower() in ['tanh', 'relu'], "Only 'tanh' and 'relu' activations are supported for nn.RNN."
-        assert output_dim == latent_dim, "For StandardRNN, output_dim must equal latent_dim."
+        assert output_dim == hidden_dim, "For StandardRNN, output_dim must equal hidden_dim."
         self.net = nn.RNN(
             input_size = input_dim,
-            hidden_size = latent_dim,
+            hidden_size = hidden_dim,
             num_layers = n_layers,
             nonlinearity = _act().__class__.__name__.lower(),
             batch_first = True,
@@ -109,22 +110,22 @@ class SimpleRNN(SequentialBase):
     One layer, unidirectional, but supports arbitrary activations and adds a linear readout.
     """
 
-    def _build_rnn(self, input_dim, latent_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
+    def _build_rnn(self, input_dim, hidden_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
         assert n_layers == 1, f"SimpleRNN only supports n_layers=1, got {n_layers}"
 
-        self.latent_dim = latent_dim
+        self.hidden_dim = hidden_dim
 
         # Linear transformations
-        self.i2h = nn.Linear(input_dim, latent_dim, device=device, dtype=dtype)
-        self.h2h = nn.Linear(latent_dim, latent_dim, device=device, dtype=dtype)
-        self.h2o = nn.Linear(latent_dim, output_dim, device=device, dtype=dtype)
+        self.i2h = nn.Linear(input_dim, hidden_dim, device=device, dtype=dtype)
+        self.h2h = nn.Linear(hidden_dim, hidden_dim, device=device, dtype=dtype)
+        self.h2o = nn.Linear(hidden_dim, output_dim, device=device, dtype=dtype)
         self.activation = _act()
 
     def _run_rnn(self, x):
         """
         Args:
             x: Input tensor of shape (batch_size, seq_len, input_dim)
-            hidden: Initial hidden state of shape (batch_size, latent_dim)
+            hidden: Initial hidden state of shape (batch_size, hidden_dim)
 
         Returns:
             output: Output tensor of shape (batch_size, output_dim)
@@ -133,7 +134,7 @@ class SimpleRNN(SequentialBase):
 
         # Initialize hidden state if not provided
         if hidden is None:
-            hidden = torch.zeros(batch_size, self.latent_dim, device=x.device)
+            hidden = torch.zeros(batch_size, self.hidden_dim, device=x.device)
 
         # Process sequence
         for t in range(seq_len):

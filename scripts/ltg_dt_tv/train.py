@@ -12,7 +12,7 @@ mdl_kb = {
     "encoder_layers" : 0,
     "decoder_layers" : 0,
     "processor_layers" : 1,
-    "latent_dimension" : 2,
+    "hidden_dimension" : 2,
     "gcl": "gcnv",
     "gcl_opts": {"bias": False},
     "activation" : "none",

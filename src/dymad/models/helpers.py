@@ -21,13 +21,13 @@ def get_dims(model_config, data_meta):
     dim_e  = dim_x + dim_u   # Input dim to encoder
     l_seq  = data_meta.get('delay') + 1
 
-    dim_l  = model_config.get('latent_dimension', 64)
+    dim_h  = model_config.get('hidden_dimension', 64)
     n_enc  = model_config.get('encoder_layers', 2)
     n_dec  = model_config.get('decoder_layers', 2)
     n_prc  = model_config.get('processor_layers', 2)
 
     # Derived dimensions - default options
-    dim_z = dim_l if n_enc > 0 else dim_e   # Latent dimension
+    dim_z = dim_h if n_enc > 0 else dim_e   # Latent dimension
     dim_r = dim_s = dim_z                   # Feature and processor output dimension
     dims = {
         'x'  : dim_x,
@@ -36,7 +36,7 @@ def get_dims(model_config, data_meta):
         'z'  : dim_z,
         's'  : dim_s,
         'r'  : dim_r,
-        'l'  : dim_l,
+        'h'  : dim_h,
         'enc': n_enc,
         'dec': n_dec,
         'prc': n_prc,
@@ -71,8 +71,8 @@ def build_autoencoder(
     encoder_net, decoder_net = make_autoencoder(
         type       = pref+aec_type,
         input_dim  = dims['e'],
-        latent_dim = dims['l'],
-        hidden_dim = dims['z'],
+        hidden_dim = dims['h'],
+        latent_dim = dims['z'],
         enc_depth  = dims['enc'],
         dec_depth  = dims['dec'],
         output_dim = dims['x'],

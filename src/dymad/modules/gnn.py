@@ -20,7 +20,7 @@ class GNN(nn.Module):
 
     Args:
         input_dim (int): Dimension of input node features.
-        latent_dim (int): Dimension of hidden layers.
+        hidden_dim (int): Dimension of hidden layers.
         output_dim (int): Dimension of output node features.
         n_layers (int): Number of GCL layers.
         gcl (str | nn.Module | type, default='sage'): Graph convolution layer type or instance.
@@ -34,7 +34,7 @@ class GNN(nn.Module):
     def __init__(
         self,
         input_dim: int,
-        latent_dim: int,
+        hidden_dim: int,
         output_dim: int,
         n_layers: int,
         *,
@@ -63,8 +63,8 @@ class GNN(nn.Module):
         else:
             layers = []
             for i in range(n_layers):
-                in_dim = input_dim if i == 0 else latent_dim
-                out_dim = output_dim if i == n_layers - 1 else latent_dim
+                in_dim = input_dim if i == 0 else hidden_dim
+                out_dim = output_dim if i == n_layers - 1 else hidden_dim
                 # Each GCL layer can be a new instance
                 gcl_layer = _gcl(in_dim, out_dim)
                 layers.append(gcl_layer)
@@ -166,7 +166,7 @@ class ResBlockGNN(GNN):
 
     See `GNN` for the arguments.
     """
-    def __init__(self, input_dim: int, latent_dim: int, output_dim: int,
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int,
                  n_layers: int,
                  gcl: Union[str, nn.Module, type] = 'sage',
                  gcl_opts: dict = {},
@@ -177,7 +177,7 @@ class ResBlockGNN(GNN):
                  end_activation: bool = True,
                  dtype=None, device=None):
         assert input_dim == output_dim, "Input and output dimensions must match for ResBlock"
-        super().__init__(input_dim, latent_dim, output_dim,
+        super().__init__(input_dim, hidden_dim, output_dim,
                          n_layers=n_layers,
                          gcl=gcl,
                          gcl_opts=gcl_opts,
@@ -206,7 +206,7 @@ class IdenCatGNN(GNN):
 
     See `GNN` for the arguments.
     """
-    def __init__(self, input_dim: int, latent_dim: int, output_dim: int,
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int,
                  n_layers: int,
                  gcl: Union[str, nn.Module, type] = 'sage',
                  gcl_opts: dict = {},
@@ -217,7 +217,7 @@ class IdenCatGNN(GNN):
                  end_activation: bool = True,
                  dtype=None, device=None):
         assert output_dim > input_dim, "Output dimension must be greater than input dimension"
-        super().__init__(input_dim, latent_dim, output_dim-input_dim,
+        super().__init__(input_dim, hidden_dim, output_dim-input_dim,
                          n_layers=n_layers,
                          gcl=gcl,
                          gcl_opts=gcl_opts,
