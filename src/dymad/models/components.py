@@ -20,6 +20,10 @@ def enc_smpl_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
     """Encodes states and controls."""
     return net(torch.cat([w.x, w.u], dim=-1))
 
+def enc_seq_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
+    """Encodes time-delayed states and controls."""
+    return net(w.x, w.u)
+
 def enc_graph_iden(net: nn.Module, w: DynData) -> torch.Tensor:
     """Identity encoder function for graph data."""
     return w.xg
@@ -42,16 +46,24 @@ def enc_node_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
     xu_cat = torch.cat([w.xg, w.ug], dim=-1)
     return w.G(net(xu_cat))    # G is needed for unified data structure
 
+def enc_node_seq_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
+    """Using EncCtrl for each node of graph, time-delayed version."""
+    return w.G(net(w.xg, w.ug))    # G is needed for unified data structure
+
 ENC_MAP = {
     "iden"       : enc_iden,
     "smpl_auto"  : enc_smpl_auto,
     "smpl_ctrl"  : enc_smpl_ctrl,
+    "seq_auto"   : enc_smpl_auto,  # Effectively same as smpl_auto
+    "seq_ctrl"   : enc_seq_ctrl,
     "graph_iden" : enc_graph_iden,
     "graph_auto" : enc_graph_auto,
     "graph_ctrl" : enc_graph_ctrl,
     "node_iden"  : enc_iden,       # Effectively same as regular iden
     "node_auto"  : enc_node_auto,
-    "node_ctrl"  : enc_node_ctrl
+    "node_ctrl"  : enc_node_ctrl,
+    "node_seq_auto" : enc_node_auto,  # Effectively same as node_auto
+    "node_seq_ctrl" : enc_node_seq_ctrl
 }
 
 
@@ -63,7 +75,7 @@ def dec_iden(net: nn.Module, z: torch.Tensor, w: DynData) -> torch.Tensor:
     return z
 
 def dec_auto(net: nn.Module, z: torch.Tensor, w: DynData) -> torch.Tensor:
-    """Autoencoder decoder function."""
+    """Generic decoder function."""
     return net(z)
 
 def dec_graph(net: nn.Module, z: torch.Tensor, w: DynData) -> torch.Tensor:
@@ -78,7 +90,7 @@ DEC_MAP = {
     "iden"  : dec_iden,
     "auto"  : dec_auto,
     "graph" : dec_graph,
-    "node"  : dec_node
+    "node"  : dec_node,
 }
 
 

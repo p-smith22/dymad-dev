@@ -19,6 +19,7 @@ def get_dims(model_config, data_meta):
     dim_x  = data_meta.get('n_total_state_features')
     dim_u  = data_meta.get('n_total_control_features')
     dim_e  = dim_x + dim_u   # Input dim to encoder
+    l_seq  = data_meta.get('delay') + 1
 
     dim_l  = model_config.get('latent_dimension', 64)
     n_enc  = model_config.get('encoder_layers', 2)
@@ -38,7 +39,8 @@ def get_dims(model_config, data_meta):
         'l'  : dim_l,
         'enc': n_enc,
         'dec': n_dec,
-        'prc': n_prc
+        'prc': n_prc,
+        'seq': l_seq
     }
     return dims
 
@@ -62,7 +64,10 @@ def build_autoencoder(
     aec_type = model_config.get('autoencoder_type', 'smp')
 
     # Build encoder/decoder networks
-    pref = "gnn_" if ifgnn else "mlp_"
+    if aec_type[:3] in ["gnn", "mlp", "seq"]:
+        pref = ''
+    else:
+        pref = "gnn_" if ifgnn else "mlp_"
     encoder_net, decoder_net = make_autoencoder(
         type       = pref+aec_type,
         input_dim  = dims['e'],
@@ -71,6 +76,7 @@ def build_autoencoder(
         enc_depth  = dims['enc'],
         dec_depth  = dims['dec'],
         output_dim = dims['x'],
+        seq_len    = dims['seq'],
         **opts
     )
 
@@ -88,7 +94,7 @@ def build_predictor(CONT, predictor_type, n_total_control_features):
         else:
             return predict_continuous
     else:
-        if predictor_type == "exp":
+        if predictor_type in ["exp", 'np']:
             return predict_discrete_exp
         else:
             return predict_discrete

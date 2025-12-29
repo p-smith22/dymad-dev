@@ -54,7 +54,6 @@ If there are API errors such as some files not found, try deleting the auto-gene
 - Demo on Kuramoto example
 
 - K-Fold CV
-- Add citation in Lorenz
 - Demo on KS chaotic
 
 - two-stage implementation

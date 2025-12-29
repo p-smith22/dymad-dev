@@ -326,7 +326,9 @@ def predict_discrete(
     for k in range(n_steps - 1):
         wtmp = _ws.get_step(k).set_x(x_traj[-1])
         _, ztmp, _ = model(wtmp)
-        x_k  = model.decoder(ztmp, wtmp)
+        x_k  = model.decoder(
+            ztmp, wtmp,
+            x_prv=x_traj[-1])             # Optional; for time-delayed case
         x_traj.append(x_k)
     x_traj = torch.stack(x_traj, dim=1)   # (batch_size, n_steps, z_dim)
 

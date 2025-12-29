@@ -169,7 +169,7 @@ class ComposedDynamics(nn.Module):
         """
         return self.composer(self.processor_net, self.features(z, w), z, w)
 
-    def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
+    def decoder(self, z: torch.Tensor, w: DynData, **kwargs) -> torch.Tensor:
         """Decode the latent states into outputs."""
         return self._decoder(self.decoder_net, z, w)
 

@@ -58,19 +58,23 @@ class PredefinedModel:
         ]
         return build_model(model_spec, model_config, data_meta, dtype, device)
 
-#                       CONT,  encoder, feature, dynamics,       decoder, model_cls
-LDM   = PredefinedModel(True,  "smpl",  "none",  "direct",       "auto",  CD_LDM)
+#                       CONT,  encoder,    feature, dynamics,       decoder, model_cls
+LDM   = PredefinedModel(True,  "smpl",     "none",  "direct",       "auto",  CD_LDM)
 """Latent dynamics model (LDM), continuous-time."""
-DLDM  = PredefinedModel(False, "smpl",  "none",  "direct",       "auto",  CD_LDM)
+DLDM  = PredefinedModel(False, "smpl",     "none",  "direct",       "auto",  CD_LDM)
 """LDM, discrete-time."""
-GLDM  = PredefinedModel(True,  "graph", "none",  "direct",       "graph", CD_LDM)
+DLDS  = PredefinedModel(False, "seq",      "none",  "direct",       "auto",  CD_LDM)
+"""LDM with sequential encoding, discrete-time."""
+GLDM  = PredefinedModel(True,  "graph",    "none",  "direct",       "graph", CD_LDM)
 """LDM with graph autoencoder, continuous-time."""
-DGLDM = PredefinedModel(False, "graph", "none",  "direct",       "graph", CD_LDM)
+DGLDM = PredefinedModel(False, "graph",    "none",  "direct",       "graph", CD_LDM)
 """LDM with graph autoencoder, discrete-time."""
-LDMG  = PredefinedModel(True,  "node",  "none",  "graph_direct", "node",  CD_LDM)
+LDMG  = PredefinedModel(True,  "node",     "none",  "graph_direct", "node",  CD_LDM)
 """LDM with graph dynamics, continuous-time."""
-DLDMG = PredefinedModel(False, "node",  "none",  "graph_direct", "node",  CD_LDM)
+DLDMG = PredefinedModel(False, "node",     "none",  "graph_direct", "node",  CD_LDM)
 """LDM with graph dynamics, discrete-time."""
+DLDSG = PredefinedModel(False, "node_seq", "none",  "direct",       "node",  CD_LDM)
+"""LDM with sequential encoding and graph dynamics, discrete-time."""
 
 #                       CONT,  encoder,      feature,      dynamics, decoder, model_cls
 KBF   = PredefinedModel(True,  "smpl_auto",  "blin",       "direct", "auto",  CD_LFM)

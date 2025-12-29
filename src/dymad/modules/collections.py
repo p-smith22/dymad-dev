@@ -7,11 +7,12 @@ from dymad.modules.kernel import KernelScDM, KernelScExp, KernelScRBF, KernelOpS
 from dymad.modules.krr import KRRMultiOutputShared, KRRMultiOutputIndep, KRROperatorValued, KRRTangent
 from dymad.modules.misc import TakeFirst, TakeFirstGraph
 from dymad.modules.mlp import MLP, ResBlockMLP, IdenCatMLP
+from dymad.modules.sequential import ShiftDecoder, SeqEncoder, SimpleRNN, StandardRNN
 
 def make_autoencoder(
         type: str,
         input_dim: int, latent_dim: int, hidden_dim: int, enc_depth: int, dec_depth: int,
-        output_dim: int = None, **kwargs) -> Tuple[nn.Module, nn.Module]:
+        output_dim: int = None, seq_len: int = None, **kwargs) -> Tuple[nn.Module, nn.Module]:
     """
     Factory function to create preset autoencoder models. Including:
 
@@ -19,17 +20,21 @@ def make_autoencoder(
     - [mlp_res] Simple version but with ResBlockMLP
     - [mlp_cat] Concatenation as encoder [x MLP(x)], then TakeFirst as decoder
     - The graph version of the above: gnn_smp, gnn_res, gnn_cat
+    - [rnn_smp] RNN-in MLP-out, using a 1-layer unidirectional RNN
+    - [rnn_std] RNN-in MLP-out, using standard RNN from pytorch
+    - [rnn_seq] Sequence encoder using MLP for each step, MLP-out decoder
 
     Args:
         type (str): Type of autoencoder to create.
-            One of {'mlp_smp', 'mlp_res', 'mlp_cat', 'gnn_smp', 'gnn_res', 'gnn_cat'}.
+            One of {'mlp_smp', 'mlp_res', 'mlp_cat', 'gnn_smp', 'gnn_res', 'gnn_cat', 'rnn_smp', 'rnn_std', 'rnn_seq'}.
         input_dim (int): Dimension of the input features.
         latent_dim (int): Width of the latent layers (not the encoded space).
         hidden_dim (int): Dimension of the encoded space.
         enc_depth (int): Number of layers in the encoder.
         dec_depth (int): Number of layers in the decoder.
         output_dim (int, optional): Dimension of the output features, defaults to `input_dim`.
-        **kwargs: Additional keyword arguments passed to the MLP or GNN constructors.
+        seq_len (int, optional): Length of the input sequences (for sequence-based autoencoders).
+        **kwargs: Additional keyword arguments passed to the specific constructors.
     """
     # Prepare the arguments
     if output_dim is None:
@@ -65,6 +70,19 @@ def make_autoencoder(
         elif _type == "mlp_cat":
             encoder = IdenCatMLP(**encoder_args)
             decoder = TakeFirst(output_dim)
+
+    elif _type[:3] == "rnn":
+        if _type == "rnn_smp":
+            encoder = SimpleRNN(**encoder_args)
+            decoder = ShiftDecoder(MLP(**decoder_args), seq_len=seq_len)
+
+        elif _type == "rnn_std":
+            encoder = StandardRNN(**encoder_args)
+            decoder = ShiftDecoder(MLP(**decoder_args), seq_len=seq_len)
+
+        elif _type == "rnn_seq":
+            encoder = SeqEncoder(MLP(**encoder_args), seq_len=seq_len)
+            decoder = ShiftDecoder(MLP(**decoder_args), seq_len=seq_len)
 
     elif _type[:3] == "gnn":
         if _type == "gnn_smp":

@@ -56,6 +56,61 @@ class CD_LDM(ComposedDynamics):
         return dims, (enc_type, fzu_type, dec_type, prd_type), processor_net, input_order
 
 
+class CD_LDS(ComposedDynamics):
+    """Latent Dynamics Model (LDM) class with sequential encoding."""
+
+    @classmethod
+    def build_core(cls, types, model_config, data_meta, dtype, device, ifgnn=False):
+        enc_type, fzu_type, dec_type = types
+
+        # Dimensions
+        dims = get_dims(model_config, data_meta)
+        dims['x']  = data_meta.get('n_state_features')
+        dims['u']  = data_meta.get('n_control_features')
+        dims['e']  = dims['x'] + dims['u']   # Input dim per step to encoder
+
+        # Autoencoder
+        suffix = "_ctrl" if dims['u'] > 0 else "_auto"
+        enc_type += suffix
+
+        # Features in the dynamics
+        # As is
+
+        # Processor in the dynamics
+        # Same as CD_LDM
+        opts = {
+            'activation'     : model_config.get('activation', 'prelu'),
+            'weight_init'    : model_config.get('weight_init', 'xavier_uniform'),
+            'bias_init'      : model_config.get('bias_init', 'zeros'),
+            'gain'           : model_config.get('gain', 1.0),
+            'end_activation' : model_config.get('end_activation', True),
+            'dtype'          : dtype,
+            'device'         : device
+        }
+        if ifgnn:
+            opts['gcl']      = model_config.get('gcl', 'sage')
+            opts['gcl_opts'] = model_config.get('gcl_opts', {})
+
+        MDL = GNN if ifgnn else MLP
+        processor_net = MDL(
+            input_dim  = dims['s'],
+            latent_dim = dims['l'],
+            output_dim = dims['r'],
+            n_layers   = dims['prc'],
+            **opts
+        )
+
+        # Prediction options
+        # Same as CD_LDM
+        input_order = None
+        prd_type = model_config.get('predictor_type', 'ode')   # Would default to predict_discrete
+
+        return dims, (enc_type, fzu_type, dec_type, prd_type), processor_net, input_order
+
+    def decoder(self, z, w, x_prv=None):
+        return self.decoder_net(z, w.x, x_prv)
+
+
 class CD_LFM(ComposedDynamics):
     """Linear Feature Model (LFM) class."""
 
