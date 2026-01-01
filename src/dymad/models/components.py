@@ -20,8 +20,8 @@ def enc_smpl_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
     """Encodes states and controls."""
     return net(torch.cat([w.x, w.u], dim=-1))
 
-def enc_seq_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
-    """Encodes time-delayed states and controls."""
+def enc_raw_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
+    """Let encoder handle states and controls."""
     return net(w.x, w.u)
 
 def enc_graph_iden(net: nn.Module, w: DynData) -> torch.Tensor:
@@ -46,24 +46,24 @@ def enc_node_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
     xu_cat = torch.cat([w.xg, w.ug], dim=-1)
     return w.G(net(xu_cat))    # G is needed for unified data structure
 
-def enc_node_seq_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
-    """Using EncCtrl for each node of graph, time-delayed version."""
+def enc_node_raw_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
+    """Using EncCtrl for each node of graph, letting encoder handle the concatenation."""
     return w.G(net(w.xg, w.ug))    # G is needed for unified data structure
 
 ENC_MAP = {
     "iden"       : enc_iden,
     "smpl_auto"  : enc_smpl_auto,
     "smpl_ctrl"  : enc_smpl_ctrl,
-    "seq_auto"   : enc_smpl_auto,  # Effectively same as smpl_auto
-    "seq_ctrl"   : enc_seq_ctrl,
+    "raw_auto"   : enc_smpl_auto,  # Effectively same as smpl_auto
+    "raw_ctrl"   : enc_raw_ctrl,
     "graph_iden" : enc_graph_iden,
     "graph_auto" : enc_graph_auto,
     "graph_ctrl" : enc_graph_ctrl,
     "node_iden"  : enc_iden,       # Effectively same as regular iden
     "node_auto"  : enc_node_auto,
     "node_ctrl"  : enc_node_ctrl,
-    "node_seq_auto" : enc_node_auto,  # Effectively same as node_auto
-    "node_seq_ctrl" : enc_node_seq_ctrl
+    "node_raw_auto" : enc_node_auto,  # Effectively same as node_auto
+    "node_raw_ctrl" : enc_node_raw_ctrl
 }
 
 

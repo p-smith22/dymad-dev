@@ -111,6 +111,7 @@ class ComposedDynamics(nn.Module):
         self.decoder_net   = None  # Network to be used by self._decoder
         self._linear_eval  = None  # Functions for linear solver, to be hooked
         self._linear_features = None
+        self.seq_len       = 1     # Sequence length, default 1 for non-sequential models
 
     @classmethod
     def build_core(cls, model_config, dtype, device, ifgnn=False):
@@ -144,7 +145,8 @@ class ComposedDynamics(nn.Module):
                f"Decoder: {self._decoder.__name__}\n" + \
                f"         {self.decoder_net}\n" + \
                f"Prediction: {self._predict.__name__}\n" + \
-               f"Continuous-time: {self.CONT}, Graph-compatible: {self.GRAPH}\n"
+               f"Continuous-time: {self.CONT}, Graph-compatible: {self.GRAPH}," + \
+               f"Sequence length: {self.seq_len}\n"
 
     def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -152,10 +154,11 @@ class ComposedDynamics(nn.Module):
 
         Unified across most of the models, but this can be overridden if needed.
         """
-        z = self.encoder(w)
-        z_dot = self.dynamics(z, w)
-        x_hat = self.decoder(z, w)
-        return z, z_dot, x_hat
+        raise DeprecationWarning("Direct forward pass is deprecated. Use encoder, dynamics, and decoder methods separately.")
+        # z = self.encoder(w)
+        # z_dot = self.dynamics(z, w)
+        # x_hat = self.decoder(z, w)
+        # return z, z_dot, x_hat
 
     def encoder(self, w: DynData) -> torch.Tensor:
         """Encode the inputs into latent states."""
@@ -169,7 +172,7 @@ class ComposedDynamics(nn.Module):
         """
         return self.composer(self.processor_net, self.features(z, w), z, w)
 
-    def decoder(self, z: torch.Tensor, w: DynData, **kwargs) -> torch.Tensor:
+    def decoder(self, z: torch.Tensor, w: DynData) -> torch.Tensor:
         """Decode the latent states into outputs."""
         return self._decoder(self.decoder_net, z, w)
 
