@@ -1,4 +1,5 @@
 import numpy as np
+import textwrap as tw
 import torch
 import torch.nn as nn
 from typing import Any, Callable, Dict, Tuple, Union
@@ -136,16 +137,16 @@ class ComposedDynamics(nn.Module):
         Returns:
             str: String with model details
         """
+        ind = "          "
+        fin = lambda net: tw.indent(f"{net}", ind)
         return f"Model parameters: {sum(p.numel() for p in self.parameters())}\n" + \
-               f"Encoder: {self._encoder.__name__}\n" + \
-               f"         {self.encoder_net}\n" + \
+               f"Encoder:  {self._encoder.__name__}\n{fin(self.encoder_net)}\n" + \
                f"Dynamics: {self.features.__name__}\n" + \
-               f"          {self.processor_net}\n" + \
-               f"          {self.composer.__name__}\n" + \
-               f"Decoder: {self._decoder.__name__}\n" + \
-               f"         {self.decoder_net}\n" + \
+               f"{fin(self.processor_net)}\n" + \
+               f"{ind}{self.composer.__name__}\n" + \
+               f"Decoder:  {self._decoder.__name__}\n{fin(self.decoder_net)}\n" + \
                f"Prediction: {self._predict.__name__}\n" + \
-               f"Continuous-time: {self.CONT}, Graph-compatible: {self.GRAPH}," + \
+               f"Continuous-time: {self.CONT}, Graph-compatible: {self.GRAPH}, " + \
                f"Sequence length: {self.seq_len}\n"
 
     def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

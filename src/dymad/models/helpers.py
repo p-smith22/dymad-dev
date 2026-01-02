@@ -69,7 +69,7 @@ def build_autoencoder(model_config, dims, dtype, device, ifgnn = False):
     else:
         pref = "gnn_" if ifgnn else "mlp_"
     encoder_net, decoder_net = make_autoencoder(
-        type       = pref+aec_type,
+        ae_type    = pref+aec_type,
         input_dim  = dims['e'],
         hidden_dim = dims['h'],
         latent_dim = dims['z'],
@@ -101,7 +101,7 @@ def build_processor(model_config, dims, dtype, device, ifgnn = False):
     prc_type = model_config.get('processor_type', None)
     if prc_type is None:
         # Default processor type
-        MDL = 'gnn_smp' if ifgnn else 'mlp_smp'
+        prc_type = 'gnn_smp' if ifgnn else 'mlp_smp'
     else:
         if prc_type[:3] in ["gnn", "mlp"]:
             pref = ''
@@ -109,7 +109,7 @@ def build_processor(model_config, dims, dtype, device, ifgnn = False):
             pref = "gnn_" if ifgnn else "mlp_"
         prc_type = pref + prc_type
     processor_net = make_network(
-        type       = prc_type,
+        nn_type    = prc_type,
         input_dim  = dims['s'],
         hidden_dim = dims['h'],
         output_dim = dims['r'],

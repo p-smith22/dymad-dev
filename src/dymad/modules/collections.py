@@ -24,14 +24,14 @@ NN_MAP = {
 """Options for preset neural network models."""
 
 def make_network(
-    type: str,
+    nn_type: str,
     input_dim: int, hidden_dim: int, output_dim: int, n_layers: int,
     seq_len: int = None, **kwargs) -> nn.Module:
     """
     Factory function to create preset neural network models based on NN_MAP.
 
     Args:
-        type (str): Type of network to create.
+        nn_type (str): Type of network to create.
             One of the keys in NN_MAP: {'mlp_smp', 'mlp_res', 'mlp_cat', 'mlp_1st',
             'gnn_smp', 'gnn_res', 'gnn_cat', 'gnn_1st', 'seq_smp', 'seq_rnn'},
             or 'seq_' prefixed versions of MLP and GNN types for sequence models.
@@ -45,10 +45,10 @@ def make_network(
     Returns:
         nn.Module: The constructed neural network module.
     """
-    _type = type.lower()
+    _type = nn_type.lower()
     if _type not in NN_MAP:
         if _type[4:] not in NN_MAP:
-            raise ValueError(f"Unknown network type '{type}'. Must be one of {list(NN_MAP.keys())}.")
+            raise ValueError(f"Unknown network type '{nn_type}'. Must be one of {list(NN_MAP.keys())}.")
     net_class = NN_MAP[_type]
 
     # Special handling for TakeFirst and TakeFirstGraph
@@ -73,7 +73,7 @@ def make_network(
         # Extract the base network type (everything after "seq_")
         base_type = _type[4:]  # Remove "seq_" prefix
         base_net = make_network(
-            type=base_type,
+            nn_type=base_type,
             input_dim=input_dim,
             hidden_dim=hidden_dim,
             output_dim=output_dim,
@@ -103,7 +103,7 @@ AE_MAP = {
 """Options for preset autoencoder types."""
 
 def make_autoencoder(
-        type: str | Tuple[str, str],
+        ae_type: str | Tuple[str, str],
         input_dim: int, hidden_dim: int, latent_dim: int, enc_depth: int, dec_depth: int,
         output_dim: int = None, seq_len: int = None, **kwargs) -> Tuple[nn.Module, nn.Module]:
     """
@@ -118,7 +118,7 @@ def make_autoencoder(
     - The graph version of the above, e.g., gnn_smp, gnn_seq_rnn, etc.
 
     Args:
-        type (str): Type of autoencoder to create.
+        ae_type (str): Type of autoencoder to create.
         input_dim (int): Dimension of the input features.
         hidden_dim (int): Width of the hidden layers.
         latent_dim (int): Dimension of the latent/encoded space.
@@ -129,14 +129,14 @@ def make_autoencoder(
         **kwargs: Additional keyword arguments passed to the specific constructors.
     """
     # Determine encoder and decoder types
-    if isinstance(type, str):
-        if type.lower() not in AE_MAP:
-            raise ValueError(f"Unknown autoencoder type '{type}'. Must be one of {list(AE_MAP.keys())}.")
-        enc_type, dec_type = AE_MAP[type.lower()]
-    elif isinstance(type, tuple) and len(type) == 2:
-        enc_type, dec_type = type
+    if isinstance(ae_type, str):
+        if ae_type.lower() not in AE_MAP:
+            raise ValueError(f"Unknown autoencoder type '{ae_type}'. Must be one of {list(AE_MAP.keys())}.")
+        enc_type, dec_type = AE_MAP[ae_type.lower()]
+    elif isinstance(ae_type, tuple) and len(ae_type) == 2:
+        enc_type, dec_type = ae_type
     else:
-        raise ValueError(f"Autoencoder type must be a string or a tuple of two strings, got {type}.")
+        raise ValueError(f"Autoencoder type must be a string or a tuple of two strings, got {ae_type}.")
 
     # Prepare the arguments
     if output_dim is None:
@@ -158,23 +158,23 @@ def make_autoencoder(
     decoder_args.update(kwargs)
 
     # Generate the encoder and decoder based on the type
-    encoder = make_network(type=enc_type, **encoder_args)
-    decoder = make_network(type=dec_type, **decoder_args)
+    encoder = make_network(nn_type=enc_type, **encoder_args)
+    decoder = make_network(nn_type=dec_type, **decoder_args)
 
     return encoder, decoder
 
 
-def _make_scalar_kernel(type: str, input_dim: int, dtype=None, **kwargs) -> nn.Module:
-    if type == "rbf":
+def _make_scalar_kernel(sk_type: str, input_dim: int, dtype=None, **kwargs) -> nn.Module:
+    if sk_type == "rbf":
         return KernelScRBF(in_dim=input_dim, dtype=dtype, **kwargs)
-    elif type == "dm":
+    elif sk_type == "dm":
         return KernelScDM(in_dim=input_dim, dtype=dtype, **kwargs)
-    elif type == "exp":
+    elif sk_type == "exp":
         return KernelScExp(in_dim=input_dim, dtype=dtype, **kwargs)
     else:
-        raise ValueError(f"Unknown kernel type '{type}'.")
+        raise ValueError(f"Unknown kernel type '{sk_type}'.")
 
-def make_kernel(type: str, input_dim: int, output_dim: int = None, kopts: List=None, dtype=None, **kwargs) -> nn.Module:
+def make_kernel(k_type: str, input_dim: int, output_dim: int = None, kopts: List=None, dtype=None, **kwargs) -> nn.Module:
     """
     Factory function to create preset kernels. Including:
 
@@ -183,7 +183,7 @@ def make_kernel(type: str, input_dim: int, output_dim: int = None, kopts: List=N
     - [op_sep] Operator-valued: Separable kernel with multiple scalar kernels
 
     Args:
-        type (str): Type of kernel to create.
+        k_type (str): Type of kernel to create.
             One of {'sc_rbf', 'sc_dm'}.
         input_dim (int): Dimension of the input features.
         output_dim (int, optional): Dimension of the output features.
@@ -191,9 +191,9 @@ def make_kernel(type: str, input_dim: int, output_dim: int = None, kopts: List=N
         dtype: Data type of the kernel parameters.
         **kwargs: Additional keyword arguments passed to the kernel constructors.
     """
-    _type = type.lower().split('_')
+    _type = k_type.lower().split('_')
     if len(_type) < 2:
-        raise ValueError(f"Unknown kernel type '{type}'.")
+        raise ValueError(f"Unknown kernel type '{k_type}'.")
 
     if _type[0] == "sc":
         # Scalar-valued kernels
