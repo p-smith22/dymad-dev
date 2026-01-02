@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Dict
 
 from dymad.models.helpers import build_model
-from dymad.models.recipes import CD_KM, CD_KMM, CD_KMSK, CD_LDM, CD_LFM
+from dymad.models.recipes import CD_KM, CD_KMM, CD_KMSK, CD_LDM, CD_LFM, CD_SDM
 
 @dataclass
 class PredefinedModel:
@@ -63,8 +63,6 @@ LDM   = PredefinedModel(True,  "smpl",     "none",  "direct",       "auto",  CD_
 """Latent dynamics model (LDM), continuous-time."""
 DLDM  = PredefinedModel(False, "smpl",     "none",  "direct",       "auto",  CD_LDM)
 """LDM, discrete-time."""
-DLDS  = PredefinedModel(False, "seq",      "none",  "direct",       "auto",  CD_LDM)
-"""LDM with sequential encoding, discrete-time."""
 GLDM  = PredefinedModel(True,  "graph",    "none",  "direct",       "graph", CD_LDM)
 """LDM with graph autoencoder, continuous-time."""
 DGLDM = PredefinedModel(False, "graph",    "none",  "direct",       "graph", CD_LDM)
@@ -73,8 +71,11 @@ LDMG  = PredefinedModel(True,  "node",     "none",  "graph_direct", "node",  CD_
 """LDM with graph dynamics, continuous-time."""
 DLDMG = PredefinedModel(False, "node",     "none",  "graph_direct", "node",  CD_LDM)
 """LDM with graph dynamics, discrete-time."""
-DLDSG = PredefinedModel(False, "node_seq", "none",  "direct",       "node",  CD_LDM)
-"""LDM with sequential encoding and graph dynamics, discrete-time."""
+
+DSDM  = PredefinedModel(False, "raw",      "none",  "direct",       "auto",  CD_SDM)
+"""Sequential dynamics model (SDM), always discrete-time."""
+DSDMG = PredefinedModel(False, "node_raw", "none",  "graph_direct", "node",  CD_SDM)
+"""SDM with graph dynamics, discrete-time."""
 
 #                       CONT,  encoder,      feature,      dynamics, decoder, model_cls
 KBF   = PredefinedModel(True,  "smpl_auto",  "blin",       "direct", "auto",  CD_LFM)

@@ -1,4 +1,4 @@
-from dymad.modules.collections import make_autoencoder, make_kernel, make_krr
+from dymad.modules.collections import AE_MAP, make_autoencoder, make_kernel, make_krr, make_network, NN_MAP
 from dymad.modules.gnn import GNN, ResBlockGNN, IdenCatGNN
 from dymad.modules.kernel import scaled_cdist, \
     KernelAbstract, KernelOperatorValued, KernelScalarValued, KernelOperatorValuedScalars, \
@@ -6,9 +6,10 @@ from dymad.modules.kernel import scaled_cdist, \
 from dymad.modules.krr import KRRBase, KRRMultiOutputIndep, KRRMultiOutputShared, KRROperatorValued, KRRTangent
 from dymad.modules.linear import FlexLinear
 from dymad.modules.mlp import MLP, ResBlockMLP, IdenCatMLP
-from dymad.modules.sequential import SeqEncoder, SequentialBase, ShiftDecoder, SimpleRNN, StandardRNN
+from dymad.modules.sequential import SequentialBase, SimpleRNN, StandardRNN, StepwiseModel
 
 __all__ = [
+    "AE_MAP",
     "FlexLinear",
     "GNN",
     "IdenCatGNN",
@@ -30,13 +31,14 @@ __all__ = [
     "make_autoencoder",
     "make_kernel",
     "make_krr",
+    "make_network",
     "MLP",
+    "NN_MAP",
     "ResBlockGNN",
     "ResBlockMLP",
     "scaled_cdist",
-    "SeqEncoder",
     "SequentialBase",
-    "ShiftDecoder",
     "SimpleRNN",
-    "StandardRNN"
+    "StandardRNN",
+    "StepwiseModel"
 ]

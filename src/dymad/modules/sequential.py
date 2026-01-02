@@ -6,16 +6,59 @@ from dymad.modules.helpers import _resolve_activation, _resolve_init, _INIT_MAP_
 
 
 class SequentialBase(nn.Module):
-    """Interface module that handles stacked input sequences for LinearRNN."""
+    """Interface module that handles time-delayed input sequences.
+
+    The module assumes that the input is given in shape (..., seq_len * input_dim),
+    where seq_len is the length of the time-delay/sequence, and input_dim is the
+    dimension of each step's input features.  The module reshapes the input to
+    (..., seq_len, input_dim) and passes it to an internal sequential model (e.g., RNN),
+    and return the output either at the last step (..., output_dim) or
+    the full sequence flattened (..., seq_len * output_dim).
+    
+    It considers two types of architectures:
+
+    - Internally construct RNN-like models, that applies to the input in the standard way.
+      This is usually good for defining dynamics.
+    - Externally provided models, that process step by step and not necessarily recurrently.
+      This is usually good for defining encoders/decoders.  Examples are MLP and GNN.
+    - In both cases, the models expect input of shape (-1, seq_len, input_dim) and return
+      output of shape (-1, seq_len, output_dim).
+    - In either case, a subclass must implement `_run_seq()` method that defines how to run the model.
+
+    The module can also operate in two modes:
+    - last_only=True: returns only the output at the last step (..., output_dim).
+      Usually for dynamics.
+    - last_only=False: returns the outputs at all steps, flattened (..., seq_len * output_dim).
+      Usually for encoders/decoders.
+
+    Args:
+        seq_len (int): Length of the input sequences.
+        last_only (Optional[bool]): Whether to return only the last step output, default is True.
+        net (Optional[nn.Module]): Optional externally provided model.  If None,
+          an internal RNN-like model is constructed.
+        input_dim (Optional[int]): Dimension of the input features of all steps (for RNN-like).
+        hidden_dim (Optional[int]): Width of the hidden layers (for RNN-like).
+        output_dim (Optional[int]): Dimension of the output features of all steps (for RNN-like).
+        n_layers (Optional[int]): Number of layers (for RNN-like).
+        activation (Union[str, nn.Module, Callable[[], nn.Module]]): Activation function (for RNN-like).
+        weight_init (Union[str, Callable[[torch.Tensor, float], None]]): Weight initialization method (for RNN-like).
+        bias_init (Callable[[torch.Tensor], None]): Bias initialization method (for RNN-like).
+        gain (Optional[float]): Gain factor for weight initialization (for RNN-like).
+        dtype: Data type for the module (for RNN-like).
+        device: Device for the module (for RNN-like).
+        **kwargs: Additional keyword arguments passed to the internal model constructor.
+    """
 
     def __init__(
         self,
-        input_dim: int,
-        hidden_dim: int,
-        output_dim: int,
         seq_len: int,
         *,
-        n_layers: int = 2,
+        last_only: Optional[bool] = True,
+        net: Optional[nn.Module] = None,
+        input_dim: Optional[int] = -1,
+        hidden_dim: Optional[int] = -1,
+        output_dim: Optional[int] = -1,
+        n_layers: Optional[int] = 2,
         activation: Union[str, nn.Module, Callable[[], nn.Module]] = nn.ReLU,
         weight_init: Union[str, Callable[[torch.Tensor, float], None]] = nn.init.xavier_uniform_,
         bias_init: Callable[[torch.Tensor], None] = nn.init.zeros_,
@@ -25,11 +68,27 @@ class SequentialBase(nn.Module):
     ):
         super().__init__()
         self.seq_len = seq_len
-        assert input_dim % seq_len == 0, f"input_dim ({input_dim}) must be divisible by seq_len ({seq_len})."
+        self.last_only = last_only
 
+        if net is not None:
+            # Externally provided model
+            self.net = net
+            self.dtype = dtype
+            self.device = device
+            return
+
+        # Check dimensions
+        assert input_dim % seq_len == 0, f"input_dim {input_dim} must be divisible by seq_len {seq_len}."
+        _inp_dim = input_dim // seq_len
+        if last_only:
+            _out_dim = output_dim
+        else:
+            assert output_dim % seq_len == 0, f"output_dim {output_dim} must be divisible by seq_len {seq_len} when last_only is False."
+            _out_dim = output_dim // seq_len
+
+        # Internally construct RNN-like model
         _act = _resolve_activation(activation, dtype, device)
-
-        self._build_rnn(input_dim // seq_len, hidden_dim, output_dim, n_layers, _act, dtype, device, **kwargs)
+        self._build_seq(_inp_dim, hidden_dim, _out_dim, n_layers, _act, dtype, device, **kwargs)
 
         # Cache init kwargs for later use in self.apply
         self._weight_init = _resolve_init(weight_init, _INIT_MAP_W)
@@ -48,13 +107,23 @@ class SequentialBase(nn.Module):
             self._weight_init(m.weight, self._gain)
             self._bias_init(m.bias)
 
-    def _build_rnn(self, input_dim, hidden_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
-        """Build the internal RNN module."""
-        raise NotImplementedError("_build_rnn must be implemented in subclasses.")
+    def _build_seq(self, input_dim, hidden_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
+        """Build the internal sequential module.
 
-    def _run_rnn(self, x_seq: torch.Tensor) -> torch.Tensor:
-        """Evaluate the recurrent model."""
-        raise NotImplementedError("_run_rnn must be implemented in subclasses.")
+        Expect input_dim and output_dim as the dimensions of the input/output features per step.
+        """
+        raise NotImplementedError("_build_seq must be implemented in subclasses.")
+
+    def _run_seq(self, x_seq: torch.Tensor) -> torch.Tensor:
+        """Evaluate the recurrent model.
+
+        Expects input of shape (batch_size, seq_len, input_dim) and returns output of shape
+        (batch_size, seq_len, output_dim).
+
+        Depending on last_only, the `forward()` method will return either the last step output
+        or the full sequence output flattened.
+        """
+        raise NotImplementedError("_run_seq must be implemented in subclasses.")
 
     def forward(self, x: torch.Tensor, u: torch.Tensor | None = None):
         """
@@ -63,13 +132,14 @@ class SequentialBase(nn.Module):
         requires to stack x and u of the same steps and then concatenate.
 
         Args:
-            x: Stacked input tensor of shape (batch_size, seq_len * x_dim)
-            u: (Optional) Stacked control tensor of shape (batch_size, seq_len * u_dim)
+            x: Stacked input tensor of shape (..., seq_len * x_dim)
+            u: (Optional) Stacked control tensor of shape (..., seq_len * u_dim);
+              needed when serving as encoder with inputs.
 
         Returns:
-            output: Stacked output tensor of shape (batch_size, output_dim),
-                    where the last slot is the output of the RNN at the last step, and
-                    the rest are inputs shifted by one step.
+            output: Stacked output tensor of shape (..., output_dim),
+                    where the last slot is the output of the sequential model at the last step
+                    if last_only is True, otherwise all outputs are concatenated.
         """
         # Infer dimensions from stacked input
         batch_size = x.shape[:-1]
@@ -78,9 +148,19 @@ class SequentialBase(nn.Module):
 
         # Reshape from stacked to sequence format
         x_seq = x.view(-1, self.seq_len, input_dim)
+        if u is not None:
+            stacked_u_dim = u.shape[-1]
+            u_dim = stacked_u_dim // self.seq_len
+            u_seq = u.view(-1, self.seq_len, u_dim)
+            x_seq = torch.cat([x_seq, u_seq], dim=-1)
 
-        # Forward through RNN
-        z = self._run_rnn(x_seq).view(*batch_size, -1)
+        # Forward through the sequential model
+        z = self._run_seq(x_seq)
+        
+        if self.last_only:
+            z = z[..., -1, :]
+        else:
+            z = z.view(*batch_size, -1)
 
         return z
 
@@ -88,137 +168,61 @@ class SequentialBase(nn.Module):
 class StandardRNN(SequentialBase):
     """Standard RNN from pytorch."""
 
-    def _build_rnn(self, input_dim, hidden_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
-        assert _act().__class__.__name__.lower() in ['tanh', 'relu'], "Only 'tanh' and 'relu' activations are supported for nn.RNN."
+    def _build_seq(self, input_dim, hidden_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
+        _act_name = _act().__class__.__name__.lower()
+        assert _act_name in ['tanh', 'relu'], "Only 'tanh' and 'relu' activations are supported for nn.RNN."
         assert output_dim == hidden_dim, "For StandardRNN, output_dim must equal hidden_dim."
         self.net = nn.RNN(
             input_size = input_dim,
             hidden_size = hidden_dim,
             num_layers = n_layers,
-            nonlinearity = _act().__class__.__name__.lower(),
+            nonlinearity = _act_name,
             batch_first = True,
             device=device,
             dtype=dtype,
             **kwargs
         )
-        self._run_rnn = self.net
+        self._run_seq = self.net
+        self.dtype = dtype
+        self.device = device
+
+    def _run_seq(self, x):
+        output, _ = self.net(x, hidden=None)
+        return output
 
 
 class SimpleRNN(SequentialBase):
     """A simple recurrent neural network module
     
-    One layer, unidirectional, but supports arbitrary activations and adds a linear readout.
+    One layer, unidirectional, but supports arbitrary activations with a linear readout.
     """
 
-    def _build_rnn(self, input_dim, hidden_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
+    def _build_seq(self, input_dim, hidden_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
         assert n_layers == 1, f"SimpleRNN only supports n_layers=1, got {n_layers}"
 
         self.hidden_dim = hidden_dim
 
         # Linear transformations
-        self.i2h = nn.Linear(input_dim, hidden_dim, device=device, dtype=dtype)
+        self.i2h = nn.Linear(input_dim,  hidden_dim, device=device, dtype=dtype)
         self.h2h = nn.Linear(hidden_dim, hidden_dim, device=device, dtype=dtype)
         self.h2o = nn.Linear(hidden_dim, output_dim, device=device, dtype=dtype)
         self.activation = _act()
+        self.dtype = dtype
+        self.device = device
 
-    def _run_rnn(self, x):
-        """
-        Args:
-            x: Input tensor of shape (batch_size, seq_len, input_dim)
-            hidden: Initial hidden state of shape (batch_size, hidden_dim)
+    def _run_seq(self, x):
+        hidden = torch.zeros(x.shape[0], self.hidden_dim, device=self.device, dtype=self.dtype)
 
-        Returns:
-            output: Output tensor of shape (batch_size, output_dim)
-        """
-        batch_size, seq_len, _ = x.size()
-
-        # Initialize hidden state if not provided
-        if hidden is None:
-            hidden = torch.zeros(batch_size, self.hidden_dim, device=x.device)
-
-        # Process sequence
-        for t in range(seq_len):
+        output = []
+        for t in range(self.seq_len):
             hidden = self.activation(self.i2h(x[:, t, :]) + self.h2h(hidden))
-        output = self.activation(self.h2o(hidden))
+            output.append(self.activation(self.h2o(hidden)))
 
-        return output
+        return torch.stack(output, dim=-2)
 
 
-class SeqEncoder(nn.Module):
+class StepwiseModel(SequentialBase):
     """Naive application of a network to each step of a sequence."""
 
-    def __init__(self, net: nn.Module, seq_len: int):
-        super().__init__()
-        self.net = net           # Decoder for one step
-        self.seq_len = seq_len   # Sequence length
-
-    def forward(self, x_seq: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x_seq: Stacked input tensor of shape (..., seq_len * x_dim)
-
-        Returns:
-            output: Stacked output tensor of shape (..., seq_len * z_dim).
-        """
-        # Infer dimensions from stacked input
-        stacked_x_dim = x_seq.shape[-1]
-        x_dim = stacked_x_dim // self.seq_len
-
-        # Forward through encoder
-        x_seq_reshaped = x_seq.view(..., self.seq_len, x_dim)
-        z_seq = self.net(x_seq_reshaped)  # (..., seq_len, z_dim)
-        output = z_seq.view(..., self.seq_len * z_seq.shape[-1])
-
-        return output
-
-
-class ShiftDecoder(nn.Module):
-    """Decoder for a sequence that decodes only one step and shifts the rest."""
-
-    def __init__(self, net: nn.Module, seq_len: int):
-        super().__init__()
-        self.net = net           # Decoder for one step
-        self.seq_len = seq_len   # Sequence length
-
-    def forward(
-            self,
-            z: torch.Tensor,
-            x_seq: torch.Tensor,
-            x_prv: torch.Tensor | None = None) -> torch.Tensor:
-        """
-        Expect z as the fully encoded x sequence of length `seq_len`, but only decode z
-        into the last step; the rest is filled using the given x sequence.
-
-        There are two modes of operation, let N=`seq_len`
-
-        - Using z and x_seq: this is in standard autoencoding, and z should decode to
-          the last step of x_seq, while the rest are the first (N-1) steps of x_seq.
-        - x_prv is given: this is in prediction mode, where x_prv is the previous full sequence,
-          and z is decoded to the next step, while the rest are the last (N-1) steps of x_prv.
-
-        Args:
-            z: Latent tensor of shape (..., z_dim)
-            x_seq: Stacked input tensor of shape (..., seq_len * x_dim)
-            x_prv: (Optional) Stacked previous input tensor of shape (..., seq_len * x_dim)
-
-        Returns:
-            output: Stacked output tensor of shape (..., seq_len * x_dim).
-        """
-        # Infer dimensions from stacked input
-        stacked_x_dim = x_seq.shape[-1]
-        x_dim = stacked_x_dim // self.seq_len
-
-        # Forward through decoder
-        x_next = self.net(z).unsqueeze(-2)  # (..., 1, output_dim)
-
-        # Form output
-        if x_prv is None:
-            # Standard autoencoding mode
-            x_seq_reshaped = x_seq.view(..., self.seq_len, x_dim)
-            output = torch.cat([x_seq_reshaped[..., :-1, :], x_next], dim=-2)
-        else:
-            # Prediction mode
-            x_prv_reshaped = x_prv.view(..., self.seq_len, x_dim)
-            output = torch.cat([x_prv_reshaped[..., 1:, :], x_next], dim=-2)
-
-        return output
+    def _run_seq(self, x):
+        return self.net(x)
