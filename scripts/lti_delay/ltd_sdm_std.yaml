@@ -19,10 +19,11 @@ dataloader:
   batch_size: 64
 
 model:
-  name: 'ltd_sdm_smp'
-  autoencoder_type: 'seq_smp'
+  name: 'ltd_sdm_std'
+  autoencoder_type: 'seq_std'
   encoder_layers: 1
   decoder_layers: 1
+  processor_type: 'mlp_smp'
   processor_layers: 1
   hidden_dimension: 16
   latent_dimension: 8

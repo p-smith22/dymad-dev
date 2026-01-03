@@ -143,14 +143,12 @@ class SequentialBase(nn.Module):
         """
         # Infer dimensions from stacked input
         batch_size = x.shape[:-1]
-        stacked_input_dim = x.shape[-1]
-        input_dim = stacked_input_dim // self.seq_len
+        input_dim = x.shape[-1] // self.seq_len
 
         # Reshape from stacked to sequence format
         x_seq = x.reshape(-1, self.seq_len, input_dim)
         if u is not None:
-            stacked_u_dim = u.shape[-1]
-            u_dim = stacked_u_dim // self.seq_len
+            u_dim = u.shape[-1] // self.seq_len
             u_seq = u.reshape(-1, self.seq_len, u_dim)
             x_seq = torch.cat([x_seq, u_seq], dim=-1)
 
@@ -160,7 +158,7 @@ class SequentialBase(nn.Module):
         if self.last_only:
             z = z[..., -1, :]
         else:
-            z = z.view(*batch_size, -1)
+            z = z.reshape(*batch_size, -1)
 
         return z
 

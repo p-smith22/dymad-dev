@@ -57,13 +57,15 @@ class CD_SDM(ComposedDynamics):
         # As is
 
         # Processor in the dynamics
-        prc_type = model_config.get('processor_type', 'seq_smp')
+        prc_type = model_config.get('processor_type', 'seq_std')
         model_config['processor_type'] = prc_type
         processor_net = build_processor(model_config, dims, dtype, device, ifgnn=ifgnn)
 
-        # Prediction: fixed to predict_discrete_exp (no autoencoder projection during prediction)
+        # Prediction
         input_order = None
-        prd_type = model_config.get('predictor_type', 'exp')
+        prd_type = model_config.get('predictor_type', 'ode')
+        if prd_type == 'exp':
+            assert dims['u'] == 0, "SDM with control cannot use predict_discrete_exp."
 
         return dims, (enc_type, fzu_type, dec_type, prd_type), processor_net, input_order
 

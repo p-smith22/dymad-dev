@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from dymad.io import load_model
-from dymad.models import DSDM, LDM, KBF
+from dymad.models import DLTI, DSDM, KBF, LDM
 from dymad.training import WeakFormTrainer, NODETrainer
 from dymad.utils import plot_summary, plot_trajectory, TrajectorySampler
 
@@ -38,14 +38,16 @@ config_gau = {
             "mode": "zoh"}}}
 
 cases = [
-    {"name": "ldm_wf",   "model" : LDM,  "trainer": WeakFormTrainer, "config": 'ltd_ldm_wf.yaml'},
-    {"name": "ldm_node", "model" : LDM,  "trainer": NODETrainer,     "config": 'ltd_ldm_node.yaml'},
-    {"name": "kbf_wf",   "model" : KBF,  "trainer": WeakFormTrainer, "config": 'ltd_kbf_wf.yaml'},
-    {"name": "kbf_node", "model" : KBF,  "trainer": NODETrainer,     "config": 'ltd_kbf_node.yaml'},
-    {"name": "sdm_smp",  "model" : DSDM, "trainer": NODETrainer,     "config": 'ltd_sdm_smp.yaml'}
+    {"name": "ldm_wf",    "model" : LDM,  "trainer": WeakFormTrainer, "config": 'ltd_ldm_wf.yaml'},
+    {"name": "ldm_node",  "model" : LDM,  "trainer": NODETrainer,     "config": 'ltd_ldm_node.yaml'},
+    {"name": "kbf_wf",    "model" : KBF,  "trainer": WeakFormTrainer, "config": 'ltd_kbf_wf.yaml'},
+    {"name": "kbf_node",  "model" : KBF,  "trainer": NODETrainer,     "config": 'ltd_kbf_node.yaml'},
+    {"name": "lti_node",  "model" : DLTI, "trainer": NODETrainer,     "config": 'ltd_lti_node.yaml'},
+    {"name": "sdm_smp",   "model" : DSDM, "trainer": NODETrainer,     "config": 'ltd_sdm_smp.yaml'},
+    {"name": "sdm_std",   "model" : DSDM, "trainer": NODETrainer,     "config": 'ltd_sdm_std.yaml'}
 ]
 # IDX = [0, 1, 2, 3]
-IDX = [4]
+IDX = [5]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0

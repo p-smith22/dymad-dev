@@ -2,7 +2,7 @@ data:
   path: './data/ltd.npz'
   n_samples: 128
   n_steps: 501
-  double_precision: true
+  double_precision: false
 
 transform_x:
   type: "delay"
@@ -19,16 +19,14 @@ dataloader:
   batch_size: 64
 
 model:
-  name: 'ltd_sdm_smp'
-  autoencoder_type: 'seq_smp'
+  name: 'ltd_lti_node'
   encoder_layers: 1
   decoder_layers: 1
-  processor_layers: 1
-  hidden_dimension: 16
-  latent_dimension: 8
+  koopman_dimension: 8
   activation: "none"
   weight_init: "xavier_uniform"
   gain: 0.01
+  predictor_type: "np"
 
 criterion:
   dynamics:
@@ -37,7 +35,7 @@ criterion:
     weight: 1.0
 
 training:
-  n_epochs: 500
+  n_epochs: 600
   save_interval: 10
   load_checkpoint: false
   learning_rate: 5e-3

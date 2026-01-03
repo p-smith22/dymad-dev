@@ -18,7 +18,7 @@ NN_MAP = {
     "gnn_res"  : ResBlockGNN,
     "gnn_cat"  : IdenCatGNN,
     "gnn_1st"  : TakeFirstGraph,
-    "seq_smp"  : SimpleRNN,
+    "seq_std"  : SimpleRNN,
     "seq_rnn"  : StandardRNN,
 }
 """Options for preset neural network models."""
@@ -33,7 +33,7 @@ def make_network(
     Args:
         nn_type (str): Type of network to create.
             One of the keys in NN_MAP: {'mlp_smp', 'mlp_res', 'mlp_cat', 'mlp_1st',
-            'gnn_smp', 'gnn_res', 'gnn_cat', 'gnn_1st', 'seq_smp', 'seq_rnn'},
+            'gnn_smp', 'gnn_res', 'gnn_cat', 'gnn_1st', 'seq_std', 'seq_rnn'},
             or 'seq_' prefixed versions of MLP and GNN types for sequence models.
         input_dim (int): Dimension of the input features.
         hidden_dim (int): Width of the hidden layers.
