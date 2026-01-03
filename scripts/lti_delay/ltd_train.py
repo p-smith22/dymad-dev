@@ -47,7 +47,7 @@ cases = [
     {"name": "sdm_std",   "model" : DSDM, "trainer": NODETrainer,     "config": 'ltd_sdm_std.yaml'}
 ]
 # IDX = [0, 1, 2, 3]
-IDX = [5]
+IDX = [5, 6]
 labels = [cases[i]['name'] for i in IDX]
 
 ifdat = 0
