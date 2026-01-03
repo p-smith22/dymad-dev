@@ -147,16 +147,16 @@ class SequentialBase(nn.Module):
         input_dim = stacked_input_dim // self.seq_len
 
         # Reshape from stacked to sequence format
-        x_seq = x.view(-1, self.seq_len, input_dim)
+        x_seq = x.reshape(-1, self.seq_len, input_dim)
         if u is not None:
             stacked_u_dim = u.shape[-1]
             u_dim = stacked_u_dim // self.seq_len
-            u_seq = u.view(-1, self.seq_len, u_dim)
+            u_seq = u.reshape(-1, self.seq_len, u_dim)
             x_seq = torch.cat([x_seq, u_seq], dim=-1)
 
         # Forward through the sequential model
         z = self._run_seq(x_seq)
-        
+
         if self.last_only:
             z = z[..., -1, :]
         else:

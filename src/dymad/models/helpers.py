@@ -103,7 +103,7 @@ def build_processor(model_config, dims, dtype, device, ifgnn = False):
         # Default processor type
         prc_type = 'gnn_smp' if ifgnn else 'mlp_smp'
     else:
-        if prc_type[:3] in ["gnn", "mlp"]:
+        if prc_type[:3] in ["gnn", "mlp", "seq"]:
             pref = ''
         else:
             pref = "gnn_" if ifgnn else "mlp_"

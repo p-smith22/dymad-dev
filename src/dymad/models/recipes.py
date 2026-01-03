@@ -45,8 +45,8 @@ class CD_SDM(ComposedDynamics):
 
         # Dimensions
         dims = get_dims(model_config, data_meta)
-        dims['s'] = dims['z'] * dims['seq']
-        dims['r'] = dims['z']
+        dims['s'] = dims['z']
+        dims['r'] = dims['z'] // dims['seq']
 
         # Autoencoder
         assert 'raw' in enc_type, "SDM model needs raw-type encoder."
@@ -57,6 +57,8 @@ class CD_SDM(ComposedDynamics):
         # As is
 
         # Processor in the dynamics
+        prc_type = model_config.get('processor_type', 'seq_smp')
+        model_config['processor_type'] = prc_type
         processor_net = build_processor(model_config, dims, dtype, device, ifgnn=ifgnn)
 
         # Prediction: fixed to predict_discrete_exp (no autoencoder projection during prediction)
@@ -73,7 +75,8 @@ class CD_SDM(ComposedDynamics):
         then we concatenate (..., seq_len*z_dim) for z_{2:T+1} for the final output.
         """
         z_next = super().dynamics(z, w)
-        ztmp = torch.cat([z[..., self.latent_dimension:], z_next], dim=-1)
+        _dim = z_next.shape[-1]
+        ztmp = torch.cat([z[..., _dim:], z_next], dim=-1)
         return ztmp
 
 

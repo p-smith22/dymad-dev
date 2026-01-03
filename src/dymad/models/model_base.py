@@ -105,6 +105,11 @@ class ComposedDynamics(nn.Module):
         if dims is not None:
             self.n_total_state_features = dims['x']
             self.latent_dimension = dims['z']
+            self.seq_len = dims['seq']
+        else:
+            self.n_total_state_features = -1
+            self.latent_dimension = -1
+            self.seq_len = -1
 
         # To be assigned
         self.encoder_net   = None  # Network to be used by self._encoder
@@ -112,7 +117,6 @@ class ComposedDynamics(nn.Module):
         self.decoder_net   = None  # Network to be used by self._decoder
         self._linear_eval  = None  # Functions for linear solver, to be hooked
         self._linear_features = None
-        self.seq_len       = 1     # Sequence length, default 1 for non-sequential models
 
     @classmethod
     def build_core(cls, model_config, dtype, device, ifgnn=False):

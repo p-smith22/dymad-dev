@@ -1,6 +1,7 @@
 from dymad.models.collections import \
     PredefinedModel, \
     DGLDM, DLDM, DLDMG, GLDM, LDM, LDMG, \
+    DSDM, DSDMG, \
     DGKBF, DKBF, KBF, GKBF, \
     DGLTI, DLTI, GLTI, LTI, \
     DGKM, DGKMSK, DKM, DKMSK, GKM, KM, KMM
@@ -35,6 +36,8 @@ __all__ = [
     "DLDM",
     "DLDMG",
     "DLTI",
+    "DSDM",
+    "DSDMG",
     "GKBF",
     "GKM",
     "GLDM",

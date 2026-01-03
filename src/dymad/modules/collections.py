@@ -49,7 +49,7 @@ def make_network(
     if _type not in NN_MAP:
         if _type[4:] not in NN_MAP:
             raise ValueError(f"Unknown network type '{nn_type}'. Must be one of {list(NN_MAP.keys())}.")
-    net_class = NN_MAP[_type]
+    net_class = NN_MAP.get(_type, None)
 
     # Special handling for TakeFirst and TakeFirstGraph
     if _type in ["mlp_1st", "gnn_1st"]:
@@ -67,20 +67,23 @@ def make_network(
     # Special handling for sequence models
     if _type[:3] == "seq":
         if _type in NN_MAP:
-            net_opts['seq_len'] = seq_len
-            return net_class(**net_opts)
+            # This case always assumes last_only=True
+            net_opts["last_only"] = True
+            return net_class(seq_len, **net_opts)
 
         # Extract the base network type (everything after "seq_")
+        # This case always assumes last_only=False
         base_type = _type[4:]  # Remove "seq_" prefix
         base_net = make_network(
             nn_type=base_type,
-            input_dim=input_dim,
+            input_dim=input_dim // seq_len,
             hidden_dim=hidden_dim,
-            output_dim=output_dim,
+            output_dim=output_dim // seq_len,
             n_layers=n_layers,
             **kwargs
             )
-        return StepwiseModel(seq_len=seq_len, net=base_net, **kwargs)
+        return StepwiseModel(
+            seq_len, net=base_net, last_only=False, **kwargs)
 
     # Standard handling for MLP and GNN variants
     return net_class(**net_opts)
@@ -147,6 +150,7 @@ def make_autoencoder(
         hidden_dim=hidden_dim,
         output_dim=latent_dim,
         n_layers=enc_depth,
+        seq_len=seq_len
     )
     encoder_args.update(kwargs)
     decoder_args = dict(
@@ -154,6 +158,7 @@ def make_autoencoder(
         hidden_dim=hidden_dim,
         output_dim=output_dim,
         n_layers=dec_depth,
+        seq_len=seq_len
     )
     decoder_args.update(kwargs)
 
