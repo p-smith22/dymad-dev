@@ -6,7 +6,7 @@ from dymad.modules.kernel import scaled_cdist, \
 from dymad.modules.krr import KRRBase, KRRMultiOutputIndep, KRRMultiOutputShared, KRROperatorValued, KRRTangent
 from dymad.modules.linear import FlexLinear
 from dymad.modules.mlp import MLP, ResBlockMLP, IdenCatMLP
-from dymad.modules.sequential import SequentialBase, SimpleRNN, StandardRNN, StepwiseModel
+from dymad.modules.sequential import SequentialBase, SimpleRNN, StepwiseModel, VanillaRNN
 
 __all__ = [
     "AE_MAP",
@@ -39,6 +39,6 @@ __all__ = [
     "scaled_cdist",
     "SequentialBase",
     "SimpleRNN",
-    "StandardRNN",
-    "StepwiseModel"
+    "StepwiseModel",
+    "VanillaRNN",
 ]

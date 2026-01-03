@@ -7,7 +7,7 @@ from dymad.modules.kernel import KernelScDM, KernelScExp, KernelScRBF, KernelOpS
 from dymad.modules.krr import KRRMultiOutputShared, KRRMultiOutputIndep, KRROperatorValued, KRRTangent
 from dymad.modules.misc import TakeFirst, TakeFirstGraph
 from dymad.modules.mlp import MLP, ResBlockMLP, IdenCatMLP
-from dymad.modules.sequential import SimpleRNN, StandardRNN, StepwiseModel
+from dymad.modules.sequential import SimpleRNN, VanillaRNN, StepwiseModel
 
 NN_MAP = {
     "mlp_smp"  : MLP,
@@ -19,7 +19,7 @@ NN_MAP = {
     "gnn_cat"  : IdenCatGNN,
     "gnn_1st"  : TakeFirstGraph,
     "seq_std"  : SimpleRNN,
-    "seq_rnn"  : StandardRNN,
+    "seq_rnn"  : VanillaRNN,
 }
 """Options for preset neural network models."""
 

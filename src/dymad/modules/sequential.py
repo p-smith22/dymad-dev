@@ -163,13 +163,13 @@ class SequentialBase(nn.Module):
         return z
 
 
-class StandardRNN(SequentialBase):
-    """Standard RNN from pytorch."""
+class VanillaRNN(SequentialBase):
+    """Vanilla RNN from pytorch."""
 
     def _build_seq(self, input_dim, hidden_dim, output_dim, n_layers, _act, dtype, device, **kwargs):
         _act_name = _act().__class__.__name__.lower()
         assert _act_name in ['tanh', 'relu'], "Only 'tanh' and 'relu' activations are supported for nn.RNN."
-        assert output_dim == hidden_dim, "For StandardRNN, output_dim must equal hidden_dim."
+        assert output_dim == hidden_dim, "For VanillaRNN, output_dim must equal hidden_dim."
         self.net = nn.RNN(
             input_size = input_dim,
             hidden_size = hidden_dim,
