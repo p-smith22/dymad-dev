@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from typing import Tuple, Union
 
-from dymad.io import load_model
+from dymad.io import load_model, visualize_model
 from dymad.models import TemplateCorrDif
 from dymad.training import NODETrainer
 from dymad.utils import JaxWrapper, plot_multi_trajs, TrajectorySampler
@@ -94,6 +94,7 @@ labels = [cfgs[i][0] for i in IDX]
 
 ifdat = 0
 iftrn = 1
+ifviz = 1
 ifprd = 1
 
 if ifdat:
@@ -111,6 +112,13 @@ if iftrn:
         opt["model"]["name"] = f"dyn_{mdl}"
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
+
+if ifviz:
+    for i in IDX:
+        mdl, MDL, _, _ = cfgs[i]
+        model_graph = visualize_model(
+            mdl_class=MDL, checkpoint_path=f'dyn_{mdl}.pt', ref_data='data/dyn.npz',
+            depth=1, ifsave=True)
 
 if ifprd:
     sampler = TrajectorySampler(f, g, config='dyn_test.yaml')

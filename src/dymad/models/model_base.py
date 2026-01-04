@@ -153,17 +153,29 @@ class ComposedDynamics(nn.Module):
                f"Continuous-time: {self.CONT}, Graph-compatible: {self.GRAPH}, " + \
                f"Sequence length: {self.seq_len}\n"
 
-    def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, t=None, x=None, u=None, p=None, ei=None, ew=None, ea=None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass through the full model: encode, dynamics, decode.
 
         Unified across most of the models, but this can be overridden if needed.
+
+        Note:
+            The forward pass should not be used directly.
+            This interface is provided for model inspection and analysis.
         """
-        raise DeprecationWarning("Direct forward pass is deprecated. Use encoder, dynamics, and decoder methods separately.")
-        # z = self.encoder(w)
-        # z_dot = self.dynamics(z, w)
-        # x_hat = self.decoder(z, w)
-        # return z, z_dot, x_hat
+        # ei, ew, ea are tuples of values and offsets, so that torchview can handle them
+        # For DynData, we need to convert them back to nested tensors
+        _x = x if ei is None else x.unsqueeze(0)   # Graph case always use batch size 1
+        w = DynData(
+            t=t, u=u, p=p,
+            ei=torch.nested.nested_tensor_from_jagged(*ei) if ei is not None else None,
+            ew=torch.nested.nested_tensor_from_jagged(*ew) if ew is not None else None,
+            ea=torch.nested.nested_tensor_from_jagged(*ea) if ea is not None else None
+            ).get_step(0).set_x(_x)
+        z = self.encoder(w)
+        z_dot = self.dynamics(z, w)
+        x_hat = self.decoder(z, w)
+        return z, z_dot, x_hat
 
     def encoder(self, w: DynData) -> torch.Tensor:
         """Encode the inputs into latent states."""
