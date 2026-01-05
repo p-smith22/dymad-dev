@@ -58,7 +58,7 @@ class TemplateCorrAlg(ComposedDynamics):
         }
         self.processor_net = MLP(
             input_dim  = dims['s'],
-            latent_dim = dims['l'],
+            hidden_dim = dims['h'],
             output_dim = dims['r'],
             n_layers   = dims['prc'],
             **opts
@@ -120,16 +120,16 @@ class TemplateCorrDif(ComposedDynamics):
 
     - x' = Base_Dynamics(x, u, p)
 
-    Add a hidden dynamics state s for correction
+    Add a latent dynamics state s for correction
 
-    - s' = Hidden_Dynamics(x, s, u)
+    - s' = Latent_Dynamics(x, s, u)
     - f = Residual_Force(x, s, u)
 
     Then full dynamics is
 
     - z = [x, Encoder(x,u)]
     - x' = Base_Dynamics_With_Correction(x, u, f, p)
-    - s' = Hidden_Dynamics(z=[x, s], u)
+    - s' = Latent_Dynamics(z=[x, s], u)
     - f = Residual_Force(z=[x, s], u)
     - x_hat = Decoder(z=[x, s])
 
@@ -139,8 +139,8 @@ class TemplateCorrDif(ComposedDynamics):
     Due to the special structure, the autoencoder dimensions are fixed,
 
     - Encoder input: n_total_features (x or x+u)
-    - Encoder output: hidden_dimension (s)
-    - Decoder input: n_total_state_features + hidden_dimension (x+s)
+    - Encoder output: latent_dimension (s)
+    - Decoder input: n_total_state_features + latent_dimension (x+s)
     - Decoder output: n_total_state_features (x)
     """
     GRAPH = False
@@ -151,7 +151,7 @@ class TemplateCorrDif(ComposedDynamics):
 
         # Dimensions
         dims = get_dims(model_config, data_meta)
-        dims['z'] = dims['x'] + model_config.get('hidden_dimension', 1)
+        dims['z'] = dims['x'] + model_config.get('latent_dimension', 1)
         dims['s'] = dims['z']
         dims['r'] = model_config.get('residual_dimension', 1)
         dims['prc'] = model_config.get('residual_layers', 2)
@@ -171,7 +171,7 @@ class TemplateCorrDif(ComposedDynamics):
         # Autoencoder
         self.encoder_net = MLP(
             input_dim  = dims['e'],
-            latent_dim = dims['l'],
+            hidden_dim = dims['h'],
             output_dim = dims['z'] - dims['x'],
             n_layers   = dims['enc'],
             **opts
@@ -183,7 +183,7 @@ class TemplateCorrDif(ComposedDynamics):
 
         self.decoder_net = MLP(
             input_dim  = dims['z'],
-            latent_dim = dims['l'],
+            hidden_dim = dims['h'],
             output_dim = dims['x'],
             n_layers   = dims['dec'],
             **opts
@@ -197,16 +197,16 @@ class TemplateCorrDif(ComposedDynamics):
         _dim = dims['z'] + dims['u']
         self.processor_net = MLP(
             input_dim  = _dim,
-            latent_dim = dims['l'],
+            hidden_dim = dims['h'],
             output_dim = dims['r'],
             n_layers   = dims['prc'],
             **opts
         )
-        self.hidden_net = MLP(
+        self.latent_net = MLP(
             input_dim  = _dim,
-            latent_dim = dims['l'],
+            hidden_dim = dims['h'],
             output_dim = dims['z'] - dims['x'],
-            n_layers   = model_config.get('hidden_layers', 2),
+            n_layers   = model_config.get('latent_layers', 2),
             **opts
         )
         self.features = FZU_MAP[fzu_type]
@@ -231,7 +231,7 @@ class TemplateCorrDif(ComposedDynamics):
             str: String with model details
         """
         return super().diagnostic_info() + \
-               f"Additional: {self.hidden_net}\n"
+               f"Additional: {self.latent_net}\n"
 
     def extra_setup(self):
         """
@@ -243,7 +243,7 @@ class TemplateCorrDif(ComposedDynamics):
         """
         The minimal that the user must implement.
 
-        `f` is the residual correction term as output from the hidden dynamics, and needs
+        `f` is the residual correction term as output from the latent dynamics, and needs
         to be incorporated into the base dynamics.
         """
         raise NotImplementedError("Implement in derived class.")
@@ -256,5 +256,5 @@ class TemplateCorrDif(ComposedDynamics):
         _x = z[..., :self.n_total_state_features]
         _f = self.processor_net(self.features(z, w))
         _dx = self.base_dynamics(_x, w.u, _f, w_p)
-        _ds = self.hidden_net(self.features(z, w))
+        _ds = self.latent_net(self.features(z, w))
         return torch.cat([_dx, _ds], dim=-1)

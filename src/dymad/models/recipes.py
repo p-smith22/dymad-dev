@@ -3,10 +3,10 @@ import torch
 from typing import Union, Tuple
 
 from dymad.io import DynData
-from dymad.models.helpers import fzu_selector, get_dims
+from dymad.models.helpers import build_processor, fzu_selector, get_dims
 from dymad.models.model_base import ComposedDynamics
 from dymad.models.prediction import predict_continuous_fenc
-from dymad.modules import FlexLinear, GNN, make_krr, MLP
+from dymad.modules import FlexLinear, make_krr
 from dymad.numerics import Manifold
 
 class CD_LDM(ComposedDynamics):
@@ -27,33 +27,59 @@ class CD_LDM(ComposedDynamics):
         # As is
 
         # Processor in the dynamics
-        opts = {
-            'activation'     : model_config.get('activation', 'prelu'),
-            'weight_init'    : model_config.get('weight_init', 'xavier_uniform'),
-            'bias_init'      : model_config.get('bias_init', 'zeros'),
-            'gain'           : model_config.get('gain', 1.0),
-            'end_activation' : model_config.get('end_activation', True),
-            'dtype'          : dtype,
-            'device'         : device
-        }
-        if ifgnn:
-            opts['gcl']      = model_config.get('gcl', 'sage')
-            opts['gcl_opts'] = model_config.get('gcl_opts', {})
-
-        MDL = GNN if ifgnn else MLP
-        processor_net = MDL(
-            input_dim  = dims['s'],
-            latent_dim = dims['l'],
-            output_dim = dims['r'],
-            n_layers   = dims['prc'],
-            **opts
-        )
+        processor_net = build_processor(model_config, dims, dtype, device, ifgnn=ifgnn)
 
         # Prediction options
         input_order = model_config.get('input_order', 'cubic')
         prd_type = model_config.get('predictor_type', 'ode')
 
         return dims, (enc_type, fzu_type, dec_type, prd_type), processor_net, input_order
+
+
+class CD_SDM(ComposedDynamics):
+    """Sequential Dynamics Model (SDM) class."""
+
+    @classmethod
+    def build_core(cls, types, model_config, data_meta, dtype, device, ifgnn=False):
+        enc_type, fzu_type, dec_type = types
+
+        # Dimensions
+        dims = get_dims(model_config, data_meta)
+        dims['s'] = dims['z']
+        dims['r'] = dims['z'] // dims['seq']
+
+        # Autoencoder
+        assert 'raw' in enc_type, "SDM model needs raw-type encoder."
+        suffix = "_ctrl" if dims['u'] > 0 else "_auto"
+        enc_type += suffix
+
+        # Features in the dynamics
+        # As is
+
+        # Processor in the dynamics
+        prc_type = model_config.get('processor_type', 'seq_std')
+        model_config['processor_type'] = prc_type
+        processor_net = build_processor(model_config, dims, dtype, device, ifgnn=ifgnn)
+
+        # Prediction
+        input_order = None
+        prd_type = model_config.get('predictor_type', 'ode')
+        if prd_type == 'exp':
+            assert dims['u'] == 0, "SDM with control cannot use predict_discrete_exp."
+
+        return dims, (enc_type, fzu_type, dec_type, prd_type), processor_net, input_order
+
+    def dynamics(self, z, w):
+        """Customized dynamics for SDM.
+        
+        The input is (..., seq_len*z_dim) for z_{1:T};
+        Dynamics returns (..., z_dim) for z_{T+1};
+        then we concatenate (..., seq_len*z_dim) for z_{2:T+1} for the final output.
+        """
+        z_next = super().dynamics(z, w)
+        _dim = z_next.shape[-1]
+        ztmp = torch.cat([z[..., _dim:], z_next], dim=-1)
+        return ztmp
 
 
 class CD_LFM(ComposedDynamics):

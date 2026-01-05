@@ -12,7 +12,7 @@ mdl_kb = {
     "name" : 'kura_model',
     "encoder_layers" : 2,
     "decoder_layers" : 2,
-    "latent_dimension" : 32,
+    "hidden_dimension" : 32,
     "koopman_dimension" : 16,
     "gcl": "sage",
     # "gcl": "cheb",

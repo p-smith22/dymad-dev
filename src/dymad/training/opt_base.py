@@ -417,6 +417,9 @@ class OptBase:
             return loss_list
 
         if self.criteria_names[1] == "recon":
+            if x_hat is None:
+                _z = self.model.encoder(B)
+                x_hat = self.model.decoder(_z, B)
             recon_loss = self.criteria[1](B.x, x_hat.view(*B.x.shape))
             loss_list.append(recon_loss)
             n_eval = 2

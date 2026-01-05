@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from dymad.io import load_model
+from dymad.io import load_model, visualize_model
 from dymad.models import GLDM, GKBF, GKM, GLTI
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
 from dymad.utils import adj_to_edge, plot_summary, plot_trajectory, TrajectorySampler
@@ -99,11 +99,16 @@ if ifprd:
     res = [x_data]
     for _i in IDX:
         mdl, MDL = cases[_i]['name'], cases[_i]['model']
-        _, prd_func = load_model(MDL, f'ltg_{mdl}.pt')
+        model, prd_func = load_model(MDL, f'ltg_{mdl}.pt')
 
         with torch.no_grad():
             _pred = prd_func(x_data, t_data, u=u_data, ei=edge_index)
         res.append(_pred)
+
+        model_graph = visualize_model(
+            model=model, prd_func=prd_func,
+            ref_data={'t': t_data, 'x': x_data, 'u': u_data, 'ei': edge_index},
+            depth=1, ifsave=f'ltg_{mdl}/ltg_{mdl}')
 
     plot_trajectory(
         np.array(res), t_data, "LTG",

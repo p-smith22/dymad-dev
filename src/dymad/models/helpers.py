@@ -5,7 +5,7 @@ from typing import Dict, List
 from dymad.models.components import ENC_MAP, DEC_MAP, FZU_MAP, DYN_MAP, LIN_MAP
 from dymad.models.prediction import predict_continuous, predict_continuous_exp, predict_continuous_np, \
     predict_discrete, predict_discrete_exp
-from dymad.modules import make_autoencoder
+from dymad.modules import make_autoencoder, make_network
 
 logger = logging.getLogger(__name__)
 
@@ -18,16 +18,19 @@ def get_dims(model_config, data_meta):
     # Basic dimensions
     dim_x  = data_meta.get('n_total_state_features')
     dim_u  = data_meta.get('n_total_control_features')
-    dim_e  = dim_x + dim_u   # Input dim to encoder
+    dim_e  = dim_x + dim_u                      # Input dim to encoder
+    l_seq  = data_meta.get('delay') + 1         # Sequence/time-delay length per step
 
-    dim_l  = model_config.get('latent_dimension', 64)
+    dim_h  = model_config.get('hidden_dimension', 64)
     n_enc  = model_config.get('encoder_layers', 2)
     n_dec  = model_config.get('decoder_layers', 2)
     n_prc  = model_config.get('processor_layers', 2)
 
     # Derived dimensions - default options
-    dim_z = dim_l if n_enc > 0 else dim_e   # Latent dimension
-    dim_r = dim_s = dim_z                   # Feature and processor output dimension
+    dim_z = model_config.get('latent_dimension', None)
+    if dim_z is None:
+        dim_z = dim_h if n_enc > 0 else dim_e   # Latent dimension
+    dim_r = dim_s = dim_z                       # Feature and processor output dimension
     dims = {
         'x'  : dim_x,
         'u'  : dim_u,
@@ -35,17 +38,16 @@ def get_dims(model_config, data_meta):
         'z'  : dim_z,
         's'  : dim_s,
         'r'  : dim_r,
-        'l'  : dim_l,
+        'h'  : dim_h,
         'enc': n_enc,
         'dec': n_dec,
-        'prc': n_prc
+        'prc': n_prc,
+        'seq': l_seq
     }
     return dims
 
-def build_autoencoder(
-        model_config, dims,
-        dtype, device,
-        ifgnn = False):
+
+def build_autoencoder(model_config, dims, dtype, device, ifgnn = False):
     # Determine other options for MLP layers
     opts = {
         'activation'     : model_config.get('activation', 'prelu'),
@@ -62,19 +64,61 @@ def build_autoencoder(
     aec_type = model_config.get('autoencoder_type', 'smp')
 
     # Build encoder/decoder networks
-    pref = "gnn_" if ifgnn else "mlp_"
+    if aec_type[:3] in ["gnn", "mlp"]:
+        pref = ''
+    else:
+        pref = "gnn_" if ifgnn else "mlp_"
     encoder_net, decoder_net = make_autoencoder(
-        type       = pref+aec_type,
+        ae_type    = pref+aec_type,
         input_dim  = dims['e'],
-        latent_dim = dims['l'],
-        hidden_dim = dims['z'],
+        hidden_dim = dims['h'],
+        latent_dim = dims['z'],
         enc_depth  = dims['enc'],
         dec_depth  = dims['dec'],
         output_dim = dims['x'],
+        seq_len    = dims['seq'],
         **opts
     )
 
     return encoder_net, decoder_net
+
+
+def build_processor(model_config, dims, dtype, device, ifgnn = False):
+    # Processor in the dynamics
+    opts = {
+        'activation'     : model_config.get('activation', 'prelu'),
+        'weight_init'    : model_config.get('weight_init', 'xavier_uniform'),
+        'bias_init'      : model_config.get('bias_init', 'zeros'),
+        'gain'           : model_config.get('gain', 1.0),
+        'end_activation' : model_config.get('end_activation', True),
+        'dtype'          : dtype,
+        'device'         : device
+    }
+    if ifgnn:
+        opts['gcl']      = model_config.get('gcl', 'sage')
+        opts['gcl_opts'] = model_config.get('gcl_opts', {})
+
+    prc_type = model_config.get('processor_type', None)
+    if prc_type is None:
+        # Default processor type
+        prc_type = 'gnn_smp' if ifgnn else 'mlp_smp'
+    else:
+        if prc_type[:3] in ["gnn", "mlp", "seq"]:
+            pref = ''
+        else:
+            pref = "gnn_" if ifgnn else "mlp_"
+        prc_type = pref + prc_type
+    processor_net = make_network(
+        nn_type    = prc_type,
+        input_dim  = dims['s'],
+        hidden_dim = dims['h'],
+        output_dim = dims['r'],
+        n_layers   = dims['prc'],
+        seq_len    = dims['seq'],
+        **opts
+    )
+
+    return processor_net
 
 
 def build_predictor(CONT, predictor_type, n_total_control_features):
@@ -88,7 +132,7 @@ def build_predictor(CONT, predictor_type, n_total_control_features):
         else:
             return predict_continuous
     else:
-        if predictor_type == "exp":
+        if predictor_type in ["exp", 'np']:
             return predict_discrete_exp
         else:
             return predict_discrete

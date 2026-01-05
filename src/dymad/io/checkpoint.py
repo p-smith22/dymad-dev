@@ -117,7 +117,7 @@ def load_model(model_class, checkpoint_path):
         return np.array(_data_transform_x.inverse_transform(_atleast_3d(pred))).squeeze()
 
     # Prediction in data space
-    def predict_fn(x0, t, u=None, p=None, ei=None, ew=None, ea=None, device="cpu"):
+    def predict_fn(x0, t, u=None, p=None, ei=None, ew=None, ea=None, device="cpu", ret_dat=False):
         """Predict trajectory in data space."""
         _x0 = _proc_x0(x0, device)
         if isinstance(t, np.ndarray):
@@ -148,11 +148,79 @@ def load_model(model_class, checkpoint_path):
         if p is not None:
             _data.p = torch.as_tensor(p, dtype=dtype, device=device)
         _data.batch_size = _x0.shape[0] if _x0.ndim == 2 else 1
+
+        if ret_dat:
+            return {
+                't': t,
+                'x': _x0,
+                'u': _data.u,
+                'p': _data.p,
+                'ei': _data.ei,
+                'ew': _data.ew,
+                'ea': _data.ea
+            }
+
         with torch.no_grad():
             pred = model.predict(_x0, _data, t).cpu().numpy()
         return _proc_prd(pred)
 
     return model, predict_fn
+
+
+def visualize_model(
+        mdl_class=None, checkpoint_path=None, model=None, prd_func=None,
+        ref_data=None, depth=1, device='cpu', ifsave=False):
+    try:
+        from torchview import draw_graph
+    except ImportError as e:
+        raise ImportError(
+            "Visualization requires optional dependency 'torchview'.\n"
+            "Install via: pip install dymad[viz]"
+        ) from e
+
+    if mdl_class is None:
+        assert model is not None and prd_func is not None, \
+            "Either mdl_class and checkpoint_path, or model and prd_func must be provided."
+    else:
+        assert checkpoint_path is not None, \
+            "checkpoint_path must be provided when mdl_class is given."
+        model, prd_func = load_model(mdl_class, checkpoint_path)
+
+    if isinstance(ref_data, str):
+        dat = np.load(ref_data, allow_pickle=True)
+    else:
+        dat = ref_data  # Assuming dict
+    t_data = dat.get('t', None)
+    x_data = dat.get('x', None)
+    u_data = dat.get('u', None)
+    p_data = dat.get('p', None)
+    ei_data = dat.get('ei', None)
+    ew_data = dat.get('ew', None)
+    ea_data = dat.get('ea', None)
+
+    input_data = prd_func(
+        x_data, t_data, u=u_data, p=p_data, ei=ei_data, ew=ew_data, ea=ea_data,
+        ret_dat=True)
+    for _k in ['ei', 'ew', 'ea']:
+        # Decompose nested tensors so that torchview can handle them
+        if input_data[_k] is not None:
+            input_data[_k] = (input_data[_k].values(), input_data[_k].offsets())
+
+    model_graph = draw_graph(
+        model,
+        input_data=input_data,
+        depth=depth,
+        device=device)
+
+    if ifsave:
+        if checkpoint_path is None:
+            filename = "model" if isinstance(ifsave, bool) else str(ifsave)
+            model_graph.visual_graph.render(f"{filename}.viz", format="png")
+        else:
+            filename = os.path.splitext(os.path.basename(checkpoint_path))[0]
+            model_graph.visual_graph.render(f"{filename}/{filename}.viz", format="png")
+
+    return model_graph.visual_graph
 
 
 class DataInterface:

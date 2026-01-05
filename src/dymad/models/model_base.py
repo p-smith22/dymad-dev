@@ -1,4 +1,5 @@
 import numpy as np
+import textwrap as tw
 import torch
 import torch.nn as nn
 from typing import Any, Callable, Dict, Tuple, Union
@@ -19,12 +20,11 @@ Decoder = Callable[[nn.Module, torch.Tensor, DynData], torch.Tensor]
 """decoder(net, z, w) -> x"""
 
 Predictor = Callable[[torch.Tensor, DynData, Union[np.ndarray, torch.Tensor], Any], Tuple[torch.Tensor, torch.Tensor]]
-"""predict(x0, w, ts, **kwargs) -> (x_pred, z_pred)"""
+r"""predict(x0, w, ts, \*\*kwargs) -> (x_pred, z_pred)"""
 
 
 class ComposedDynamics(nn.Module):
-    r"""
-    Base class for dynamic models.
+    r"""Base class for dynamic models.
 
     Notation:
 
@@ -104,8 +104,13 @@ class ComposedDynamics(nn.Module):
         if dims is not None:
             self.n_total_state_features = dims['x']
             self.latent_dimension = dims['z']
+            self.seq_len = dims['seq']
+        else:
+            self.n_total_state_features = -1
+            self.latent_dimension = -1
+            self.seq_len = -1
 
-        # To be assgined
+        # To be assigned
         self.encoder_net   = None  # Network to be used by self._encoder
         self.processor_net = None  # Network to be used inside self.dynamics
         self.decoder_net   = None  # Network to be used by self._decoder
@@ -135,23 +140,37 @@ class ComposedDynamics(nn.Module):
         Returns:
             str: String with model details
         """
+        ind = "          "
+        fin = lambda net: tw.indent(f"{net}", ind)
         return f"Model parameters: {sum(p.numel() for p in self.parameters())}\n" + \
-               f"Encoder: {self._encoder.__name__}\n" + \
-               f"         {self.encoder_net}\n" + \
+               f"Encoder:  {self._encoder.__name__}\n{fin(self.encoder_net)}\n" + \
                f"Dynamics: {self.features.__name__}\n" + \
-               f"          {self.processor_net}\n" + \
-               f"          {self.composer.__name__}\n" + \
-               f"Decoder: {self._decoder.__name__}\n" + \
-               f"         {self.decoder_net}\n" + \
+               f"{fin(self.processor_net)}\n" + \
+               f"{ind}{self.composer.__name__}\n" + \
+               f"Decoder:  {self._decoder.__name__}\n{fin(self.decoder_net)}\n" + \
                f"Prediction: {self._predict.__name__}\n" + \
-               f"Continuous-time: {self.CONT}, Graph-compatible: {self.GRAPH}\n"
+               f"Continuous-time: {self.CONT}, Graph-compatible: {self.GRAPH}, " + \
+               f"Sequence length: {self.seq_len}\n"
 
-    def forward(self, w: DynData) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, t=None, x=None, u=None, p=None, ei=None, ew=None, ea=None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass through the full model: encode, dynamics, decode.
 
         Unified across most of the models, but this can be overridden if needed.
+
+        Note:
+            The forward pass should not be used directly.
+            This interface is provided for model inspection and analysis.
         """
+        # ei, ew, ea are tuples of values and offsets, so that torchview can handle them
+        # For DynData, we need to convert them back to nested tensors
+        _x = x if ei is None else x.unsqueeze(0)   # Graph case always use batch size 1
+        w = DynData(
+            t=t, u=u, p=p,
+            ei=torch.nested.nested_tensor_from_jagged(*ei) if ei is not None else None,
+            ew=torch.nested.nested_tensor_from_jagged(*ew) if ew is not None else None,
+            ea=torch.nested.nested_tensor_from_jagged(*ea) if ea is not None else None
+            ).get_step(0).set_x(_x)
         z = self.encoder(w)
         z_dot = self.dynamics(z, w)
         x_hat = self.decoder(z, w)

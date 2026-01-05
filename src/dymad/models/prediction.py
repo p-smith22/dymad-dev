@@ -144,7 +144,9 @@ def predict_continuous(
         wtmp = _ws.get_step(_tk)
         u    = u_intp(t)
         x    = model.decoder(z, wtmp.set_u(u))
-        _, z_dot, _ = model(wtmp.set_x(x))
+        wtmp = wtmp.set_x(x)
+        z    = model.encoder(wtmp)
+        z_dot = model.dynamics(z, wtmp)
         return z_dot
 
     logger.debug(f"predict_continuous: Starting ODE integration with shape {z0.shape}, method {method}, and interpolation order {order if _has_u else 'N/A'}")
@@ -325,7 +327,8 @@ def predict_discrete(
     x_traj = [x0]
     for k in range(n_steps - 1):
         wtmp = _ws.get_step(k).set_x(x_traj[-1])
-        _, ztmp, _ = model(wtmp)
+        _z   = model.encoder(wtmp)
+        ztmp = model.dynamics(_z, wtmp)
         x_k  = model.decoder(ztmp, wtmp)
         x_traj.append(x_k)
     x_traj = torch.stack(x_traj, dim=1)   # (batch_size, n_steps, z_dim)

@@ -43,7 +43,7 @@ class DPJ(TemplateCorrAlg):
 mdl_kl = {
     "name" : 'res_model',
     "residual_layers" : 1,
-    "latent_dimension" : 32,
+    "hidden_dimension" : 32,
     "residual_dimension" : 1,
     "activation" : "none",
     "end_activation" : False,
