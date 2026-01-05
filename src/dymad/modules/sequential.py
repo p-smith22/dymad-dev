@@ -181,7 +181,6 @@ class VanillaRNN(SequentialBase):
             dtype=dtype,
             **kwargs
         )
-        self._run_seq = self.net
         self.dtype = dtype
         self.device = device
 

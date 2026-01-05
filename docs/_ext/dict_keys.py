@@ -3,10 +3,8 @@ Credits to ChatGPT 5.2
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, List, Optional, Sequence, Tuple
-
 import importlib
-import inspect
+from typing import Any, Iterable, List, Optional, Tuple
 
 from docutils import nodes
 from docutils.parsers.rst import Directive, directives
@@ -157,7 +155,6 @@ class DictKeys(Directive):
         value_header = self.options.get("value-header", "Value")
 
         items = _safe_sorted_items(obj)
-        rows = [(str(k), str(v)) for k, v in items]
         rows = []
         for k, v in items:
             _v = v
