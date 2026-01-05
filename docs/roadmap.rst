@@ -175,8 +175,6 @@ Table of Features
 Legends:
 
 - |:white_check_mark:| Implemented in DyMAD
-- |:building_construction:| Implemented in DyMAD but still need verification
-- |:o:| Implemented in our other repos; to be integrated into DyMAD
 - |:egg:| On-going development
 - |:notepad_spiral:| Planned for future development
 - |:heavy_multiplication_x:| Not applicable
@@ -187,8 +185,8 @@ Model and Optimizer
 So far we consider a range of models and optimizers.  For models,
 
 - Latent Dynamics Model (LDM) follows the generic formulations :math:`(f,g,h)` listed above.
+- Sequential Dynamics Model (SDM) for non-Markovian dynamics with, e.g., Recurrent Neural Networks (RNNs).
 - Koopman Bilinear Form (KBF) replaces :math:`g` with a bilinear model, :math:`A z + \sum_i B(u_i)z + B_0 z`.
-- Recurrent Neural Network (RNN) includes standard architectures, e.g., LSTM and GRU.
 - Kernel methods include standard kernels, and diffusion map, etc.
 - Graph Neural Networks (GNN) accounts for graph structure in the data. 
 - Lastly, LDM/KBF/RNN/Kernel can work with data on graphs.
@@ -224,6 +222,13 @@ The details are provided below.
      - |:notepad_spiral:|
      - |:white_check_mark:|
      - |:white_check_mark:|
+   * - SDM
+     - |:heavy_multiplication_x:|
+     - |:heavy_multiplication_x:|
+     - |:notepad_spiral:|
+     - |:notepad_spiral:|
+     - |:white_check_mark:|
+     - |:white_check_mark:|
    * - KBF
      - |:white_check_mark:|
      - |:white_check_mark:|
@@ -231,13 +236,6 @@ The details are provided below.
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
-   * - RNN
-     - |:heavy_multiplication_x:|
-     - |:heavy_multiplication_x:|
-     - |:notepad_spiral:|
-     - |:notepad_spiral:|
-     - |:building_construction:|
-     - |:building_construction:|
    * - GNN
      - |:white_check_mark:|
      - |:white_check_mark:|
@@ -267,21 +265,21 @@ The currently available models of each category are listed below.  In the header
      - :attr:`~dymad.models.collections.DLDM`
      - :attr:`~dymad.models.collections.GLDM`
      - :attr:`~dymad.models.collections.DGLDM`
+   * - SDM
+     - |:heavy_multiplication_x:|
+     - :attr:`~dymad.models.collections.DSDM`
+     - |:heavy_multiplication_x:|
+     - |:notepad_spiral:|
    * - KBF
      - :attr:`~dymad.models.collections.KBF`
      - :attr:`~dymad.models.collections.DKBF`
      - :attr:`~dymad.models.collections.GKBF`
      - :attr:`~dymad.models.collections.DGKBF`
-   * - RNN
-     - |:building_construction:|
-     - |:building_construction:|
-     - |:building_construction:|
-     - |:building_construction:|
    * - GNN
      - :attr:`~dymad.models.collections.LDMG`
      - :attr:`~dymad.models.collections.DLDMG`
      - |:notepad_spiral:|
-     - |:notepad_spiral:|
+     - :attr:`~dymad.models.collections.DSDMG`
    * - Kernel
      - :attr:`~dymad.models.collections.KM` :attr:`~dymad.models.collections.KMM`
      - :attr:`~dymad.models.collections.DKM` :attr:`~dymad.models.collections.DKMSK`
@@ -315,7 +313,7 @@ The details are provided below.
    * - Linear
      - |:white_check_mark:|
      - |:white_check_mark:|
-     - |:o:|
+     - |:notepad_spiral:|
      - |:notepad_spiral:|
    * - LDM
      - |:notepad_spiral:|
@@ -386,7 +384,7 @@ Lastly, to ease the construction of modeling and analysis pipelines, we provide 
      - |:white_check_mark:|
      - |:white_check_mark:|
      - |:white_check_mark:|
-     - |:o:|
+     - |:notepad_spiral:|
 
 .. list-table:: Miscellaneous
    :widths: 25 25 25 25

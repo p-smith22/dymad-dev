@@ -17,7 +17,7 @@ import shutil
 import torch
 
 from dymad.io import load_model
-from dymad.models import DKBF, DLDM, DLTI, KBF, LDM, LTI
+from dymad.models import DKBF, DLDM, DLTI, DSDM, KBF, LDM, LTI
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
 
 trx = [
@@ -55,6 +55,27 @@ mdl_kl = {
     "koopman_dimension" : 4,
     "activation" : "none",
     "autoencoder_type" : "cat",
+    "weight_init" : "xavier_uniform"}
+mdl_s1 = {
+    "name" : 'lti_model',
+    "autoencoder_type" : "seq_smp",
+    "encoder_layers" : 1,
+    "decoder_layers" : 1,
+    "processor_layers": 1,
+    "hidden_dimension" : 8,
+    "latent_dimension" : 8,
+    "activation" : "none",
+    "weight_init" : "xavier_uniform"}
+mdl_s2 = {
+    "name" : 'lti_model',
+    "autoencoder_type" : "seq_std",
+    "encoder_layers" : 1,
+    "decoder_layers" : 1,
+    "processor_type" : "mlp_smp",
+    "processor_layers": 1,
+    "hidden_dimension" : 8,
+    "latent_dimension" : 8,
+    "activation" : "none",
     "weight_init" : "xavier_uniform"}
 
 ls_opt = {
@@ -116,6 +137,8 @@ trn_ln = {
 cfgs = [
     ('ldm_nddl',  LDM,  NODETrainer,     {"model": mdl_ld, "training" : trn_nd, "transform_x" : trx, "transform_u": tru}),
     ('kbf_wfdl',  KBF,  WeakFormTrainer, {"model": mdl_kb, "training" : trn_wf, "transform_x" : trx, "transform_u": tru}),
+    ('sdm_smp',   DSDM, NODETrainer,     {"model": mdl_s1, "training" : trn_dt, "transform_x" : trx, "transform_u": tru}),
+    ('sdm_std',   DSDM, NODETrainer,     {"model": mdl_s2, "training" : trn_dt, "transform_x" : trx, "transform_u": tru}),
     ('ldm_wf',    LDM,  WeakFormTrainer, {"model": mdl_ld, "training" : trn_wf}),
     ('ldm_node',  LDM,  NODETrainer,     {"model": mdl_ld, "training" : trn_nd}),
     ('kbf_wf',    KBF,  WeakFormTrainer, {"model": mdl_kb, "training" : trn_wf}),
@@ -129,7 +152,7 @@ cfgs = [
     ('dkbf_ln',   DKBF, LinearTrainer,   {"model": mdl_kl, "training" : trn_ln}),
     ]
 
-IDX_DL = [0, 1]
+IDX_DL = [0, 1, 2, 3]
 
 def train_case(idx, data, path):
     _, MDL, Trainer, opt = cfgs[idx]

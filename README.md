@@ -49,7 +49,6 @@ If there are API errors such as some files not found, try deleting the auto-gene
 
 - FTLE and CLV for nonlinear latent dynamics
 
-- Verify the RNN-type training
 - RNN plus graph
 - Demo on Kuramoto example
 
