@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from typing import Callable, Optional, Union
 
-from dymad.modules.helpers import _resolve_activation, _resolve_init, _INIT_MAP_W, _INIT_MAP_B
+from dymad.modules.helpers import _resolve_activation, _resolve_init, INIT_MAP_W, INIT_MAP_B
 from dymad.modules.linear import FlexLinear
 from dymad.modules.misc import TakeFirst
 
@@ -89,8 +89,8 @@ class MLP(nn.Module):
             self.net = nn.Sequential(*layers)
 
         # Cache init kwargs for later use in self.apply
-        self._weight_init = _resolve_init(weight_init, _INIT_MAP_W)
-        self._bias_init = _resolve_init(bias_init, _INIT_MAP_B)
+        self._weight_init = _resolve_init(weight_init, INIT_MAP_W)
+        self._bias_init = _resolve_init(bias_init, INIT_MAP_B)
 
         # Compute gain
         act_name = _act().__class__.__name__.lower()

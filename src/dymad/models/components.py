@@ -50,6 +50,7 @@ def enc_node_raw_ctrl(net: nn.Module, w: DynData) -> torch.Tensor:
     """Using EncCtrl for each node of graph, letting encoder handle the concatenation."""
     return w.G(net(w.xg, w.ug))    # G is needed for unified data structure
 
+#: Mapping of encoder names to encoder functions.
 ENC_MAP = {
     "iden"       : enc_iden,
     "smpl_auto"  : enc_smpl_auto,
@@ -86,6 +87,7 @@ def dec_node(net: nn.Module, z: torch.Tensor, w: DynData) -> torch.Tensor:
     """Node-wise decoder function."""
     return w.G(net(w.g(z)))    # G is needed for unified data structure
 
+#: Mapping of decoder names to decoder functions.
 DEC_MAP = {
     "iden"  : dec_iden,
     "auto"  : dec_auto,
@@ -132,6 +134,7 @@ def zu_blin_with_const_graph(z: torch.Tensor, w: DynData) -> torch.Tensor:
     z_u = (z.unsqueeze(-1) * u_reshaped.unsqueeze(-2)).reshape(*z.shape[:-1], -1)
     return torch.cat([z, z_u, u_reshaped], dim=-1)
 
+#: Mapping of feature concatenation names to functions.
 FZU_MAP = {
     "none"                  : zu_cat_none,
     "cat"                   : zu_cat_smpl,
@@ -163,6 +166,7 @@ def dyn_graph_skip(net: nn.Module, s: torch.Tensor, z: torch.Tensor, w: DynData)
     """Processing by GNN with skip connection."""
     return z + net(w.g(s), w.ei, w.ew, w.ea)   # G is effectively applied in the net
 
+#: Mapping of dynamics composer names to functions.
 DYN_MAP = {
     "direct"       : dyn_direct,
     "skip"         : dyn_skip,
@@ -197,6 +201,7 @@ def linear_features_graph(mdl, w: DynData) -> Tuple[torch.Tensor, torch.Tensor]:
     f = mdl.features(z, w)
     return f.permute(0, 2, 1, 3), z.permute(0, 2, 1, 3)
 
+#: Mapping of linear evaluation and features functions.
 LIN_MAP = {
     "smpl"  : (linear_eval_smpl, linear_features_smpl),
     "graph" : (linear_eval_graph, linear_features_graph)

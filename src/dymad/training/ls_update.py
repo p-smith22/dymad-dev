@@ -205,6 +205,7 @@ def _ct_raw(dataloader, model, dt, params=None, **kwargs):
     W, r = model.linear_solve(A, b, **_p)
     return (W,), r
 
+#: Mapping of linear solver methods
 SOL_MAP = {
     'dt_full'      : _dt_full,
     'dt_truncated' : _dt_truncated,

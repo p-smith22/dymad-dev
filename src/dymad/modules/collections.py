@@ -9,6 +9,7 @@ from dymad.modules.misc import TakeFirst, TakeFirstGraph
 from dymad.modules.mlp import MLP, ResBlockMLP, IdenCatMLP
 from dymad.modules.sequential import SimpleRNN, VanillaRNN, StepwiseModel
 
+#: Options for preset neural network models.
 NN_MAP = {
     "mlp_smp"  : MLP,
     "mlp_res"  : ResBlockMLP,
@@ -21,20 +22,19 @@ NN_MAP = {
     "seq_std"  : SimpleRNN,
     "seq_rnn"  : VanillaRNN,
 }
-"""Options for preset neural network models."""
 
 def make_network(
     nn_type: str,
     input_dim: int, hidden_dim: int, output_dim: int, n_layers: int,
     seq_len: int = None, **kwargs) -> nn.Module:
-    """
-    Factory function to create preset neural network models based on NN_MAP.
+    """Factory function to create preset neural network models based on :attr:`~dymad.modules.collections.NN_MAP`.
 
     Args:
         nn_type (str): Type of network to create.
-            One of the keys in NN_MAP: {'mlp_smp', 'mlp_res', 'mlp_cat', 'mlp_1st',
+            One of the keys in :attr:`~dymad.modules.collections.NN_MAP`:
+            {'mlp_smp', 'mlp_res', 'mlp_cat', 'mlp_1st',
             'gnn_smp', 'gnn_res', 'gnn_cat', 'gnn_1st', 'seq_std', 'seq_rnn'},
-            or 'seq_' prefixed versions of MLP and GNN types for sequence models.
+            or 'seq' prefixed versions of MLP and GNN types for sequence models.
         input_dim (int): Dimension of the input features.
         hidden_dim (int): Width of the hidden layers.
         output_dim (int): Dimension of the output space.
@@ -89,6 +89,7 @@ def make_network(
     return net_class(**net_opts)
 
 
+#: Options for preset autoencoder types.
 AE_MAP = {
     "mlp_smp"     : ("mlp_smp", "mlp_smp"),
     "mlp_res"     : ("mlp_res", "mlp_res"),
@@ -103,7 +104,6 @@ AE_MAP = {
     "gnn_seq_std" : ("seq_std", "seq_gnn_smp"),
     "gnn_seq_smp" : ("seq_gnn_smp", "seq_gnn_smp"),
 }
-"""Options for preset autoencoder types."""
 
 def make_autoencoder(
         ae_type: str | Tuple[str, str],

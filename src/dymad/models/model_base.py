@@ -20,12 +20,11 @@ Decoder = Callable[[nn.Module, torch.Tensor, DynData], torch.Tensor]
 """decoder(net, z, w) -> x"""
 
 Predictor = Callable[[torch.Tensor, DynData, Union[np.ndarray, torch.Tensor], Any], Tuple[torch.Tensor, torch.Tensor]]
-"""predict(x0, w, ts, **kwargs) -> (x_pred, z_pred)"""
+r"""predict(x0, w, ts, \*\*kwargs) -> (x_pred, z_pred)"""
 
 
 class ComposedDynamics(nn.Module):
-    r"""
-    Base class for dynamic models.
+    r"""Base class for dynamic models.
 
     Notation:
 

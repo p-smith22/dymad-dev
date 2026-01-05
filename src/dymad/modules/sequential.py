@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from typing import Callable, Union, Optional
 
-from dymad.modules.helpers import _resolve_activation, _resolve_init, _INIT_MAP_W, _INIT_MAP_B
+from dymad.modules.helpers import _resolve_activation, _resolve_init, INIT_MAP_W, INIT_MAP_B
 
 
 class SequentialBase(nn.Module):
@@ -15,7 +15,7 @@ class SequentialBase(nn.Module):
     and return the output either at the last step (..., output_dim) or
     the full sequence flattened (..., seq_len * output_dim).
     
-    It considers two types of architectures:
+    It considers two types of architectures
 
     - Internally construct RNN-like models, that applies to the input in the standard way.
       This is usually good for defining dynamics.
@@ -25,7 +25,8 @@ class SequentialBase(nn.Module):
       output of shape (-1, seq_len, output_dim).
     - In either case, a subclass must implement `_run_seq()` method that defines how to run the model.
 
-    The module can also operate in two modes:
+    The module can also operate in two modes
+
     - last_only=True: returns only the output at the last step (..., output_dim).
       Usually for dynamics.
     - last_only=False: returns the outputs at all steps, flattened (..., seq_len * output_dim).
@@ -91,8 +92,8 @@ class SequentialBase(nn.Module):
         self._build_seq(_inp_dim, hidden_dim, _out_dim, n_layers, _act, dtype, device, **kwargs)
 
         # Cache init kwargs for later use in self.apply
-        self._weight_init = _resolve_init(weight_init, _INIT_MAP_W)
-        self._bias_init = _resolve_init(bias_init, _INIT_MAP_B)
+        self._weight_init = _resolve_init(weight_init, INIT_MAP_W)
+        self._bias_init = _resolve_init(bias_init, INIT_MAP_B)
 
         # Compute gain
         act_name = _act().__class__.__name__.lower()
