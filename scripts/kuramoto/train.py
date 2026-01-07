@@ -1,65 +1,47 @@
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
 from dymad.io import load_model
-from dymad.models import DGKBF, DLDM, GKBF
-from dymad.training import NODETrainer, WeakFormTrainer, LinearTrainer
-from dymad.utils import plot_summary, plot_trajectory, setup_logging, TrajectorySampler
+from dymad.models import CD_SDM, DSDMG, PredefinedModel
+from dymad.training import NODETrainer
+from dymad.utils import plot_summary, plot_trajectory
 
-mdl_kb = {
-    "name" : 'kura_model',
-    "encoder_layers" : 2,
-    "decoder_layers" : 2,
-    "hidden_dimension" : 32,
-    "koopman_dimension" : 16,
-    "gcl": "sage",
-    # "gcl": "cheb",
-    # "gcl_opts": {"K": 2},
+mdl_sdm = {
+    # "name" : 'kura_model',
+    # "encoder_layers" : 2,
+    # "decoder_layers" : 2,
+    # "hidden_dimension" : 32,
+    # "koopman_dimension" : 16,
+    # "gcl": "sage",
+    # # "gcl": "cheb",
+    # # "gcl_opts": {"K": 2},
     "activation" : "prelu",
-    "weight_init" : "xavier_uniform"}
+    "weight_init" : "xavier_uniform"
+    }
 
 trn_nd = {
-    "n_epochs": 2000,
+    "n_epochs": 1000,
     "save_interval": 50,
     "load_checkpoint": False,
     "learning_rate": 5e-3,
     "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
-    "sweep_lengths": [2, 4, 8, 12, 16, 20],
-    "sweep_epoch_step": 100,
+    "sweep_lengths": [2, 3, 5, 7],
+    "sweep_epoch_step": 1000,
     "chop_mode": "unfold",
     "chop_step": 0.5,
-    "ls_update": {
-        "method": "full",
-        "interval": 200,
-        "times": 1}
-    }
-trn_wf = {
-    "n_epochs": 2000,
-    "save_interval": 50,
-    "load_checkpoint": False,
-    "learning_rate": 5e-3,
-    "decay_rate": 0.999,
-    "reconstruction_weight": 1.0,
-    "dynamics_weight": 1.0,
-    "weak_form_params": {
-        "N": 13,
-        "dN": 2,
-        "ordpol": 2,
-        "ordint": 2},
     }
 
-config_path = 'kur_dkbf.yaml'
-data_path = './data/data_n2_s3_k4_s1.npz'
+DSDMSKG = PredefinedModel(False, "node_raw", "none",  "graph_skip", "node",  CD_SDM)
+
+config_path = 'kur_seq.yaml'
+data_path = './data/data_n4_s5_k4_s5.npz'
 cfgs = [
-    ('kbf_node', DGKBF, NODETrainer,        {"data": {"path": data_path}, "model": mdl_kb, "training" : trn_nd}),
-    ('kbf_wf',   GKBF,  WeakFormTrainer,    {"data": {"path": data_path}, "model": mdl_kb, "training" : trn_wf}),
+    ('sdm_node', DSDMG,   NODETrainer,      {"data": {"path": data_path}, "model": mdl_sdm, "training" : trn_nd}),
+    ('sdm_skip', DSDMSKG, NODETrainer,      {"data": {"path": data_path}, "model": mdl_sdm, "training" : trn_nd}),
     ]
 
-IDX = [1]
+IDX = [0]
 labels = [cfgs[i][0] for i in IDX]
 
 iftrn = 1
@@ -68,9 +50,6 @@ ifprd = 0
 if iftrn:
     for _i in IDX:
         mdl, MDL, Trainer, opt = cfgs[_i]
-
-        setup_logging(config_path, mode='info', prefix='results')
-        logging.info(f"Config: {config_path}")
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
