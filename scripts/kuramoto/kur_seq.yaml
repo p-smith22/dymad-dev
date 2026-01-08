@@ -1,19 +1,21 @@
 data:
   path: './data/lti.npz'
   n_samples: 100
-  n_steps: 500
+  n_steps: 1000
   double_precision: true
 
 transform_x:
   type: "delay"
-  delay: 19
+  delay: 99
 
 transform_u:
-  type: "delay"
-  delay: 19
+  - type: "scaler"
+    mode: "01"
+  - type: "delay"
+    delay: 99
 
 split:
-  train_frac: 0.8
+  train_frac: 1.0
 
 dataloader:
   batch_size: 80
@@ -24,9 +26,9 @@ model:
   encoder_layers: 1
   decoder_layers: 1
   processor_type: 'gnn_smp'
-  processor_layers: 1
+  processor_layers: 2
   hidden_dimension: 32
-  latent_dimension: 40
+  latent_dimension: 200
   gcl: "cheb"
   gcl_opts:
     K: 2
@@ -35,8 +37,6 @@ model:
 
 criterion:
   dynamics:
-    weight: 1.0
-  recon:
     weight: 1.0
 
 training:
@@ -48,4 +48,4 @@ training:
 
 plotting:
   xidx: [0, 1, 2, 3, 4]
-  uidx: [0, 1, 2, 3, 4]
+  uidx: [0]

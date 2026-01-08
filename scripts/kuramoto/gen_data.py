@@ -18,7 +18,7 @@ kl, ku = 4., 6.            # de = 0.75
 Ntrj   = 100               # Number of trajectories
 nStint = 5                 # Number of time intervals
 dt     = 0.01              # Time step size
-tf     = 5.                # Final time
+tf     = 10.               # Final time
 
 # Model size
 nNodes  = 4

@@ -71,7 +71,7 @@ class CD_SDM(ComposedDynamics):
 
     def dynamics(self, z, w):
         """Customized dynamics for SDM.
-        
+
         The input is (..., seq_len*z_dim) for z_{1:T};
         Dynamics returns (..., z_dim) for z_{T+1};
         then we concatenate (..., seq_len*z_dim) for z_{2:T+1} for the final output.
