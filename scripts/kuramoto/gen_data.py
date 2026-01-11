@@ -15,7 +15,8 @@ kl, ku = 4., 6.            # de = 0.75
 # kl, ku = 1., 1.5           # de = 0.19
 
 # Time settings
-Ntrj   = 100               # Number of trajectories
+Ntrj   = 10                # Number of trajectories
+split  = 0.8               # Train/test split ratio
 nStint = 5                 # Number of time intervals
 dt     = 0.01              # Time step size
 tf     = 10.               # Final time
@@ -153,13 +154,14 @@ if ifdyn:
         us.append(inp)
         adj.append(ccs)
 
-        print(j, xs[-1].shape, ys[-1].shape, us[-1].shape, adj[-1].shape)
-
+    _n = int(Ntrj * split)
     np.savez_compressed(
-        f'./data/data{suf}.npz', x=xs, y=ys, u=us, adj=adj, Aidx=Aidx)
+        f'./data/data{suf}_train.npz', x=xs[:_n], y=ys[:_n], u=us[:_n], adj=adj[:_n], Aidx=Aidx[:_n])
+    np.savez_compressed(
+        f'./data/data{suf}_test.npz', x=xs[_n:], y=ys[_n:], u=us[_n:], adj=adj[_n:], Aidx=Aidx[_n:])
 
 if ifplt:
-    data = np.load(f'./data/data{suf}.npz', allow_pickle=True)
+    data = np.load(f'./data/data{suf}_train.npz', allow_pickle=True)
     xs = data['x']
     us = data['u']
     adj = data['adj']

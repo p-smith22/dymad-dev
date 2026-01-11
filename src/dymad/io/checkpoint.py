@@ -17,6 +17,18 @@ def _atleast_3d(x):
         return np.expand_dims(x, axis=0)
     return x
 
+def graph_data_prep(data, nnd):
+    # Some hacking to preprocess graph data for data transforms
+    #
+    # `data` usually come in shape (..., T, n_nodes * n_states_per_node)
+    # where ... is the batch size or None
+    # We need to reshape to node-wise data (..., T, n_states_per_node)
+    shp = data.shape[:-1]
+    tmp = data.reshape(*shp, nnd, -1)          # [..., T, n_nodes, n_states_per_node]
+    tmp = np.swapaxes(tmp, -3, -2)             # [..., n_nodes, T, n_states_per_node]  Needed for time delay
+    tmp = tmp.reshape(-1, *tmp.shape[-2:])     # [all_nodes, T, n_states_per_node]
+    return tmp
+
 def load_model(model_class, checkpoint_path):
     """
     Load a model from a checkpoint file.
@@ -114,40 +126,55 @@ def load_model(model_class, checkpoint_path):
             return _ea
 
     def _proc_prd(pred):
-        return np.array(_data_transform_x.inverse_transform(_atleast_3d(pred))).squeeze()
+        tmp = np.array(_data_transform_x.inverse_transform(_atleast_3d(pred)))
+        if tmp.shape[0] == 1:
+            return tmp[0]
+        return tmp
 
     # Prediction in data space
     def predict_fn(x0, t, u=None, p=None, ei=None, ew=None, ea=None, device="cpu", ret_dat=False):
         """Predict trajectory in data space."""
-        _x0 = _proc_x0(x0, device)
         if isinstance(t, np.ndarray):
             t = torch.from_numpy(t).to(device=device)
-        if u is None and ei is None:
-            _data = DynData()
+        _has_graph = ei is not None
+        if ei is None:
+            if u is None:
+                _data = DynData()
+            else:
+                _u  = _proc_u(u, device)
+                _data = DynData(u=_u)
+            _x0 = _proc_x0(x0, device)
+            _data.batch_size = _x0.shape[0] if _x0.ndim == 2 else 1
         else:
-            _u  = _proc_u(u, device)
-            _ei = ei
-            if ei is not None:
-                if isinstance(ei, (np.ndarray, torch.Tensor)):
-                    ei = torch.as_tensor(ei).to(device=device)
-                    _ei = [ei for _ in range(t.shape[-1])]
-                elif isinstance(ei, list):
-                    if isinstance(ei[0], (np.ndarray, torch.Tensor)):
-                        _ei = [torch.as_tensor(e).to(device=device) for e in ei]
-                    elif isinstance(ei[0], list):
-                        _ei = []
-                        for e in ei:
-                            _ei.append([torch.as_tensor(_e).to(device=device) for _e in e])
-                    else:
-                        raise ValueError("Edge index format not recognized.")
+            if isinstance(ei, (np.ndarray, torch.Tensor)):
+                ei = torch.as_tensor(ei).to(device=device)
+                _ei = [ei for _ in range(t.shape[-1])]
+            elif isinstance(ei, list):
+                if isinstance(ei[0], (np.ndarray, torch.Tensor)):
+                    _ei = [torch.as_tensor(e).to(device=device) for e in ei]
+                elif isinstance(ei[0], list):
+                    _ei = []
+                    for e in ei:
+                        _ei.append([torch.as_tensor(_e).to(device=device) for _e in e])
                 else:
                     raise ValueError("Edge index format not recognized.")
+            else:
+                raise ValueError("Edge index format not recognized.")
+            _u  = _proc_u(u, device)
             _ew = _proc_ew(ew, device)
             _ea = _proc_ea(ea, device)
             _data = DynData(u=_u, ei=_ei, ew=_ew, ea=_ea)
+
+            # Some hacking to handle graph data
+            # `x0` usually come in shape (..., T, n_nodes * n_states_per_node)
+            tmp = graph_data_prep(x0, nnd)             # [all_nodes, T, n_states_per_node]
+            _x0 = _proc_x0(tmp, device)                # [all_nodes, n_features_per_node]  Only the first step taken
+            _x0 =_x0.reshape(_data.batch_size, -1)     # [batch_size, n_nodes*n_features_per_node]
+
+            # _data.batch_size is tracked in DynData for the graph, so no need to set here
+
         if p is not None:
             _data.p = torch.as_tensor(p, dtype=dtype, device=device)
-        _data.batch_size = _x0.shape[0] if _x0.ndim == 2 else 1
 
         if ret_dat:
             return {
@@ -162,6 +189,34 @@ def load_model(model_class, checkpoint_path):
 
         with torch.no_grad():
             pred = model.predict(_x0, _data, t).cpu().numpy()
+
+        if _has_graph:
+            # Some hacking to handle graph data
+            # `pred` always comes in shape (..., T', all_nodes * n_features_per_node)
+            # where all_nodes = batch_size * n_nodes, and ... is 1 or None
+            # Note there all_nodes=`_data.n_nodes` and batch_size=`_data.batch_size`
+            # Using T', as it can be different from the final T (e.g., due to time delay).
+            #
+            # We first need to reshape to node-wise data (..., T', n_features_per_node)
+            # for data transformation to get (..., T, n_states_per_node)
+            # Then split all_nodes in batches to get final shape (batch_size, T, n_nodes * n_states_per_node)
+            if pred.shape[0] == 1:
+                pred = pred[0]  # Squeeze out the leading dim if exists
+            # Now pred is of shape (T', all_nodes*n_features_per_node)
+            shp = pred.shape[:-1]
+            tmp = pred.reshape(*shp, _data.n_nodes, -1)  # [T', all_nodes, n_features_per_node]
+            tmp = np.swapaxes(tmp, -3, -2)               # [all_nodes, T', n_features_per_node]
+            shp = tmp.shape[:-2]                         # [all_nodes]
+            nnd = _data.n_nodes // _data.batch_size      # n_nodes
+            shp = (*shp[:-1], _data.batch_size, nnd)     # [batch_size, n_nodes]
+            tmp = tmp.reshape(-1, *tmp.shape[-2:])       # [:, T', n_features_per_node]  Needed for time delay
+            prd = _proc_prd(tmp)                         # [:, T, n_states_per_node]  Might change T
+            prd = prd.reshape(*shp, *prd.shape[-2:])     # [batch_size, n_nodes, T, n_states_per_node]
+            prd = np.swapaxes(prd, -3, -2)               # [batch_size, T, n_nodes, n_states_per_node]
+            prd = prd.reshape(*prd.shape[:-2], -1)       # [batch_size, T, n_nodes*n_states_per_node]
+            if prd.ndim > x0.ndim:
+                prd = prd.squeeze(0)  # Squeeze out the leading dim if exists
+            return prd
         return _proc_prd(pred)
 
     return model, predict_fn

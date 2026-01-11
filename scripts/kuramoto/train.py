@@ -7,7 +7,7 @@ from dymad.io import load_model
 from dymad.models import ComposedDynamics, ENC_MAP, DEC_MAP, get_dims, predict_discrete
 from dymad.modules import make_network
 from dymad.training import NODETrainer
-from dymad.utils import plot_summary, plot_trajectory
+from dymad.utils import adj_to_edge, plot_summary, plot_multi_trajs
 
 
 class DSDMSKG(ComposedDynamics):
@@ -102,6 +102,8 @@ class DSDMSKG(ComposedDynamics):
                f"Continuous-time: {self.CONT}, Graph-compatible: {self.GRAPH}, " + \
                f"Sequence length: {self.seq_len}\n"
 
+config_path = 'kur_seq.yaml'
+data_path = './data/data_n4_s5_k4_s5'
 
 mdl_sdm = {
     "activation" : "prelu",
@@ -121,43 +123,49 @@ trn_nd = {
     "chop_step": 0.5,
     }
 
-config_path = 'kur_seq.yaml'
-data_path = './data/data_n4_s5_k4_s5.npz'
+dat_opt = {
+    "path": data_path + '_train.npz',
+}
+
 cfgs = [
-    ('sdm_skip', DSDMSKG, NODETrainer, {"data": {"path": data_path}, "model": mdl_sdm, "training" : trn_nd}),
+    ('sdm_skip', DSDMSKG, NODETrainer, {"data": dat_opt, "model": mdl_sdm, "training" : trn_nd}),
     ]
 
 IDX = [0]
 labels = [cfgs[i][0] for i in IDX]
 
-iftrn = 1
-ifprd = 0
+iftrn = 0
+ifprd = 1
 
 if iftrn:
     for _i in IDX:
         mdl, MDL, Trainer, opt = cfgs[_i]
+        opt['model']['name'] = mdl
         trainer = Trainer(config_path, MDL, config_mod=opt)
         trainer.train()
 
-# if ifprd:
-#     sampler = TrajectorySampler(f, g, config='lti_data.yaml', config_mod=config_gau)
+if ifprd:
+    dat = np.load(data_path + '_test.npz', allow_pickle=True)
+    x_data = dat['x']
+    t_data = np.arange(x_data.shape[1]) * 0.01
+    u_data = dat['u']
+    ei_data, ew_data = adj_to_edge(dat['adj'])
 
-#     ts, xs, us, ys = sampler.sample(t_grid, batch=1)
-#     x_data = xs[0]
-#     t_data = ts[0]
-#     u_data = us[0]
+    res = [x_data]
+    for i in IDX:
+        mdl, MDL, Trainer, opt = cfgs[i]
+        model, prd_func = load_model(MDL, f'{mdl}.pt')
+        _d = model.seq_len - 1
+        ei = [_e[_d:] for _e in ei_data]
+        ew = [_e[_d:] for _e in ew_data]
 
-#     res = [x_data]
-#     for i in IDX:
-#         MDL, mdl = cases[i]['model'], cases[i]['name']
-#         _, prd_func = load_model(MDL, f'lti_{mdl}.pt', f'lti_{mdl}.yaml')
+        with torch.no_grad():
+            pred = prd_func(x_data, t_data[_d:], u=u_data, ei=ei, ew=ew)
+            res.append(pred)
 
-#         with torch.no_grad():
-#             pred = prd_func(x_data, t_data, u=u_data)
-#             res.append(pred)
-
-#     plot_trajectory(
-#         np.array(res), t_data, "LTI",
-#         us=u_data, labels=['Truth']+labels, ifclose=False)
+    plot_multi_trajs(
+        np.array(res), t_data, "LTI",
+        us=u_data, labels=['Truth']+labels, ifclose=False,
+        xidx=[0, 1, 2, 3, 4], uidx=[0])
 
 plt.show()
