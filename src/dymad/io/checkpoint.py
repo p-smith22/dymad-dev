@@ -167,6 +167,7 @@ def load_model(model_class, checkpoint_path):
 
             # Some hacking to handle graph data
             # `x0` usually come in shape (..., T, n_nodes * n_states_per_node)
+            nnd = _data.n_nodes // _data.batch_size
             tmp = graph_data_prep(x0, nnd)             # [all_nodes, T, n_states_per_node]
             _x0 = _proc_x0(tmp, device)                # [all_nodes, n_features_per_node]  Only the first step taken
             _x0 =_x0.reshape(_data.batch_size, -1)     # [batch_size, n_nodes*n_features_per_node]

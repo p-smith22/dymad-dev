@@ -7,7 +7,7 @@ from dymad.io import load_model
 from dymad.models import ComposedDynamics, ENC_MAP, DEC_MAP, get_dims, predict_discrete
 from dymad.modules import make_network
 from dymad.training import NODETrainer
-from dymad.utils import adj_to_edge, plot_summary, plot_multi_trajs
+from dymad.utils import adj_to_edge, plot_multi_trajs
 
 
 class DSDMSKG(ComposedDynamics):
