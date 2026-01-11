@@ -21,7 +21,7 @@ from dymad.models import DKBF, DLDM, DLTI, DSDM, KBF, LDM, LTI
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
 
 trx = [
-    {"type": "Scaler", "mode": "std"},
+    {"type": "scaler", "mode": "std"},
     {"type": "delay", "delay": 1}
 ]
 tru = {

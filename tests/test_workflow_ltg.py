@@ -20,7 +20,7 @@ from dymad.models import DGKBF, DGKM, DGKMSK, DGLDM, DGLTI, DSDMG, GKBF, GKM, GL
 from dymad.training import WeakFormTrainer, NODETrainer, LinearTrainer
 
 trx = [
-    {"type": "Scaler", "mode": "std"},
+    {"type": "scaler", "mode": "std"},
     {"type": "delay", "delay": 1}
 ]
 tru = {
