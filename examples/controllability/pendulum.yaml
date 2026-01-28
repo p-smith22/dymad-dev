@@ -1,0 +1,11 @@
+data:
+  path: './data/pendulum.npz'
+  n_samples: 1000
+  n_steps: 10000
+  double_precision: true
+
+split:
+  train_frac: 1
+
+dataloader:
+  batch_size: 32
