@@ -1,0 +1,31 @@
+dims:
+  states: 2
+  inputs: 2
+  observations: 2
+  parameters: 0
+
+x0:
+  kind: uniform
+  params:
+    bounds:
+      - [-2.5, 2.5]
+      - [-5.0, 5.0]
+
+control:
+  kind: "gaussian"
+  params:
+    mean: 0.5
+    std:  0.5
+    t1:   10.0
+    dt:   0.01
+    dim:  2
+    mode: "linear"
+
+solver:
+  method: "RK45"
+  rtol: 1.0e-6
+  atol: 1.0e-8
+
+postprocess:
+  n_skip: 0
+  shift_t: false

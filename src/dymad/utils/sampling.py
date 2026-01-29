@@ -124,7 +124,7 @@ def sine_control(*,
     P = rng.uniform(*phase_range, size=(dim, num_components))/180*np.pi
     def _sampler(t_grid: Union[float, Array], i: int) -> Array:
         if isinstance(t_grid, float):
-            return np.sum(A*np.sin(2*np.pi*F*t_grid + P)).reshape(dim,)
+            return np.sum(A*np.sin(2*np.pi*F*t_grid + P), axis=1).reshape(dim,)
         else:
             t = t_grid[:, None, None]
             return np.sum(A*np.sin(2*np.pi*F*t + P), axis=(1,2)).reshape(-1, dim)

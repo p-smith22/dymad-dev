@@ -409,7 +409,7 @@ def prop_dyn(A, B, x_0, u, n_tsteps, x_ref=None, u_ref=None):
     # Return state:
     return x
 
-def plot_traj(x, u, n_tsteps, x_f=None, lab=None):
+def plot_traj(x, u, n_tsteps, x_f=None, lab=None, line=None):
 
     """
     Plot states and controls for any given number of trajectories
@@ -433,16 +433,26 @@ def plot_traj(x, u, n_tsteps, x_f=None, lab=None):
     lab (Optional): List of strings
         (#,) --> In the above example, (2,)
         List of labels for plotting
+    line (Optional): List of strings
+        (#,) --> In the above example, (2,)
+        List of linestyles for plotting
 
     OUTPUTS
     None
     """
+
+    # Add dummy u if none:
+    u_exists = True
+    if u is None:
+        u_exists = False
+        u = np.zeros((n_tsteps, 1))
 
     # Transfer everything to numpy (easier to work with for matplotlib):
     x = np.asarray(x)
     u = np.asarray(u)
     if x_f is not None:
         x_f = np.asarray(x_f)
+
     # Extract dimensions:
     n = x.shape[0]
     m = u.shape[1]
@@ -462,13 +472,20 @@ def plot_traj(x, u, n_tsteps, x_f=None, lab=None):
     if lab is None:
         lab = [''] * x.shape[-1]
 
+    # If there are no linestyles specified, fill with regular lines:
+    if line is None:
+        line = ['-'] * x.shape[-1]
+
     # Initialize plotting:
-    fig, axes = plt.subplots(n + m, 1, figsize=(8, 6), sharex=True)
+    if u_exists:
+        fig, axes = plt.subplots(n + m, 1, figsize=(8, 6), sharex=True)
+    else:
+        fig, axes = plt.subplots(n, 1, figsize=(8, 6), sharex=True)
 
     # Plot states:
     for j in range(x.shape[-1]):
         for i in range(n):
-            axes[i].plot(x[i, :, j], label=lab[j])
+            axes[i].plot(x[i, :, j], label=lab[j], linestyle=line[j], linewidth=2)
             axes[i].set_ylabel(f'State {i + 1}')
             axes[i].grid(True)
             axes[i].set_ylim(np.min(x[i, :, :]) - 1, np.max(x[i, :, :]) + 1)
@@ -481,13 +498,14 @@ def plot_traj(x, u, n_tsteps, x_f=None, lab=None):
                     axes[i].axhline(x_f[i], color='r', linestyle='--')
 
     # Plot controls:
-    for j in range(u.shape[-1]):
-        for i in range(m):
-            axes[n + i].step(range(n_tsteps), u[i, :, j], label=lab[j])
-            axes[n + i].set_ylabel('Control')
-            axes[n + i].set_xlabel('Time step')
-            axes[n + i].grid(True)
-            axes[n + i].set_ylim(np.min(u[i, :, :]) - 1, np.max(u[i, :, :]) + 1)
+    if u_exists:
+        for j in range(u.shape[-1]):
+            for i in range(m):
+                axes[n + i].step(range(n_tsteps), u[i, :, j], label=lab[j], linestyle=line[j], linewidth=2)
+                axes[n + i].set_ylabel('Control')
+                axes[n + i].set_xlabel('Time step')
+                axes[n + i].grid(True)
+                axes[n + i].set_ylim(np.min(u[i, :, :]) - 1, np.max(u[i, :, :]) + 1)
 
     # Set x labels for sharex axis:
     axes[-1].set_xlabel('Time step')
@@ -499,7 +517,6 @@ def plot_traj(x, u, n_tsteps, x_f=None, lab=None):
 
     # Tight layout:
     plt.tight_layout()
-
 
 def optimal_ctrl(_A, _B, _C, model, _Ctrl, _W, n_tsteps, x_0, x_f, plot_graph):
     """
@@ -693,9 +710,7 @@ def discretize_system(_Acts, _Bcts, dt):
 
     # Return discretized A and B matrices:
     return _A, _B
-
-def prop_dyn_latent(model, A, B, C, x0, u_seq, use_C=False):
-
+def prop_dyn_latent(model, A, B, C, x0, u_seq=None, use_C=False, n_tsteps=None):
     """
     Propagate dynamics in latent space and decode to real space
 
@@ -704,17 +719,19 @@ def prop_dyn_latent(model, A, B, C, x0, u_seq, use_C=False):
         Trained DyMAD model with encoder/decoder
     A: np.ndarray or torch.Tensor
         (n_z, n_z) - Latent space dynamics matrix
-    B: np.ndarray or torch.Tensor
+    B (Optional): np.ndarray or torch.Tensor
         (n_z, n_u) - Latent space control matrix
     C: np.ndarray or torch.Tensor
         (n_x, n_z) - Observation matrix (latent to real space)
     x0: np.ndarray or torch.Tensor
         (n_x,) - Initial condition in real/observation space
-    u_seq: np.ndarray or torch.Tensor
+    u_seq (Optional): np.ndarray or torch.Tensor
         (n_steps, n_u) - Control input sequence
     use_C: bool
         If True, use C matrix for fast decoding (assumes linear decoder)
         If False, use model.decoder for accurate decoding (handles nonlinearity)
+    n_tsteps: int (Optional)
+        Number of time steps to propagate
 
     OUTPUTS
     x_traj: np.ndarray
@@ -724,7 +741,7 @@ def prop_dyn_latent(model, A, B, C, x0, u_seq, use_C=False):
         (n_steps+1, n_z)
         State trajectory in latent space
     """
-    if isinstance(A, np.ndarray) or isinstance(B, np.ndarray) or isinstance(C, np.ndarray) or isinstance(x0, np.ndarray):
+    if isinstance(A, np.ndarray) or isinstance(C, np.ndarray) or isinstance(x0, np.ndarray):
         is_numpy = True
     else:
         is_numpy = False
@@ -732,17 +749,33 @@ def prop_dyn_latent(model, A, B, C, x0, u_seq, use_C=False):
     # Convert to torch if needed:
     device = next(model.parameters()).device
     dtype = next(model.parameters()).dtype
-    x0_torch = torch.from_numpy(x0).to(device=device, dtype=dtype)
-    u_seq_torch = torch.from_numpy(u_seq).to(device=device, dtype=dtype)
+    x0_torch = torch.from_numpy(x0).to(device=device, dtype=dtype) if isinstance(x0, np.ndarray) else x0
     A_torch = torch.from_numpy(A).to(device=device, dtype=dtype) if isinstance(A, np.ndarray) else A
-    B_torch = torch.from_numpy(B).to(device=device, dtype=dtype) if isinstance(B, np.ndarray) else B
     C_torch = torch.from_numpy(C).to(device=device, dtype=dtype) if isinstance(C, np.ndarray) else C
+
+    # Pull number of time steps:
+    if u_seq is None and n_tsteps is not None:
+        n_steps = n_tsteps
+        # Create dummy control input (n_steps, 1)
+        u_seq = np.zeros((n_steps, 1))
+        u_seq_torch = torch.from_numpy(u_seq).to(device=device, dtype=dtype)
+        # Create dummy B matrix if not provided
+        if B is None:
+            n_z = A_torch.shape[0]
+            B_torch = torch.zeros((n_z, 1), device=device, dtype=dtype)
+        else:
+            B_torch = torch.from_numpy(B).to(device=device, dtype=dtype) if isinstance(B, np.ndarray) else B
+    elif n_tsteps is None and u_seq is not None:
+        u_seq_torch = torch.from_numpy(u_seq).to(device=device, dtype=dtype) if isinstance(u_seq, np.ndarray) else u_seq
+        n_steps = u_seq_torch.shape[0]
+        if B is None:
+            raise ValueError("B must be provided when u_seq is provided")
+        B_torch = torch.from_numpy(B).to(device=device, dtype=dtype) if isinstance(B, np.ndarray) else B
+    else:
+        raise ValueError("Must provide either u_seq or n_tsteps")
 
     # Reshape for model:
     x0_torch = x0_torch.view(1, -1)  # (1, n_x)
-
-    # Pull number of time steps:
-    n_steps = u_seq_torch.shape[0]
 
     # Encode initial condition to latent space:
     w0 = DynData().get_step(0).set_x(x0_torch)
