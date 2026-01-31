@@ -710,141 +710,157 @@ def discretize_system(_Acts, _Bcts, dt):
 
     # Return discretized A and B matrices:
     return _A, _B
-def prop_dyn_latent(model, A, B, C, x0, u_seq=None, use_C=False, n_tsteps=None):
+
+def prop_dyn_latent(model, A, B, C, x0, u_seq=None, use_C=False, n_tsteps=None, x_ref=None):
+
     """
     Propagate dynamics in latent space and decode to real space
 
     INPUTS
     model: dymad.models
+        N/A
         Trained DyMAD model with encoder/decoder
     A: np.ndarray or torch.Tensor
-        (n_z, n_z) - Latent space dynamics matrix
+        (n_z, n_z)
+        Latent space dynamics matrix (DISCRETE-TIME)
     B (Optional): np.ndarray or torch.Tensor
-        (n_z, n_u) - Latent space control matrix
+        (n_z, n_u)
+        Latent space control matrix
     C: np.ndarray or torch.Tensor
-        (n_x, n_z) - Observation matrix (latent to real space)
+        (n_x, n_z)
+        Observation matrix (latent to real space)
     x0: np.ndarray or torch.Tensor
-        (n_x,) - Initial condition in real/observation space
+        (n_x,)
+        Initial condition in real/observation space
     u_seq (Optional): np.ndarray or torch.Tensor
-        (n_steps, n_u) - Control input sequence
+        (n_steps, n_u)
+        Control input sequence
     use_C: bool
-        If True, use C matrix for fast decoding (assumes linear decoder)
-        If False, use model.decoder for accurate decoding (handles nonlinearity)
+        N/A
+        If True, use C matrix in deviation form: x = x_ref + C (z - z_ref)
+        If False, use model.decoder(z) (nonlinear decoding)
     n_tsteps: int (Optional)
-        Number of time steps to propagate
+        N/A
+        Number of time steps to propagate (required if u_seq is None)
+    x_ref: np.ndarray or torch.Tensor (Optional)
+        (n_x,)
+        Reference state for linearization (defaults to zero if None)
 
     OUTPUTS
-    x_traj: np.ndarray
+    x_traj: np.ndarray or torch.Tensor
         (n_steps+1, n_x)
         State trajectory in real/observation space
-    z_traj: np.ndarray
+    z_traj: np.ndarray or torch.Tensor
         (n_steps+1, n_z)
         State trajectory in latent space
     """
-    if isinstance(A, np.ndarray) or isinstance(C, np.ndarray) or isinstance(x0, np.ndarray):
-        is_numpy = True
-    else:
-        is_numpy = False
 
-    # Convert to torch if needed:
+    # Decide numpy vs torch output:
+    is_numpy = isinstance(A, np.ndarray) or isinstance(C, np.ndarray) or isinstance(x0, np.ndarray)
+
+    # Extract device and dtype:
     device = next(model.parameters()).device
     dtype = next(model.parameters()).dtype
-    x0_torch = torch.from_numpy(x0).to(device=device, dtype=dtype) if isinstance(x0, np.ndarray) else x0
-    A_torch = torch.from_numpy(A).to(device=device, dtype=dtype) if isinstance(A, np.ndarray) else A
-    C_torch = torch.from_numpy(C).to(device=device, dtype=dtype) if isinstance(C, np.ndarray) else C
 
-    # Pull number of time steps:
+    # Convert inputs to Torch:
+    x0_torch = torch.from_numpy(x0).to(device=device, dtype=dtype) if isinstance(x0, np.ndarray) \
+        else x0.to(device=device, dtype=dtype)
+    A_torch = torch.from_numpy(A).to(device=device, dtype=dtype) if isinstance(A, np.ndarray) \
+        else A.to(device=device, dtype=dtype)
+    C_torch = torch.from_numpy(C).to(device=device, dtype=dtype) if isinstance(C, np.ndarray) \
+        else C.to(device=device, dtype=dtype)
+
+    # Reference state in observation space:
+    if x_ref is None:
+        x_ref_torch = torch.zeros_like(x0_torch)
+    else:
+        x_ref_torch = torch.from_numpy(x_ref).to(device=device, dtype=dtype) if isinstance(x_ref, np.ndarray) \
+            else x_ref.to(device=device, dtype=dtype)
+
+    # Time and control handling:
     if u_seq is None and n_tsteps is not None:
         n_steps = n_tsteps
-        # Create dummy control input (n_steps, 1)
         u_seq = np.zeros((n_steps, 1))
         u_seq_torch = torch.from_numpy(u_seq).to(device=device, dtype=dtype)
-        # Create dummy B matrix if not provided
         if B is None:
             n_z = A_torch.shape[0]
             B_torch = torch.zeros((n_z, 1), device=device, dtype=dtype)
         else:
-            B_torch = torch.from_numpy(B).to(device=device, dtype=dtype) if isinstance(B, np.ndarray) else B
+            B_torch = torch.from_numpy(B).to(device=device, dtype=dtype) if isinstance(B, np.ndarray) \
+                else B.to(device=device, dtype=dtype)
     elif n_tsteps is None and u_seq is not None:
-        u_seq_torch = torch.from_numpy(u_seq).to(device=device, dtype=dtype) if isinstance(u_seq, np.ndarray) else u_seq
+        u_seq_torch = torch.from_numpy(u_seq).to(device=device, dtype=dtype) if isinstance(u_seq, np.ndarray) \
+            else u_seq.to(device=device, dtype=dtype)
         n_steps = u_seq_torch.shape[0]
         if B is None:
             raise ValueError("B must be provided when u_seq is provided")
-        B_torch = torch.from_numpy(B).to(device=device, dtype=dtype) if isinstance(B, np.ndarray) else B
+        B_torch = torch.from_numpy(B).to(device=device, dtype=dtype) if isinstance(B, np.ndarray) \
+            else B.to(device=device, dtype=dtype)
     else:
-        raise ValueError("Must provide either u_seq or n_tsteps")
+        raise ValueError("Must provide either u_seq or n_tsteps (but not both None or both set)")
 
-    # Reshape for model:
-    x0_torch = x0_torch.view(1, -1)  # (1, n_x)
+    # Encode reference to latent space:
+    x_ref_torch = x_ref_torch.view(1, -1)
+    w_ref = DynData().get_step(0).set_x(x_ref_torch)
+    z_ref = model.encoder(w_ref).view(-1)
 
-    # Encode initial condition to latent space:
+    # Encode initial state to latent space:
+    x0_torch = x0_torch.view(1, -1)
     w0 = DynData().get_step(0).set_x(x0_torch)
-    z0 = model.encoder(w0)  # (1, n_z)
-    z0 = z0.view(-1)  # (n_z,)
+    z0 = model.encoder(w0).view(-1)
+
+    # Deviation in latent space:
+    dz_current = z0 - z_ref
 
     # Initialize trajectories:
     z_traj = [z0]
     x_traj = []
 
-    # Propagate in latent space and decode at each step:
-    z_current = z0
-
-    # Loop through the trajectory:
+    # Propagate dynamics:
     for k in range(n_steps + 1):
 
-        # Decodes quickly using C if desired:
+        # Decode using observation matrix::
         if use_C:
-            x_current = C_torch @ z_current  # (n_x,)
 
-        # Else, use the full decoder:
+            # Simple matrix multiplication:
+            x_ref_flat = x_ref_torch.view(-1)
+            x_current = x_ref_flat + C_torch @ dz_current
+
+        # Nonlinear decoder from trained model:
         else:
 
-            # If not the last step, add control:
+            # Use controls up until last timestep:
             if k < n_steps:
                 u_current = u_seq_torch[k].view(1, -1)
                 w_current = DynData().get_step(0).set_u(u_current)
-
-            # If last step, don't worry about control:
             else:
                 w_current = DynData().get_step(0)
 
-            # Decode using model:
-            x_current = model.decoder(z_current.view(1, -1), w_current)  # (1, n_x)
+            # Decode:
+            x_current = model.decoder((z_ref + dz_current).view(1, -1), w_current).view(-1)
 
-            # Reshape:
-            x_current = x_current.view(-1)  # (n_x,)
-
-        # Append current state to list:
+        # Append state:
         x_traj.append(x_current)
 
-        # Propagate latent state (if not at final step):
+        # Propagate latent deviation:
         if k < n_steps:
-
-            # Define current control:
             u_k = u_seq_torch[k]
+            dz_next = A_torch @ dz_current + B_torch @ u_k
+            dz_current = dz_next
+            z_traj.append(z_ref + dz_current)
 
-            # Propagate states:
-            z_next = A_torch @ z_current + B_torch @ u_k
-
-            # Append to list:
-            z_traj.append(z_next)
-
-            # Save for next iteration:
-            z_current = z_next
-
-    # Convert back to numpy if input was numpy:
+    # Convert back to numpy if needed:
+    x_traj = torch.stack(x_traj)
+    z_traj = torch.stack(z_traj)
     if is_numpy:
-        x_traj = torch.stack(x_traj).detach().cpu().numpy()
-        z_traj = torch.stack(z_traj).detach().cpu().numpy()
-    else:
-        x_traj = torch.stack(x_traj)
-        z_traj = torch.stack(z_traj)
+        x_traj = x_traj.detach().cpu().numpy()
+        z_traj = z_traj.detach().cpu().numpy()
 
-    # Return real and latent states:
+    # Return trajectories:
     return x_traj, z_traj
 
-
 def riccati_opt(_A, _B, _C, model, x_0, x_f, n_tsteps, _Q, _R, _Pf):
+
     """
     Solves Riccati equation for optimal control as a QP with HARD terminal constraint
     Now works in latent space with observation space constraints
