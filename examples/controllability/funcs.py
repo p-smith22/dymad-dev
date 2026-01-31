@@ -859,7 +859,7 @@ def prop_dyn_latent(model, A, B, C, x0, u_seq=None, use_C=False, n_tsteps=None, 
     # Return trajectories:
     return x_traj, z_traj
 
-def riccati_opt(_A, _B, _C, model, x_0, x_f, n_tsteps, _Q, _R, _Pf):
+def riccati_opt(_A, _B, _C, model, x_0, x_f, n_tsteps, _Q, _R):
 
     """
     Solves Riccati equation for optimal control as a QP with HARD terminal constraint
@@ -897,9 +897,6 @@ def riccati_opt(_A, _B, _C, model, x_0, x_f, n_tsteps, _Q, _R, _Pf):
     _R: np.ndarray
         (m, m)
         Control weight
-    _Pf: np.ndarray
-        (n_z, n_z)
-        Terminal weight (ignored due to hard constraint)
 
     OUTPUTS
     x_opt: np.ndarray
