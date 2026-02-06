@@ -970,7 +970,6 @@ def riccati_opt(_A, _B, _C, model, x_0, x_f, n_tsteps, _Q, _R):
     # Return optimal control sequence and trajectory in observation space:
     return x_opt, u_opt
 
-
 def rs_controllability(_A, _B, _C, n_tsteps):
 
     """
