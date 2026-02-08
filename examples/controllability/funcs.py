@@ -970,74 +970,163 @@ def riccati_opt(_A, _B, _C, model, x_0, x_f, n_tsteps, _Q, _R):
     # Return optimal control sequence and trajectory in observation space:
     return x_opt, u_opt
 
-def rs_controllability(_A, _B, _C, n_tsteps):
+def plot_poles(A, title="Discrete System Pole Locations", threshold=1e-4):
 
     """
-    Compute real (observation) space controllability using C-augmented controllability matrix
+    Plot eigenvalues of matrix A on the complex plane with unit circle.
 
     INPUTS
-    _A: np.ndarray or Torch.Tensor
+    A: np.ndarray
         (n_z, n_z)
-        System matrix (latent space)
-    _B: np.ndarray or Torch.Tensor
-        (n_z, m)
-        Control matrix (latent space)
-    _C: np.ndarray or Torch.Tensor
-        (n_x, n_z)
-        Observation matrix (latent to observation space)
+        System matrix (discrete-time)
+    title (Optional): str
+        N/A
+        Plot title
+    threshold (Optional): float
+        N/A
+        Threshold for eigenvalue
+
+
+    OUTPUTS
+    eigs: np.ndarray
+        (n_z, )
+        Eigenvalues of array
+    """
+
+    # Compute eigenvalues:
+    eigs = np.linalg.eigvals(A)
+
+    # Create figure:
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    # Plot unit circle:
+    theta = np.linspace(0, 2 * np.pi, 1000)
+    unit_circle_x = np.cos(theta)
+    unit_circle_y = np.sin(theta)
+    ax.plot(unit_circle_x, unit_circle_y, 'k--', linewidth=1.5, label='Unit Circle')
+
+    # Plot eigenvalues:
+    ax.plot(np.real(eigs), np.imag(eigs), 'rx', markersize=12,
+            markeredgewidth=2, label='Poles (Eigenvalues)')
+
+    # Formatting:
+    ax.axhline(y=0, color='k', linewidth=0.5, alpha=0.3)
+    ax.axvline(x=0, color='k', linewidth=0.5, alpha=0.3)
+    ax.grid(True, alpha=0.3)
+    ax.set_xlabel('Real Part', fontsize=12)
+    ax.set_ylabel('Imaginary Part', fontsize=12)
+    ax.set_title(title, fontsize=14)
+    ax.legend(fontsize=10)
+    ax.axis('equal')
+
+    # Set limits to show unit circle clearly:
+    max_val = max(1.2, np.max(np.abs(eigs)) * 1.1)
+    ax.set_xlim([-max_val, max_val])
+    ax.set_ylim([-max_val, max_val])
+
+    # Check stability:
+    eig_mags = np.abs(eigs)
+    if np.all(eig_mags < 1 - threshold):
+        stability_text = "STABLE"
+        color = 'green'
+    elif np.all(np.abs(eig_mags - 1) < threshold):
+        stability_text = f"NEUTRALLY STABLE"
+        color = 'yellow'
+    elif np.any(eig_mags > 1 + threshold):
+        stability_text = "UNSTABLE"
+        color = 'red'
+    else:
+        stability_text = f"MARGINALLY STABLE"
+        color = 'orange'
+
+    # Display stability results:
+    ax.text(0.02, 0.98, stability_text, transform=ax.transAxes,
+            fontsize=11, verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor=color, alpha=0.3))
+
+    # Formatting:
+    plt.tight_layout()
+
+    # Print eigenvalue information:
+    print(f"\nEigenvalues and magnitudes:")
+    print("-" * 50)
+    for i, eig in enumerate(eigs):
+        mag = np.abs(eig)
+        print(f"λ_{i + 1} = {eig.real:8.5f} + {eig.imag:8.5f}j  |λ| = {mag:.5f}")
+    print("-" * 50)
+
+    # Return eigenvalues:
+    return eigs
+
+def weighted_controllability(A, B, R, n_tsteps):
+
+    """
+    Compute weighted controllability gramian with control cost matrix R
+
+    The weighted gramian is: W_weighted = Σ A^k B R^{-1} B^T (A^T)^k
+    This accounts for control effort costs in the controllability analysis
+
+    INPUTS
+    A: np.ndarray
+        (n, n)
+        System matrix
+    B: np.ndarray
+        (n, m)
+        Control matrix
+    R: np.ndarray
+        (m, m)
+        Control cost matrix (must be positive definite)
     n_tsteps: int
+        N/A
         Number of time steps
 
     OUTPUTS
-    _Ctrl_obs: np.ndarray or Torch.Tensor
-        (n_x, m * n_tsteps)
-        Observation-space controllability matrix
+    Ctrl_weighted: np.ndarray
+        (n, m * n_tsteps)
+        Weighted Controllability Matrix
+    W_weighted: np.ndarray
+        (n, n)
+        Weighted Controllability Gramian
     """
 
-    # Decide whether torch or numpy:
-    is_torch = torch.is_tensor(_A)
+    # Convert to numpy:
+    A = np.asarray(A)
+    B = np.asarray(B)
+    R = np.asarray(R)
 
-    # Torch sequence:
-    if is_torch:
-        # Transfer to torch:
-        device = _A.device
-        dtype = _A.dtype
-        _B = torch.as_tensor(_B, device=device, dtype=dtype)
-        _C = torch.as_tensor(_C, device=device, dtype=dtype)
+    # Extract dimensions:
+    n = A.shape[0]
+    m = B.shape[1]
 
-        # Extract dimensions:
-        n_z = _A.shape[0]
-        m = _B.shape[1]
+    # Compute R^{-1}:
+    R_inv = np.linalg.inv(R)
 
-        # Calculate latent controllability matrix:
-        _Ctrl_latent = torch.zeros((n_z, n_tsteps * m), dtype=dtype, device=device)
-        for i in range(n_tsteps):
-            _Ctrl_latent[:, i * m:(i + 1) * m] = torch.linalg.matrix_power(_A, i) @ _B
+    # Create weighted B matrix:
+    B_weighted = B @ R_inv
 
-        # Augment with C to get observation-space controllability:
-        _Ctrl_obs = _C @ _Ctrl_latent
+    # Compute weighted controllability matrix:
+    Ctrl_weighted = np.zeros((n, n_tsteps * m))
+    for i in range(n_tsteps):
+        Ctrl_weighted[:, i * m:(i + 1) * m] = np.linalg.matrix_power(A, n_tsteps - 1 - i) @ B_weighted
 
-        # Return controllability matrix in observation space:
-        return _Ctrl_obs
+    # Compute weighted Gramian:
+    eigs = np.linalg.eigvals(A)
 
-    # Numpy sequence:
+    # Check stability:
+    if np.all(np.abs(eigs) < 1):
+
+        # Stable system, solve using Lyapunov:
+        W_weighted = sp.linalg.solve_discrete_lyapunov(A, B @ R_inv @ B.T)
+
     else:
 
-        # Transfer to numpy:
-        _B = np.asarray(_B)
-        _C = np.asarray(_C)
-
-        # Extract dimensions:
-        n_z = _A.shape[0]
-        m = _B.shape[1]
-
-        # Calculate latent controllability matrix:
-        _Ctrl_latent = np.zeros((n_z, n_tsteps * m))
+        # Unstable, do a finite sum:
+        W_weighted = np.zeros((n, n))
         for i in range(n_tsteps):
-            _Ctrl_latent[:, i * m:(i + 1) * m] = np.linalg.matrix_power(_A, i) @ _B
+            Ak = np.linalg.matrix_power(A, i)
+            W_weighted += Ak @ B @ R_inv @ B.T @ Ak.T
 
-        # Augment with C to get observation-space controllability:
-        _Ctrl_obs = _C @ _Ctrl_latent
+    # Return weighted Controllability Matrix and Gramian:
+    return Ctrl_weighted, W_weighted
 
-        # Return controllability matrix in observation space:
-        return _Ctrl_obs
+
