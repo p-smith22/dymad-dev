@@ -33,7 +33,7 @@ def single_step(model, z, u=None):
     w = DynData()
 
     # Add control:
-    u = u.view(1, -1)  # (1, m)
+    u = u.view(1, -1)
     w_next = w.get_step(0).set_u(u)
 
     # Take step in latent space:
@@ -409,8 +409,8 @@ def prop_dyn(A, B, x_0, u, n_tsteps, x_ref=None, u_ref=None):
     # Return state:
     return x
 
-def plot_traj(x, u, n_tsteps, x_f=None, lab=None, line=None):
 
+def plot_traj(x, u, n_tsteps, x_f=None, lab=None, line=None):
     """
     Plot states and controls for any given number of trajectories
 
@@ -419,10 +419,10 @@ def plot_traj(x, u, n_tsteps, x_f=None, lab=None, line=None):
 
     INPUTS
     x: np.ndarray or Torch.Tensor
-        (n, n_tsteps, #)
+        (n, n_tsteps, #) or (n, n_tsteps)
         State values throughout the trajectory
     u: np.ndarray or Torch.Tensor
-        (n_tsteps, m, #)
+        (n_tsteps, m, #) or (n_tsteps, m)
         Control sequence
     n_tsteps: int
         N/A
@@ -455,18 +455,20 @@ def plot_traj(x, u, n_tsteps, x_f=None, lab=None, line=None):
 
     # Extract dimensions:
     n = x.shape[0]
-    m = u.shape[1]
+    m = u.shape[1] if u.ndim >= 2 else 1
 
     # Reshape for plotting:
-    x = x.reshape(n, n_tsteps, -1)
-    u = u.reshape(m, n_tsteps, -1)
+    if x.ndim == 2:
+        x = x.reshape(n, n_tsteps, 1)  # Add trajectory dimension
+    else:
+        x = x.reshape(n, n_tsteps, -1)
 
-    # If shapes do not match, duplicate controls:
-    if x.shape[-1] != u.shape[-1]:
-        u_temp = np.zeros((m, n_tsteps, x.shape[-1]))
-        for j in range(x.shape[-1]):
-            u_temp[:, :, j] = u[:, :, 0]
-        u = u_temp
+    if u.ndim == 1:
+        u = u.reshape(n_tsteps, 1, 1)  # Add control and trajectory dimensions
+    elif u.ndim == 2:
+        u = u.reshape(n_tsteps, m, 1)  # Add trajectory dimension
+    else:
+        u = u.reshape(n_tsteps, m, -1)
 
     # If there are no labels specified, just fill with placeholders:
     if lab is None:
@@ -481,6 +483,10 @@ def plot_traj(x, u, n_tsteps, x_f=None, lab=None, line=None):
         fig, axes = plt.subplots(n + m, 1, figsize=(8, 6), sharex=True)
     else:
         fig, axes = plt.subplots(n, 1, figsize=(8, 6), sharex=True)
+
+    # Make axes iterable if only one subplot:
+    if not hasattr(axes, '__iter__'):
+        axes = [axes]
 
     # Plot states:
     for j in range(x.shape[-1]):
@@ -499,20 +505,22 @@ def plot_traj(x, u, n_tsteps, x_f=None, lab=None, line=None):
 
     # Plot controls:
     if u_exists:
-        for j in range(u.shape[-1]):
-            for i in range(m):
-                axes[n + i].step(range(n_tsteps), u[i, :, j], label=lab[j], linestyle=line[j], linewidth=2)
-                axes[n + i].set_ylabel('Control')
-                axes[n + i].set_xlabel('Time step')
-                axes[n + i].grid(True)
-                axes[n + i].set_ylim(np.min(u[i, :, :]) - 1, np.max(u[i, :, :]) + 1)
+        for i in range(m):
+            for j in range(u.shape[-1]):
+                axes[n + i].step(range(n_tsteps), u[:, i, j],
+                                 label=lab[j] if i == 0 else "",
+                                 linestyle=line[j], linewidth=2)
+            axes[n + i].set_ylabel(f'Control {i + 1}')
+            axes[n + i].set_xlabel('Time step')
+            axes[n + i].grid(True)
+            axes[n + i].set_ylim(np.min(u[:, i, :]) - 1, np.max(u[:, i, :]) + 1)
 
     # Set x labels for sharex axis:
     axes[-1].set_xlabel('Time step')
     axes[-1].set_xlim([0, n_tsteps])
 
     # Apply legend if user specified labels for trajectories:
-    if lab is not None:
+    if lab is not None and any(lab):
         axes[0].legend()
 
     # Tight layout:
@@ -1130,3 +1138,117 @@ def weighted_controllability(A, B, R, n_tsteps):
     return Ctrl_weighted, W_weighted
 
 
+def riccati_opt_soft(_A, _B, _C, model, x_0, x_f, n_tsteps, _Q, _R, terminal_weight=1000.0):
+    """
+    Solves Riccati equation for optimal control as a QP with SOFT terminal constraint
+    Now works in latent space with observation space constraints
+
+    Formulation (in latent space):
+        min     sum_{k=0}^{N-1} [z_k^T Q z_k + u_k^T R u_k] + (z_N - z_f)^T P_f (z_N - z_f)
+        s.t.    z_{k+1} = A z_k + B u_k,  k=0,...,N-1
+                z_0 = encoder(x_0) (given)
+                (z_N ≈ z_f via large penalty weight)
+
+    INPUTS
+    _A: np.ndarray
+        (n_z, n_z)
+        Discretized system matrix (latent space)
+    _B: np.ndarray
+        (n_z, m)
+        Discretized control matrix (latent space)
+    _C: np.ndarray
+        (n_x, n_z)
+        Observation matrix
+    model: dymad.models
+        N/A
+        Trained model for encoding/decoding
+    x_0: np.ndarray
+        (n_x,)
+        Initial state (observation space)
+    x_f: np.ndarray
+        (n_x,)
+        Final desired state (observation space - SOFT CONSTRAINT)
+    n_tsteps: int
+        Number of time steps
+    _Q: np.ndarray
+        (n_z, n_z)
+        State weight (latent space)
+    _R: np.ndarray
+        (m, m)
+        Control weight
+    terminal_weight: float
+        N/A
+        Weight on terminal cost (larger = closer to hard constraint)
+
+    OUTPUTS
+    x_opt: np.ndarray
+        (n_steps+1, n_x)
+        Optimal trajectory in observation space
+    u_opt: np.ndarray
+        (n_tsteps, m)
+        Optimal control sequence
+    """
+
+    # Convert to numpy:
+    A = np.asarray(_A)
+    B = np.asarray(_B)
+    C = np.asarray(_C)
+    x0 = np.asarray(x_0)
+    xf = np.asarray(x_f)
+    Q = np.asarray(_Q)
+    R = np.asarray(_R)
+
+    # Encode initial and final states to latent space:
+    device = next(model.parameters()).device
+    dtype = next(model.parameters()).dtype
+    x0_torch = torch.from_numpy(x0).to(device=device, dtype=dtype)
+    w0 = DynData().get_step(0).set_x(x0_torch.view(1, -1))
+    z0 = model.encoder(w0).view(-1).detach().cpu().numpy()
+    xf_torch = torch.from_numpy(xf).to(device=device, dtype=dtype)
+    wf = DynData().get_step(0).set_x(xf_torch.view(1, -1))
+    zf = model.encoder(wf).view(-1).detach().cpu().numpy()
+
+    # Extract dimensions:
+    n_z = A.shape[0]
+    m = B.shape[1]
+
+    # Define optimization variables (in latent space):
+    Z = cp.Variable((n_z, n_tsteps + 1))
+    U = cp.Variable((m, n_tsteps))
+
+    # Build objective function:
+    cost = 0
+    for k in range(n_tsteps):
+        cost += cp.quad_form(Z[:, k], Q)
+        cost += cp.quad_form(U[:, k], R)
+
+    # Add large penalty for terminal state deviation:
+    P_f = terminal_weight * np.eye(n_z)
+    cost += cp.quad_form(Z[:, n_tsteps] - zf, P_f)
+
+    # Build constraints:
+    constraints = []
+
+    # Initial condition (latent space):
+    constraints.append(Z[:, 0] == z0)
+
+    # Dynamics:
+    for k in range(n_tsteps):
+        constraints.append(Z[:, k + 1] == A @ Z[:, k] + B @ U[:, k])
+
+    # Solve QP:
+    problem = cp.Problem(cp.Minimize(cost), constraints)
+    problem.solve(solver=cp.OSQP, verbose=False)
+
+    # Check if optimization failed:
+    if problem.status not in ["optimal", "optimal_inaccurate"]:
+        raise ValueError(f"Optimization failed with status: {problem.status}")
+
+    # Extract solution:
+    u_opt = U.value.T
+
+    # Decode latent trajectory to observation space:
+    x_opt, _ = prop_dyn_latent(model, A, B, C, x0, u_opt, use_C=False)
+
+    # Return optimal control sequence and trajectory in observation space:
+    return x_opt, u_opt
