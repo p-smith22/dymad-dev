@@ -312,6 +312,105 @@ def controllability(_A, _B, n_tsteps):
         # Return controllability matrix and gramian:
         return _Ctrl, _W
 
+def input_output(_A, _B, _C, n_tsteps):
+
+    """
+    Calculate the Input-Output Gramian up to the given time step, given by the formulation
+    Σ A^k B C (A^T)^k
+
+    INPUTS
+    _A: np.ndarray or Torch.Tensor
+        (n_z, n_z)
+        Discretized system matrix (latent space)
+    _B: np.ndarray or Torch.Tensor
+        (n_z, m)
+        Discretized control matrix (latent space)
+    _C: np.ndarray or Torch.Tensor
+        (n_x, n_z)
+        Observation matrix
+    n_tsteps: int
+        N/A
+        Number of time steps in desired trajectory
+
+    OUTPUTS
+    W_IO: np.ndarray or Torch.Tensor
+        (n_x, n_x)
+        Controllability Gramian
+    """
+
+    # Decide whether torch or numpy:
+    is_torch = torch.is_tensor(_A)
+
+    # Torch sequence:
+    if is_torch:
+
+        # Transfer B to torch:
+        device = _A.device
+        dtype = _A.dtype
+        _B = torch.as_tensor(_B, device=device, dtype=dtype)
+        _C = torch.as_tensor(_C, device=device, dtype=dtype)
+
+        # Initialize Gramian:
+        n = _A.shape[0]
+        W_IO = torch.zeros((n, n), dtype=_A.dtype, device=_A.device)
+
+        # If Symmetric:
+        if _C.shape[0] == _B.shape[1]:
+
+            # Construct Gramian:
+            for i in range(n_tsteps):
+                _Ak = torch.linalg.matrix_power(_A, i)
+                W_IO += _Ak @ _B @ _C @ _Ak.T
+        else:
+
+            # Define vector form:
+            b_cols = [_B[:, i:i + 1] for i in range(_B.shape[1])]
+            c_rows = [_C[j:j + 1, :] for j in range(_C.shape[0])]
+
+            # Construct Gramian:
+            for k in range(n_tsteps):
+                A_k = torch.linalg.matrix_power(_A, k)
+                A_k_T = A_k.T
+                for b_i in b_cols:
+                    for c_j in c_rows:
+                        W_IO += A_k @ (b_i @ c_j) @ A_k_T
+
+
+    # Numpy sequence:
+    else:
+
+        # Transfer B to numpy:
+        _B = np.asarray(_B)
+        _C = np.asarray(_C)
+
+        # Initialize Gramian:
+        n = _A.shape[0]
+        W_IO = np.zeros((n, n))
+
+        # If Symmetric:
+        if _C.shape[0] == _B.shape[1]:
+
+            # Construct Gramian:
+            for i in range(n_tsteps):
+                _Ak = np.linalg.matrix_power(_A, i)
+                W_IO += _Ak @ _B @ _C @ _Ak.T
+        else:
+
+            # Define vector form:
+            b_cols = [_B[:, i:i + 1] for i in range(_B.shape[1])]
+            c_rows = [_C[j:j + 1, :] for j in range(_C.shape[0])]
+
+            # Construct Gramian:
+            for k in range(n_tsteps):
+                A_k = np.linalg.matrix_power(_A, k)
+                A_k_T = A_k.T
+                for b_i in b_cols:
+                    for c_j in c_rows:
+                        W_IO += A_k @ (b_i @ c_j) @ A_k_T
+
+    # Return Gramian:
+    return W_IO
+
 def prop_dyn(A, B, x_0, u, n_tsteps, x_ref=None, u_ref=None):
 
     """
