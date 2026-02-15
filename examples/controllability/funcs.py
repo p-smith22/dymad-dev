@@ -1236,8 +1236,8 @@ def weighted_controllability(A, B, R, n_tsteps):
     # Return weighted Controllability Matrix and Gramian:
     return Ctrl_weighted, W_weighted
 
-
 def riccati_opt_soft(_A, _B, _C, model, x_0, x_f, n_tsteps, _Q, _R, terminal_weight=1000.0):
+
     """
     Solves Riccati equation for optimal control as a QP with SOFT terminal constraint
     Now works in latent space with observation space constraints
