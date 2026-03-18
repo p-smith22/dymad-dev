@@ -312,104 +312,43 @@ def controllability(_A, _B, n_tsteps):
         # Return controllability matrix and gramian:
         return _Ctrl, _W
 
-def input_output(_A, _B, _C, n_tsteps):
+def output_CG(W_c, C, _Ctrl=None):
 
     """
-    Calculate the Input-Output Gramian up to the given time step, given by the formulation
-    Σ A^k B C (A^T)^k
+    Calculate the Output Controllability Matrix/Gramian based on the Latent Space Controllability Matrix/Gramian and
+    the observation matrix.
 
     INPUTS
-    _A: np.ndarray or Torch.Tensor
+    _Ctrl: np.ndarray or Torch.Tensor
+        (n_z, m * n_tsteps)
+        Controllability matrix
+    W_c: np.ndarray or Torch.Tensor
         (n_z, n_z)
-        Discretized system matrix (latent space)
-    _B: np.ndarray or Torch.Tensor
-        (n_z, m)
-        Discretized control matrix (latent space)
-    _C: np.ndarray or Torch.Tensor
+        Latent Space Controllability Gramian
+    C: np.ndarray or Torch.Tensor
         (n_x, n_z)
         Observation matrix
-    n_tsteps: int
-        N/A
-        Number of time steps in desired trajectory
 
     OUTPUTS
-    W_IO: np.ndarray or Torch.Tensor
+    _C: np.ndarray or Torch.Tensor
+        (n_x, m * n_tsteps)
+        Output Controllability Matrix
+    W_co: np.ndarray or Torch.Tensor
         (n_x, n_x)
-        Controllability Gramian
+        Output Controllability Gramian
     """
 
-    # Decide whether torch or numpy:
-    is_torch = torch.is_tensor(_A)
-
-    # Torch sequence:
-    if is_torch:
-
-        # Transfer B to torch:
-        device = _A.device
-        dtype = _A.dtype
-        _B = torch.as_tensor(_B, device=device, dtype=dtype)
-        _C = torch.as_tensor(_C, device=device, dtype=dtype)
-
-        # Initialize Gramian:
-        n = _A.shape[0]
-        W_IO = torch.zeros((n, n), dtype=_A.dtype, device=_A.device)
-
-        # If Symmetric:
-        if _C.shape[0] == _B.shape[1]:
-
-            # Construct Gramian:
-            for i in range(n_tsteps):
-                _Ak = torch.linalg.matrix_power(_A, i)
-                W_IO += _Ak @ _B @ _C @ _Ak.T
-        else:
-
-            # Define vector form:
-            b_cols = [_B[:, i:i + 1] for i in range(_B.shape[1])]
-            c_rows = [_C[j:j + 1, :] for j in range(_C.shape[0])]
-
-            # Construct Gramian:
-            for k in range(n_tsteps):
-                A_k = torch.linalg.matrix_power(_A, k)
-                A_k_T = A_k.T
-                for b_i in b_cols:
-                    for c_j in c_rows:
-                        W_IO += A_k @ (b_i @ c_j) @ A_k_T
-
-
-    # Numpy sequence:
+    # Calculate Output Controllability Matrix:
+    if _Ctrl is not None:
+        _C = C@_Ctrl
     else:
+        _C = None
 
-        # Transfer B to numpy:
-        _B = np.asarray(_B)
-        _C = np.asarray(_C)
+    # Calculate Output Controllability Gramian:
+    W_co = C @ W_c @ C.T
 
-        # Initialize Gramian:
-        n = _A.shape[0]
-        W_IO = np.zeros((n, n))
-
-        # If Symmetric:
-        if _C.shape[0] == _B.shape[1]:
-
-            # Construct Gramian:
-            for i in range(n_tsteps):
-                _Ak = np.linalg.matrix_power(_A, i)
-                W_IO += _Ak @ _B @ _C @ _Ak.T
-        else:
-
-            # Define vector form:
-            b_cols = [_B[:, i:i + 1] for i in range(_B.shape[1])]
-            c_rows = [_C[j:j + 1, :] for j in range(_C.shape[0])]
-
-            # Construct Gramian:
-            for k in range(n_tsteps):
-                A_k = np.linalg.matrix_power(_A, k)
-                A_k_T = A_k.T
-                for b_i in b_cols:
-                    for c_j in c_rows:
-                        W_IO += A_k @ (b_i @ c_j) @ A_k_T
-
-    # Return Gramian:
-    return W_IO
+    # Return OCM and OCG:
+    return _C, W_co
 
 def prop_dyn(A, B, x_0, u, n_tsteps, x_ref=None, u_ref=None):
 
@@ -625,7 +564,130 @@ def plot_traj(x, u, n_tsteps, x_f=None, lab=None, line=None):
     # Tight layout:
     plt.tight_layout()
 
+
+def optimal_ctrl_ocg(_A, _B, _C, model, _Ctrl_o, _W_co, n_tsteps, x_0, x_f, plot_graph):
+
+    """
+    Calculate the optimal control using the Output Controllability Gramian (OCG).
+    Operates directly in observation space without requiring full latent controllability.
+
+    INPUTS
+    _A: np.ndarray or Torch.Tensor
+        (n_z, n_z)
+        System matrices (latent space)
+    _B: np.ndarray or Torch.Tensor
+        (n_z, m)
+        System matrices (latent space)
+    _C: np.ndarray or Torch.Tensor
+        (n_x, n_z)
+        Observation matrix
+    model: dymad.models
+        Trained model for encoding/decoding
+    _Ctrl_o: np.ndarray or Torch.Tensor
+        (n_x, m * n_tsteps)
+        Output Controllability Matrix (C @ Ctrl)
+    _W_co: np.ndarray or Torch.Tensor
+        (n_x, n_x)
+        Output Controllability Gramian (C @ W_c @ C^T)
+    n_tsteps: int
+        Number of desired time steps
+    x_0: np.ndarray or Torch.Tensor
+        (n_x,)
+        Initial state (observation space)
+    x_f: np.ndarray or Torch.Tensor
+        (n_x,)
+        Final desired state (observation space)
+    plot_graph: bool
+        Option to automatically plot graphs
+
+    OUTPUTS
+    x: np.ndarray or Torch.Tensor
+        (n_steps+1, n_x)
+        Optimal trajectory in observation space
+    _U: np.ndarray or Torch.Tensor
+        (n_tsteps, m)
+        Optimal control sequence
+    """
+
+    # Decide if user wants torch or numpy:
+    is_torch = torch.is_tensor(_A)
+
+    # Torch sequence:
+    if is_torch:
+
+        # Transfer everything to torch:
+        device = _A.device
+        dtype = _A.dtype
+        _B = torch.as_tensor(_B, device=device, dtype=dtype)
+        _C = torch.as_tensor(_C, device=device, dtype=dtype)
+        _Ctrl_o = torch.as_tensor(_Ctrl_o, device=device, dtype=dtype)
+        _W_co = torch.as_tensor(_W_co, device=device, dtype=dtype)
+        x_0 = torch.as_tensor(x_0, device=device, dtype=dtype)
+        x_f = torch.as_tensor(x_f, device=device, dtype=dtype)
+
+        # Check output controllability (rank of W_co must equal n_x = p):
+        if torch.linalg.matrix_rank(_W_co) != _W_co.shape[0]:
+            raise ValueError("Cannot compute optimal control (Output Gramian singular: system not output controllable)")
+
+        # Encode initial state to latent space, apply A^N, decode to get free response:
+        w0 = DynData().get_step(0).set_x(x_0.view(1, -1))
+        z_0 = model.encoder(w0).view(-1)
+        _Apow = torch.linalg.matrix_power(_A, n_tsteps)
+        x_free = _C @ (_Apow @ z_0)  # free response in observation space
+
+        # Observation gap:
+        _delta = x_f - x_free
+
+        # Optimal control via OCG pseudoinverse (U* = C_o^T W_co^{-1} delta):
+        _U = _Ctrl_o.T @ torch.linalg.pinv(_W_co, rcond=1e-12) @ _delta
+
+    # Numpy sequence:
+    else:
+
+        # Transfer everything to numpy:
+        _B = np.asarray(_B)
+        _C = np.asarray(_C)
+        _Ctrl_o = np.asarray(_Ctrl_o)
+        _W_co = np.asarray(_W_co)
+        x_0 = np.asarray(x_0)
+        x_f = np.asarray(x_f)
+
+        # Check output controllability (rank of W_co must equal n_x = p):
+        if np.linalg.matrix_rank(_W_co) != _W_co.shape[0]:
+            raise ValueError("Cannot compute optimal control (Output Gramian singular: system not output controllable)")
+
+        # Encode initial state to latent space, apply A^N, decode to get free response:
+        device = next(model.parameters()).device
+        dtype = next(model.parameters()).dtype
+
+        x_0_torch = torch.from_numpy(x_0).to(device=device, dtype=dtype)
+        w0 = DynData().get_step(0).set_x(x_0_torch.view(1, -1))
+        z_0 = model.encoder(w0).view(-1).detach().cpu().numpy()
+
+        _Apow = np.linalg.matrix_power(_A, n_tsteps)
+        x_free = _C @ (_Apow @ z_0)  # free response in observation space
+
+        # Observation gap:
+        _delta = x_f - x_free
+
+        # Optimal control via OCG pseudoinverse (U* = C_o^T W_co^{-1} delta):
+        _U = _Ctrl_o.T @ np.linalg.pinv(_W_co, rcond=1e-12) @ _delta
+
+    # Reshape:
+    m = _B.shape[1]
+    _U = _U.reshape(n_tsteps, m)
+
+    # Propagate dynamics in latent space and decode to observation space:
+    x, _ = prop_dyn_latent(model, _A, _B, _C, x_0, _U, use_C=False)
+
+    if plot_graph:
+        plot_traj(x.T, _U, n_tsteps, x_f)
+
+    # Return states and controls:
+    return x, _U
+
 def optimal_ctrl(_A, _B, _C, model, _Ctrl, _W, n_tsteps, x_0, x_f, plot_graph):
+
     """
     Calculate the optimal control given the controllability evaluation
     Now works in latent space and decodes to observation space
@@ -1164,6 +1226,83 @@ def plot_poles(A, title="Discrete System Pole Locations", threshold=1e-4):
 
     # Return eigenvalues:
     return eigs
+
+def weighted_output_CG(A, B, C, R, n_tsteps):
+
+    """
+    Compute weighted Output Controllability Gramian with control cost matrix R
+
+    The weighted OCG is: W_R = C W_weighted C^T
+                              = C (Σ A^k B R^{-1} B^T (A^T)^k) C^T
+
+    INPUTS
+    A: np.ndarray
+        (n, n)
+        System matrix
+    B: np.ndarray
+        (n, m)
+        Control matrix
+    C: np.ndarray
+        (p, n)
+        Observation matrix
+    R: np.ndarray
+        (m, m)
+        Control cost matrix (must be positive definite)
+    n_tsteps: int
+        Number of time steps
+
+    OUTPUTS
+    Ctrl_o_weighted: np.ndarray
+        (p, m * n_tsteps)
+        Weighted Output Controllability Matrix (C @ Ctrl_weighted)
+    W_R: np.ndarray
+        (p, p)
+        Weighted Output Controllability Gramian (C @ W_weighted @ C^T)
+    """
+
+    # Convert to numpy:
+    A = np.asarray(A)
+    B = np.asarray(B)
+    C = np.asarray(C)
+    R = np.asarray(R)
+
+    # Extract dimensions:
+    n = A.shape[0]
+    m = B.shape[1]
+    p = C.shape[0]
+
+    # Compute R^{-1}:
+    R_inv = np.linalg.inv(R)
+
+    # Compute weighted B matrix:
+    B_weighted = B @ R_inv
+
+    # Compute weighted output controllability matrix (C @ Ctrl_weighted):
+    Ctrl_o_weighted = np.zeros((p, n_tsteps * m))
+    for i in range(n_tsteps):
+        Ctrl_o_weighted[:, i * m:(i + 1) * m] = C @ np.linalg.matrix_power(A, n_tsteps - 1 - i) @ B_weighted
+
+    # Compute weighted latent Gramian:
+    eigs = np.linalg.eigvals(A)
+
+    if np.all(np.abs(eigs) < 1):
+
+        # Stable system, solve using Lyapunov:
+        W_weighted = sp.linalg.solve_discrete_lyapunov(A, B @ R_inv @ B.T)
+
+    else:
+
+        # Unstable, do a finite sum:
+        W_weighted = np.zeros((n, n))
+        for i in range(n_tsteps):
+            Ak = np.linalg.matrix_power(A, i)
+            W_weighted += Ak @ B @ R_inv @ B.T @ Ak.T
+
+    # Project to observation space:
+    W_R = C @ W_weighted @ C.T
+
+    # Return weighted Output Controllability Matrix and Gramian:
+    return Ctrl_o_weighted, W_R
 
 def weighted_controllability(A, B, R, n_tsteps):
 
