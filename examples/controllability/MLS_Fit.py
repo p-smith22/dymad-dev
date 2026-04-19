@@ -35,7 +35,7 @@ ratios = [0.01, 0.5, 1.0, 2.0, 5.0]
 n_train  = 300   # Number of training IPOPT runs
 n_query  = 10    # Number of refinements (>=1)
 train_r  = 5.0   # Training points
-k_mls    = 20    # Number of nearest neighbors to use
+k_mls    = 50    # Number of nearest neighbors to use
 h_mls    = 0.6   # How much to prioritize nearest neighbors
 
 # === DYNAMICS ===
@@ -232,6 +232,10 @@ for ratio in ratios:
     Nm     = construct_N(ratio)
     z_free = sim(z_0, np.zeros((N, m)), Nm)[-1]
 
+    # Solve nominal trajectory:
+    U_nom = ipopt_solve(z_0, np.zeros(shape=(N, m)), Nm, z_A)
+    z_nom  = sim(z_0, U_nom,  Nm)
+
     # --- Offline Training ---
     # Start timer, intialize lists:
     t0 = time.perf_counter()
@@ -278,14 +282,13 @@ for ratio in ratios:
     results[ratio] = dict(
         mls_err=mls_err,   mls_cost=mls_cost,
         gt_err=gt_err,     gt_cost=gt_cost,
-        z_mls=z_mls,       z_gt=z_gt,
-        U_mls=U_mls,       U_gt=U_gt,
+        z_mls=z_mls,       z_gt=z_gt,    z_nom=z_nom,
+        U_mls=U_mls,       U_gt=U_gt,    U_nom=U_nom,
         t_train=t_train, t_online=t_online, t_gt=t_gt,
     )
 
 # === PLOTTING ===
 # Settings:
-colors = {'mls': 'darkorange',  'gt': 'seagreen'}
 steps  = np.arange(N + 1)
 nr     = len(ratios)
 
@@ -294,36 +297,33 @@ fig1, axes1 = plt.subplots(1, 3, figsize=(14, 4))
 
 # Terminal error at z_des:
 ax = axes1[0]
-ax.semilogy(ratios, [results[r]['mls_err'] for r in ratios],
-            '-o', color=colors['mls'], lw=2, label='MLS')
 ax.semilogy(ratios, [results[r]['gt_err']  for r in ratios],
-            '-s', color=colors['gt'],  lw=2, label='IPOPT')
+            '-s',  lw=2, label='IPOPT')
+ax.semilogy(ratios, [results[r]['mls_err'] for r in ratios],
+            '-o', lw=2, label='MLS')
 ax.set_xlabel(r'$\|N\|/\|A\|$'); ax.set_ylabel(r'Terminal error $\|z_N - z_f\|$')
 ax.set_title(r'Terminal Error at $z_{\rm des}$')
 ax.legend(fontsize=9); ax.grid(True, alpha=0.3)
 
 # Control cost at z_des:
 ax = axes1[1]
-ax.semilogy(ratios, [results[r]['mls_cost'] for r in ratios],
-        '-o', color=colors['mls'], lw=2, label='MLS')
 ax.semilogy(ratios, [results[r]['gt_cost']  for r in ratios],
-        '-s', color=colors['gt'],  lw=2, label='IPOPT')
+        '-s',  lw=2, label='IPOPT')
+ax.semilogy(ratios, [results[r]['mls_cost'] for r in ratios],
+        '-o', lw=2, label='MLS')
 ax.set_xlabel(r'$\|N\|/\|A\|$'); ax.set_ylabel(r'Control cost $\sum_k \|u_k\|^2$')
 ax.set_title(r'Control Cost at $z_{\rm des}$')
 ax.legend(fontsize=9); ax.grid(True, alpha=0.3)
 
 # Runtime:
 ax = axes1[2]
-ax.plot(ratios, [results[r]['t_online']*1e3 for r in ratios],
-        '-o', color=colors['mls'], lw=2, label='MLS')
 ax.plot(ratios, [results[r]['t_gt']*1e3     for r in ratios],
-        '-s', color=colors['gt'],  lw=2, label='IPOPT')
+        '-s',  lw=2, label='IPOPT')
+ax.plot(ratios, [results[r]['t_online']*1e3 for r in ratios],
+        '-o', lw=2, label='MLS')
 ax.set_xlabel(r'$\|N\|/\|A\|$'); ax.set_ylabel('Time (ms)')
 ax.set_title(r'Runtime at $z_{\rm des}$')
 ax.legend(fontsize=9); ax.grid(True, alpha=0.3)
-
-fig1.suptitle(f'MLS Gramian Surrogate vs IPOPT  ({n_train} training pts)',
-              fontsize=12, fontweight='bold')
 fig1.tight_layout()
 
 # --- Figure 2: Trajectories at z_des ---
@@ -340,25 +340,26 @@ for col, ratio in enumerate(ratios):
     r = results[ratio]
     for i in range(n):
         ax = axes2[i, col]
-        ax.plot(steps, r['z_gt'][:,  i], color=colors['gt'],  lw=2.2, ls='--',
+        ax.plot(steps, r['z_gt'][:,  i],  lw=2,
                 label='IPOPT' if (col==0 and i==0) else None)
-        ax.plot(steps, r['z_mls'][:, i], color=colors['mls'], lw=1.8,
-                label='MLS'      if (col==0 and i==0) else None)
-        ax.axhline(z_des[i], color='k', ls=':', lw=0.8, alpha=0.4)
+        ax.plot(steps, r['z_mls'][:, i], lw=2,
+                label='MLS' if (col==0 and i==0) else None)
+        ax.plot(steps, r['z_nom'][:, i], lw=2,
+                label='NOM' if (col==0 and i==0) else None)
+        ax.axhline(z_des[i], color='k', ls=':', lw=2, alpha=0.4)
         ax.grid(True, alpha=0.25)
     for j in range(m):
         ax = axes2[n+j, col]
-        ax.step(np.arange(N), r['U_gt'][:,  j], color=colors['gt'],
-                lw=2.2, ls='--', where='post')
-        ax.step(np.arange(N), r['U_mls'][:, j], color=colors['mls'],
-                lw=1.8, where='post')
+        ax.step(np.arange(N), r['U_gt'][:,  j],
+                lw=2, where='post')
+        ax.step(np.arange(N), r['U_mls'][:, j],
+                lw=2, where='post')
+        ax.step(np.arange(N), r['U_nom'][:, j],
+                lw=2, where='post')
         ax.grid(True, alpha=0.25)
     axes2[-1, col].set_xlabel('Time step')
 
 axes2[0, 0].legend(fontsize=8, loc='best')
-fig2.suptitle(r'Trajectories to $z_{\rm des}$ — MLS vs IPOPT',
-              fontsize=11, fontweight='bold')
 
 # Show plots:
-print("\nDone.")
 plt.show()
