@@ -7,6 +7,7 @@ from dymad.models.prediction import _prepare_data
 from scipy.linalg import solve_discrete_are
 from scipy.optimize import minimize
 import cvxpy as cp
+import time
 
 def single_step(model, z, u=None):
 
@@ -1490,3 +1491,250 @@ def riccati_opt_soft(_A, _B, _C, model, x_0, x_f, n_tsteps, _Q, _R, terminal_wei
 
     # Return optimal control sequence and trajectory in observation space:
     return x_opt, u_opt
+
+
+def bilinear_controllability(A, B, N_mats, n_tsteps, z_0):
+    """
+    Compute the augmented Controllability Matrix and Gramian for a bilinear
+    system to first order in N.
+
+    INPUTS
+    A: np.ndarray
+        (n, n)
+        Linear system matrix
+    B: np.ndarray
+        (n, m)
+        Control matrix
+    N_mats: list of np.ndarray
+        m x (n, n)
+        Bilinear coupling matrices, one per input channel
+    n_tsteps: int
+        Number of time steps N
+    z_0: np.ndarray
+        (n,)
+        Initial latent state (needed for free-response correction)
+
+    OUTPUTS
+    C0: np.ndarray
+        (n, N*m)
+        Pure zeroth-order controllability matrix
+    C0_aug: np.ndarray
+        (n, N*m)
+        Zeroth-order + free-response correction folded in
+    C_bar: np.ndarray
+        (n, N*m + C(N,2)*m^2)
+        Full augmented controllability matrix [C0_aug | C1b]
+    W_0: np.ndarray
+        (n, n)
+        Zeroth-order Gramian C0 @ C0.T
+    W_bil: np.ndarray
+        (n, n)
+        Bilinear Gramian C_bar @ C_bar.T
+    bil_cols: dict
+        (j,k,i,l) -> np.ndarray (n,)
+        Precomputed bilinear columns for iterative correction
+    """
+
+    # Change to numpy:
+    A = np.asarray(A, dtype=float)
+    B = np.asarray(B, dtype=float)
+    N_mats = [np.asarray(Ni, dtype=float) for Ni in N_mats]
+    z_0 = np.asarray(z_0, dtype=float)
+
+    # Fetch sizes:
+    n = A.shape[0]
+    m = B.shape[1]
+    N = n_tsteps
+
+    # Precompute powers of A up to A^(N-1):
+    A_pows = [np.eye(n)]
+    for _ in range(N):
+        A_pows.append(A_pows[-1] @ A)
+
+    # Compute C0 (linear only):
+    C0 = np.zeros((n, N * m))
+    for k in range(N):
+        C0[:, k * m:(k + 1) * m] = A_pows[N - 1 - k] @ B
+
+    # Compute C0 + C1a (linear + bilinear free response)
+    C0_aug = C0.copy()
+    for j in range(N):
+        for i in range(m):
+            C0_aug[:, j * m + i] += (
+                    A_pows[N - 1 - j] @ N_mats[i] @ A_pows[j] @ z_0
+            )
+
+    # Compute C1b (full bilinear correction):
+    n_pairs = N * (N - 1) // 2
+    C1b = np.zeros((n, n_pairs * m * m))
+    bil_cols = {}
+    col_idx = 0
+    for k in range(N):
+        for j in range(k + 1, N):
+            for i in range(m):
+                block = A_pows[N - 1 - j] @ N_mats[i] @ A_pows[j - 1 - k] @ B
+                for l in range(m):
+                    col = block[:, l]
+                    C1b[:, col_idx] = col
+                    bil_cols[(j, k, i, l)] = col
+                    col_idx += 1
+
+    # Stack Controllability Matrices:
+    C_bar = np.hstack([C0_aug, C1b])
+
+    # Build Gramians:
+    W_0 = C0 @ C0.T
+    W_bil = C_bar @ C_bar.T
+
+    # Return Gramians:
+    return C0, C0_aug, C_bar, W_0, W_bil, bil_cols
+
+
+def bilinear_optimal_ctrl(A, B, N_mats, n_tsteps, z_0, z_f,
+                          n_iter=10, verbose=True):
+    """
+    INPUTS
+    A: np.ndarray
+        (n, n)
+        Linear system matrix
+    B: np.ndarray
+        (n, m)
+        Control matrix
+    N_mats: list of np.ndarray
+        m x (n, n)
+        Bilinear coupling matrices, one per input channel
+    n_tsteps: int
+        N/A
+        Number of time steps N
+    z_0: np.ndarray
+        (n,)
+        Initial latent state
+    z_f: np.ndarray
+        (n,)
+        Final (desired) latent state
+    n_iter: int
+        N/A
+        Number of iterations
+    verbose: bool
+        N/A
+        Print progress information
+
+    OUTPUTS
+    U_bil: np.ndarray
+        (n_tsteps, m)
+        Bilinear control sequence
+    U_lin: np.ndarray
+        (n_tsteps, m)
+        Linear control sequence
+    z_traj_bil: np.ndarray
+        (n_tsteps+1, n)
+        Bilinear trajectory
+    z_traj_lin: np.ndarray
+        (n_tsteps+1, n)
+        Linear trajectory
+    resids: list of float
+        N/A
+        Residuals from bilinear convergence
+    t_bil: float
+        N/A
+        Computation time of bilinear system
+    t_lin: float
+        N/A
+        Computation time of linear system
+    """
+
+    # Switch to numpy:
+    A = np.asarray(A, dtype=float)
+    B = np.asarray(B, dtype=float)
+    z_0 = np.asarray(z_0, dtype=float)
+    z_f = np.asarray(z_f, dtype=float)
+
+    # Unpack shapes:
+    N = n_tsteps
+    n = A.shape[0]
+    m = B.shape[1]
+
+    # Begin counter, build Controllability Gramians:
+    t0 = time.perf_counter()
+    C0, C0_aug, C_bar, W_0, W_bil, bil_cols = bilinear_controllability(
+        A, B, N_mats, N, z_0
+    )
+
+    # Ensure that system is controllable:
+    if np.linalg.matrix_rank(W_0) < n:
+        raise ValueError("Zeroth-order Gramian singular: system not controllable")
+
+    # Define augmented Gramian (we want to isolate the monomial terms):
+    A_N = np.linalg.matrix_power(A, N)
+    delta_z = z_f - A_N @ z_0
+    W_aug = C0_aug @ C0_aug.T
+
+    # Initialize control from augmented zeroth-order solve:
+    U = (C0_aug.T @ np.linalg.solve(W_aug, delta_z)).reshape(N, m)
+
+    # Loop through the number of iterations:
+    resids = []
+    for it in range(n_iter):
+
+        # Apply the bilinear correction from the bilinear correction term:
+        correction = np.zeros(n)
+        for k in range(N):
+            for j in range(k + 1, N):
+                for i in range(m):
+                    for l in range(m):
+                        correction += bil_cols[(j, k, i, l)] * U[j, i] * U[k, l]
+
+        # Find residual error:
+        r = C0_aug @ U.reshape(-1) + correction - delta_z
+        resid = np.linalg.norm(r)
+        resids.append(resid)
+        if verbose:
+            print(f"  Iter {it + 1}: residual = {resid:.2e}, "
+                  f"||U|| = {np.linalg.norm(U):.4f}")
+
+        # Break if below tolerance:
+        if resid < 1e-10:
+            break
+
+        # --- Minimum-norm Newton step ---
+        # Compute Jacobian:
+        J = C0_aug.copy()  # shape (n, N*m)
+        for k in range(N):
+            for j in range(k + 1, N):
+                for i in range(m):
+                    for l in range(m):
+                        c = bil_cols[(j, k, i, l)]
+                        J[:, j * m + i] += c * U[k, l]
+                        J[:, k * m + l] += c * U[j, i]
+
+        # Take step:
+        JJT = J @ J.T
+        step = J.T @ np.linalg.solve(JJT, r)
+
+        # Fetch new control:
+        U = (U.reshape(-1) - step).reshape(N, m)
+
+    # Fetch converged control:
+    U_bil = U
+    t_bil = time.perf_counter() - t0
+
+    # Zeroth-order solve:
+    t0 = time.perf_counter()
+    U_lin = (C0.T @ np.linalg.solve(W_0, delta_z)).reshape(N, m)
+    t_lin = time.perf_counter() - t0
+
+    # Simulate both on true nonlinear system:
+    def simulate(U_seq):
+        z_traj = np.zeros((N + 1, n))
+        z_traj[0] = z_0
+        for k in range(N):
+            u_k = U_seq[k]
+            N_u = sum(N_mats[i] * u_k[i] for i in range(m))
+            z_traj[k + 1] = A @ z_traj[k] + N_u @ z_traj[k] + B @ u_k
+        return z_traj
+
+    z_traj_bil = simulate(U_bil)
+    z_traj_lin = simulate(U_lin)
+
+    # Return control:
+    return U_bil, U_lin, z_traj_bil, z_traj_lin, resids, t_bil, t_lin
